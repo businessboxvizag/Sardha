@@ -1,0 +1,4 @@
+server/.env
+server/firebase-service-account.json
+node_modules/
+server/node_modules/

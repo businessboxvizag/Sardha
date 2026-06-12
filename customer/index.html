@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Business Wheels — Customer</title>
+  <link rel="stylesheet" href="../assets/css/styles.css" />
+</head>
+<body>
+  <div id="root"><div class="bw-loading"></div></div>
+
+  <!-- Socket.io client (served by the backend) -->
+  <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+
+  <!-- BW API config: change API_BASE to match your server URL -->
+  <script>window.BW_API_BASE = "http://localhost:3000";</script>
+
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/auth-ui.js"></script>
+  <script src="../assets/js/util.js"></script>
+  <script src="customer.js"></script>
+</body>
+</html>
