@@ -101,9 +101,20 @@
     }
   }
 
+  /* ---- Unlocked vendors helpers ---- */
+  function getUnlockedVendors() {
+    try {
+      const raw = localStorage.getItem("bw_unlocked_vendors");
+      if (!raw) return null;
+      const list = JSON.parse(raw);
+      return Array.isArray(list) && list.length > 0 ? list : null;
+    } catch { return null; }
+  }
+
   /* ====================== DISCOVER ====================== */
   function viewDiscover() {
     const favs = BW.favorites();
+    const unlocked = getUnlockedVendors();
 
     const searchBar = el("div", { class: "field" }, [
       el("input", {
@@ -113,10 +124,22 @@
       }),
     ]);
 
+    // Scan-to-unlock banner (only shown when customer arrived via QR)
+    const scanHint = unlocked
+      ? el("div", { style: "display:flex;align-items:center;gap:10px;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px" }, [
+          el("span", { style: "font-size:20px" }, "📲"),
+          el("span", { style: "flex:1;color:#bbb" }, [
+            el("strong", { style: "color:#f5a623" }, String(unlocked.length) + " store" + (unlocked.length !== 1 ? "s" : "") + " unlocked"),
+            document.createTextNode(" · Scan more QR codes to add stores"),
+          ]),
+        ])
+      : null;
+
     const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
     const body = [
       el("h1", { class: "page-title" }, "Discover nearby vendors"),
       el("p", { class: "page-sub" }, "Order from local shops and street vendors around you."),
+      ...(scanHint ? [scanHint] : []),
       searchBar,
       grid,
     ];
@@ -127,11 +150,19 @@
       const g = document.getElementById("vendorGrid");
       if (!g) return;
       g.innerHTML = "";
-      const list = BW.vendors().filter((v) =>
-        !state.search || (v.name + v.category + v.area).toLowerCase().includes(state.search.toLowerCase())
-      );
+
+      const currentUnlocked = getUnlockedVendors();
+      const list = BW.vendors().filter((v) => {
+        // If customer arrived via QR, only show unlocked vendors
+        if (currentUnlocked && !currentUnlocked.includes(v.id)) return false;
+        return !state.search || (v.name + v.category + v.area).toLowerCase().includes(state.search.toLowerCase());
+      });
+
       if (!list.length) {
-        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, "🔍"), "No vendors match your search."]));
+        const msg = currentUnlocked && !state.search
+          ? [el("div", { class: "e" }, "📲"), "Scan a store's QR code to unlock it."]
+          : [el("div", { class: "e" }, "🔍"), "No vendors match your search."];
+        g.appendChild(el("div", { class: "empty" }, msg));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));
