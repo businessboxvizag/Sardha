@@ -34,6 +34,7 @@ app.set("io", io); // routes access io via req.app.get("io")
 require("./socket")(io);
 
 /* ── API Routes ──────────────────────────────────────────────── */
+app.use("/api/public",    require("./routes/public"));   // no auth — scan page
 app.use("/api/auth",      require("./routes/auth"));
 app.use("/api/vendors",   require("./routes/vendors"));
 app.use("/api/orders",    require("./routes/orders"));
