@@ -3,73 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Business Wheels — Platform Portal</title>
-  <link rel="stylesheet" href="assets/css/styles.css" />
+  <title>Business Wheels — Customer</title>
+  <link rel="stylesheet" href="../assets/css/styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#f5a623" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Business Wheels" />
+  <link rel="apple-touch-icon" href="/assets/icons/icon-192.png" />
 </head>
 <body>
-  <div class="topbar">
-    <div class="brand">
-      <span class="logo">🛺</span>
-      <span>Business Wheels<small>On-demand local delivery</small></span>
-    </div>
-    <span class="spacer"></span>
-    <button class="btn ghost sm" id="reset">Reset demo data</button>
-  </div>
+  <div id="root"><div class="bw-loading"></div></div>
 
-  <div class="portal">
-    <h1>One platform, three front doors.</h1>
-    <p class="lede">
-      Business Wheels connects local street vendors and small shops with salaried,
-      location-tracked riders for on-demand delivery. Pick an interface to explore —
-      all three share a single live datastore, so an order placed in the Customer app
-      appears instantly in the Merchant and Admin views.
-    </p>
+  <!-- Socket.io client (served by the backend) -->
+  <script src="https://businesswheels-production.up.railway.app/socket.io/socket.io.js"></script>
 
-    <div class="portal-grid">
-      <a class="card hover portal-card" href="customer/index.html">
-        <div class="pico">🛍️</div>
-        <h3>Customer App</h3>
-        <p>Discover nearby vendors, order in a few taps, and track your rider on the map in real time.</p>
-        <div class="chip-list">
-          <span class="tag">Discovery</span><span class="tag">Cart & checkout</span>
-          <span class="tag">Live tracking</span><span class="tag">History</span><span class="tag">Favorites</span>
-        </div>
-      </a>
+  <script>window.BW_API_BASE = "https://businesswheels-production.up.railway.app";</script>
 
-      <a class="card hover portal-card" href="merchant/index.html">
-        <div class="pico">🏪</div>
-        <h3>Merchant App</h3>
-        <p>Accept incoming orders, manage your inventory, dispatch to riders, and keep a customer book.</p>
-        <div class="chip-list">
-          <span class="tag">Order queue</span><span class="tag">Inventory</span>
-          <span class="tag">Live dispatch</span><span class="tag">Customers</span>
-        </div>
-      </a>
-
-      <a class="card hover portal-card" href="admin/index.html">
-        <div class="pico">🛰️</div>
-        <h3>Admin Dashboard</h3>
-        <p>Oversee the whole operation: live fleet map, dynamic task assignment, vendors and analytics.</p>
-        <div class="chip-list">
-          <span class="tag">Fleet</span><span class="tag">Task assignment</span>
-          <span class="tag">Vendors</span><span class="tag">Analytics</span>
-        </div>
-      </a>
-    </div>
-
-    <p class="muted small" style="margin-top:34px">
-      Tip: open the three apps in separate browser tabs and watch updates propagate live between them.
-    </p>
-  </div>
-
-  <script src="assets/js/store.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/auth-ui.js"></script>
+  <script src="../assets/js/util.js"></script>
+  <script src="/customer/customer.js"></script>
   <script>
-    document.getElementById("reset").addEventListener("click", function () {
-      if (confirm("Reset all demo data back to seed state?")) {
-        BW.reset();
-        alert("Demo data reset.");
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    // Handle ?v= unlock param (direct deep-link into customer app with vendor unlock)
+    (function() {
+      const p = new URLSearchParams(location.search);
+      const v = p.get("v");
+      if (v) {
+        try {
+          const list = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
+          if (!list.includes(v)) { list.push(v); localStorage.setItem("bw_unlocked_vendors", JSON.stringify(list)); }
+        } catch {}
       }
-    });
+    })();
   </script>
 </body>
 </html>
