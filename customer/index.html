@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Business Wheels — Customer</title>
   <link rel="stylesheet" href="../assets/css/styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#f5a623" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Business Wheels" />
+  <link rel="apple-touch-icon" href="/assets/icons/icon-192.png" />
 </head>
 <body>
   <div id="root"><div class="bw-loading"></div></div>
@@ -18,5 +24,21 @@
   <script src="../assets/js/auth-ui.js"></script>
   <script src="../assets/js/util.js"></script>
   <script src="/customer/customer.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    // Handle ?v= unlock param (direct deep-link into customer app with vendor unlock)
+    (function() {
+      const p = new URLSearchParams(location.search);
+      const v = p.get("v");
+      if (v) {
+        try {
+          const list = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
+          if (!list.includes(v)) { list.push(v); localStorage.setItem("bw_unlocked_vendors", JSON.stringify(list)); }
+        } catch {}
+      }
+    })();
+  </script>
 </body>
 </html>
