@@ -41,8 +41,11 @@ router.get("/", requireAuth, async (req, res) => {
     // Optional filters
     if (req.query.status) query = query.where("status", "==", req.query.status);
 
-    const snap = await query.orderBy("createdAt", "desc").get();
-    res.json(snap.docs.map(toOrder));
+const snap = await query.get();
+        const orders = snap.docs.map(toOrder).sort((a, b) =>
+                new Date(b.createdAt) - new Date(a.createdAt)
+                                                       );
+        res.json(orders);
   } catch (err) {
     console.error("GET /orders:", err);
     res.status(500).json({ error: "Failed to fetch orders" });
