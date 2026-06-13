@@ -40,8 +40,8 @@
     .vendor-meta { font-size: 13px; color: #888; margin-bottom: 12px; }
     .ready-badge {
       display: inline-block;
-      background: rgba(76,175,80,0.12);
-      color: #4caf50;
+      background: rgba(245,166,35,0.12);
+      color: #f5a623;
       font-size: 12px;
       font-weight: 600;
       padding: 4px 14px;
@@ -58,6 +58,16 @@
       color: #4caf50;
     }
     .added-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .already-banner {
+      background: rgba(245,166,35,0.08);
+      border: 1px solid rgba(245,166,35,0.2);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #f5a623;
+    }
+    .already-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
     .btn {
       display: block;
       width: 100%;
@@ -75,28 +85,22 @@
     .btn:hover { opacity: 0.85; }
     .btn-primary { background: #f5a623; color: #0f0f13; }
     .btn-ghost { background: #252535; color: #f0f0f0; }
-    .btn-install { display: none; }
-    .stores-count {
-      font-size: 12px;
-      color: #555;
-      margin-top: 14px;
-    }
-    .stores-count span {
-      color: #f5a623;
-      font-weight: 600;
-    }
-    .feature-list {
-      font-size: 12px;
-      color: #555;
-      margin-top: 16px;
-      line-height: 2;
-    }
+    .stores-count { font-size: 12px; color: #555; margin-top: 14px; }
+    .stores-count span { color: #f5a623; font-weight: 600; }
+    .feature-list { font-size: 12px; color: #555; margin-top: 16px; line-height: 2; }
     .loading { color: #666; font-size: 14px; }
     .error { color: #f55; font-size: 14px; margin-bottom: 16px; }
-    .countdown {
+    .countdown { font-size: 12px; color: #555; margin-top: 12px; }
+    .ios-hint {
+      display: none;
+      margin-top: 14px;
+      background: #252535;
+      border-radius: 10px;
+      padding: 12px 14px;
       font-size: 12px;
-      color: #555;
-      margin-top: 12px;
+      color: #aaa;
+      text-align: left;
+      line-height: 1.7;
     }
   </style>
 </head>
@@ -106,18 +110,17 @@
   </div>
 
   <script>
-    const API_BASE = "https://businesswheels-production.up.railway.app";
+    const API_BASE    = "https://businesswheels-production.up.railway.app";
     const STORAGE_KEY = "bw_unlocked_vendors";
 
+    /* ── PWA install prompt (Android/Chrome) ── */
     let deferredPrompt = null;
-
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      const btn = document.getElementById("installBtn");
-      if (btn) btn.style.display = "block";
     });
 
+    /* ── localStorage helpers ── */
     function getUnlocked() {
       try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
       catch { return []; }
@@ -125,35 +128,41 @@
 
     function addVendor(id) {
       const list = getUnlocked();
-      if (!list.includes(id)) {
-        list.push(id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-        return true;
-      }
-      return false;
+      if (list.includes(id)) return false; // already had it
+      list.push(id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      return true; // newly added
     }
 
-    function hasSession() {
-      return !!sessionStorage.getItem("bw_token");
+    /* ── Detect iOS Safari (no beforeinstallprompt support) ── */
+    function isIOS() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    }
+
+    /* ── Is already running as installed PWA? ── */
+    function isInstalled() {
+      return window.navigator.standalone === true
+          || window.matchMedia("(display-mode: standalone)").matches;
     }
 
     async function fetchVendor(id) {
       try {
-        const res = await fetch(API_BASE + "/api/vendors/" + id);
+        // Public endpoint — no JWT required
+        const res = await fetch(API_BASE + "/api/public/vendors/" + id);
         if (res.ok) return await res.json();
       } catch {}
       return null;
     }
 
     function startCountdown(secs, cb) {
-      let remaining = secs;
+      let rem = secs;
       const el = document.getElementById("countdown");
       if (!el) return;
-      el.textContent = "Redirecting in " + remaining + "s…";
+      el.textContent = "Redirecting in " + rem + "s…";
       const t = setInterval(() => {
-        remaining--;
-        if (el) el.textContent = "Redirecting in " + remaining + "s…";
-        if (remaining <= 0) { clearInterval(t); cb(); }
+        rem--;
+        if (el) el.textContent = "Redirecting in " + rem + "s…";
+        if (rem <= 0) { clearInterval(t); cb(); }
       }, 1000);
     }
 
@@ -162,6 +171,7 @@
       const params = new URLSearchParams(location.search);
       const vendorId = params.get("v");
 
+      /* ── No vendor param — generic splash ── */
       if (!vendorId) {
         card.innerHTML = `
           <div class="app-logo">🚚</div>
@@ -174,6 +184,198 @@
         return;
       }
 
+      /* ── Fetch vendor info (no auth needed) ── */
+      const vendor = await fetchVendor(vendorId);
+
+      if (!vendor) {
+        card.innerHTML = `
+          <div class="app-logo">🚚</div>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Business Wheels</title>
+  <meta name="description" content="On-demand local delivery" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#f5a623" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Business Wheels" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f13;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 20px;
+      padding: 40px 28px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+    }
+    .app-logo { font-size: 40px; margin-bottom: 4px; }
+    .app-name { font-size: 20px; font-weight: 700; color: #f5a623; margin-bottom: 2px; }
+    .app-tagline { font-size: 12px; color: #666; margin-bottom: 28px; }
+    .divider { border: none; border-top: 1px solid #2a2a3a; margin: 24px 0; }
+    .vendor-emoji { font-size: 60px; margin-bottom: 14px; }
+    .vendor-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .vendor-meta { font-size: 13px; color: #888; margin-bottom: 12px; }
+    .ready-badge {
+      display: inline-block;
+      background: rgba(245,166,35,0.12);
+      color: #f5a623;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 20px;
+      margin-bottom: 28px;
+    }
+    .added-banner {
+      background: rgba(76,175,80,0.1);
+      border: 1px solid rgba(76,175,80,0.25);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #4caf50;
+    }
+    .added-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .already-banner {
+      background: rgba(245,166,35,0.08);
+      border: 1px solid rgba(245,166,35,0.2);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #f5a623;
+    }
+    .already-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 10px;
+      text-decoration: none;
+      text-align: center;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #f5a623; color: #0f0f13; }
+    .btn-ghost { background: #252535; color: #f0f0f0; }
+    .stores-count { font-size: 12px; color: #555; margin-top: 14px; }
+    .stores-count span { color: #f5a623; font-weight: 600; }
+    .feature-list { font-size: 12px; color: #555; margin-top: 16px; line-height: 2; }
+    .loading { color: #666; font-size: 14px; }
+    .error { color: #f55; font-size: 14px; margin-bottom: 16px; }
+    .countdown { font-size: 12px; color: #555; margin-top: 12px; }
+    .ios-hint {
+      display: none;
+      margin-top: 14px;
+      background: #252535;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #aaa;
+      text-align: left;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="loading">Loading…</div>
+  </div>
+
+  <script>
+    const API_BASE    = "https://businesswheels-production.up.railway.app";
+    const STORAGE_KEY = "bw_unlocked_vendors";
+
+    /* ── PWA install prompt (Android/Chrome) ── */
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    /* ── localStorage helpers ── */
+    function getUnlocked() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+      catch { return []; }
+    }
+
+    function addVendor(id) {
+      const list = getUnlocked();
+      if (list.includes(id)) return false; // already had it
+      list.push(id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      return true; // newly added
+    }
+
+    /* ── Detect iOS Safari (no beforeinstallprompt support) ── */
+    function isIOS() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    }
+
+    /* ── Is already running as installed PWA? ── */
+    function isInstalled() {
+      return window.navigator.standalone === true
+          || window.matchMedia("(display-mode: standalone)").matches;
+    }
+
+    async function fetchVendor(id) {
+      try {
+        // Public endpoint — no JWT required
+        const res = await fetch(API_BASE + "/api/public/vendors/" + id);
+        if (res.ok) return await res.json();
+      } catch {}
+      return null;
+    }
+
+    function startCountdown(secs, cb) {
+      let rem = secs;
+      const el = document.getElementById("countdown");
+      if (!el) return;
+      el.textContent = "Redirecting in " + rem + "s…";
+      const t = setInterval(() => {
+        rem--;
+        if (el) el.textContent = "Redirecting in " + rem + "s…";
+        if (rem <= 0) { clearInterval(t); cb(); }
+      }, 1000);
+    }
+
+    async function init() {
+      const card = document.getElementById("card");
+      const params = new URLSearchParams(location.search);
+      const vendorId = params.get("v");
+
+      /* ── No vendor param — generic splash ── */
+      if (!vendorId) {
+        card.innerHTML = `
+          <div class="app-logo">🚚</div>
+          <div class="app-name">Business Wheels</div>
+          <div class="app-tagline">On-demand local delivery</div>
+          <p style="color:#666;font-size:14px;margin-top:8px">
+            Scan a store's QR code to get started.
+          </p>
+        `;
+        return;
+      }
+
+      /* ── Fetch vendor info (no auth needed) ── */
       const vendor = await fetchVendor(vendorId);
 
       if (!vendor) {
@@ -186,60 +388,115 @@
         return;
       }
 
-      const isNew = addVendor(vendorId);
-      const totalUnlocked = getUnlocked().length;
+      /*
+       * KEY LOGIC — decide returning vs new BEFORE adding this vendor.
+       *
+       * isReturning = had at least one store already in localStorage.
+       *   → They've used the app before. App is installed. Just add the store.
+       *
+       * !isReturning = zero stores before this scan.
+       *   → First time ever. Show install prompt.
+       *
+       * We deliberately do NOT use sessionStorage / JWT here because
+       * sessionStorage is wiped on tab close, making every re-open look "new".
+       */
+      const existingVendors = getUnlocked();        // snapshot BEFORE adding
+      const isReturning     = existingVendors.length > 0;
+      const isNew           = addVendor(vendorId);  // add to localStorage
+      const totalUnlocked   = getUnlocked().length;
 
-      if (hasSession()) {
+      /* ───────────────────────────────────────────────────────────
+         RETURNING CUSTOMER
+         Had ≥1 store before → app is already on their device.
+         Just show what was added and redirect.
+      ──────────────────────────────────────────────────────────── */
+      if (isReturning) {
+        const bannerHtml = isNew
+          ? `<div class="added-banner">
+               <strong>✅ ${vendor.name} added!</strong>
+               You can now order from ${vendor.name}
+             </div>`
+          : `<div class="already-banner">
+               <strong>👍 Already in your app</strong>
+               ${vendor.name} is already available to you
+             </div>`;
+
         card.innerHTML = `
           <div class="app-logo">🚚</div>
           <div class="app-name">Business Wheels</div>
           <div class="app-tagline">On-demand local delivery</div>
           <hr class="divider" />
-          <div class="vendor-emoji">${vendor.img}</div>
+            <div class="vendor-emoji">${vendor.img}</div>
           <div class="vendor-name">${vendor.name}</div>
           <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
-          <div class="added-banner">
-            <strong>${isNew ? "✅ Added to your app!" : "✅ Already in your app"}</strong>
-            ${isNew ? "You can now order from " + vendor.name : vendor.name + " is already available"}
-          </div>
+          ${bannerHtml}
           <a class="btn btn-primary" href="/customer/">Shop Now →</a>
           <div class="stores-count">
             You have <span>${totalUnlocked}</span> store${totalUnlocked !== 1 ? "s" : ""} unlocked
           </div>
           <div class="countdown" id="countdown"></div>
         `;
+
         startCountdown(3, () => { window.location.href = "/customer/"; });
-
-      } else {
-        card.innerHTML = `
-          <div class="app-logo">🚚</div>
-          <div class="app-name">Business Wheels</div>
-          <div class="app-tagline">On-demand local delivery</div>
-          <hr class="divider" />
-          <div class="vendor-emoji">${vendor.img}</div>
-          <div class="vendor-name">${vendor.name}</div>
-          <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
-          <div class="ready-badge">⚡ Ready to deliver</div>
-          <a class="btn btn-primary" href="/customer/">Get Started →</a>
-          <button class="btn btn-ghost btn-install" id="installBtn">📲 Add to Home Screen</button>
-          <div class="feature-list">
-            🛒 Browse menu &nbsp;·&nbsp; 🚴 Track delivery &nbsp;·&nbsp; ❤️ Save favourites
-          </div>
-        `;
-
-        if (deferredPrompt) {
-          document.getElementById("installBtn").style.display = "block";
-        }
-
-        document.getElementById("installBtn")?.addEventListener("click", async () => {
-          if (!deferredPrompt) return;
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          if (outcome === "accepted") window.location.href = "/customer/";
-        });
+        return;
       }
+
+      /* ────────────────────────────────────────────────────────────
+         NEW CUSTOMER — first scan ever
+         0 stores before this scan → show install prompt.
+      ──────────────────────────────────────────────────────────── */
+      card.innerHTML = `
+        <div class="app-logo">🚚</div>
+        <div class="app-name">Business Wheels</div>
+        <div class="app-tagline">On-demand local delivery</div>
+        <hr class="divider" />
+        <div class="vendor-emoji">${vendor.img}</div>
+        <div class="vendor-name">${vendor.name}</div>
+        <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
+        <div class="ready-badge">⚩ Ready to deliver</div>
+        <a class="btn btn-primary" href="/customer/">Get Started →</a>
+        <button class="btn btn-ghost" id="installBtn" style="display:none">
+          📲 Add to Home Screen
+        </button>
+        <div class="ios-hint" id="iosHint">
+          📲 To install: tap the <strong>Share</strong> button in Safari,
+          then choose <strong>"Add to Home Screen"</strong>
+        </div>
+        <div class="feature-list">
+          🛒 Browse menu &nbsp;·&nbsp; 🚴 Track delivery &nbsp;·&nbsp; ❤️ Save favourites
+        </div>
+      `;
+
+      const installBtn = document.getElementById("installBtn");
+      const iosHint    = document.getElementById("iosHint");
+
+      /* Show iOS install hint */
+      if (isIOS() && !isInstalled()) {
+        if (iosHint) iosHint.style.display = "block";
+      }
+
+      /* Show Android install button if prompt already fired */
+      if (deferredPrompt && installBtn) {
+        installBtn.style.display = "block";
+      }
+
+      /* Also catch prompt that fires after render */
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (installBtn) installBtn.style.display = "block";
+      });
+
+      installBtn?.addEventListener("click", async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (outcome === "accepted") window.location.href = "/customer/";
+      });
     }
 
+    /* ── Register service worker ── */
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
@@ -247,4 +504,4 @@
     init();
   </script>
 </body>
-  </html>
+</html>
