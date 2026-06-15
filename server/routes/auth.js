@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { db } = require("../config/firebase");
+const { admin, db } = require("../config/firebase");
 const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
@@ -91,6 +91,52 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error("login:", err);
     res.status(500).json({ error: "Login failed" });
+  }
+});
+
+/* ── POST /api/auth/google ──────────────────────────────────── */
+router.post("/google", async (req, res) => {
+  try {
+    const { idToken, role } = req.body;
+    if (!idToken) return res.status(400).json({ error: "idToken required" });
+
+    // Verify Firebase ID token
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const { uid, email, name: firebaseName, picture } = decoded;
+
+    // Check if user exists in Firestore
+    let userSnap = await db.collection("users").doc(uid).get();
+
+    if (!userSnap.exists) {
+      // New user — create with requested role (default: customer)
+      const now = new Date().toISOString();
+      const userRole = ["customer", "merchant", "admin"].includes(role) ? role : "customer";
+      const name = firebaseName || (email ? email.split("@")[0] : "User");
+
+      const userData = {
+        uid, email, passwordHash: null, role: userRole,
+        name, phone: null, authProvider: "google",
+        photoURL: picture || null, createdAt: now,
+      };
+      await db.collection("users").doc(uid).set(userData);
+
+      if (userRole === "customer") {
+        await db.collection("customers").doc(uid).set({
+          userId: uid, name, address: null, lat: null, lng: null,
+          joined: now.slice(0, 10), createdAt: now,
+        });
+        await db.collection("favorites").doc(uid).set({ vendorIds: [] });
+      }
+
+      userSnap = await db.collection("users").doc(uid).get();
+    }
+
+    const user = userSnap.data();
+    const token = signToken(user);
+    res.json({ token, user: { uid: user.uid, email: user.email, role: user.role, name: user.name } });
+  } catch (err) {
+    console.error("google auth:", err);
+    res.status(401).json({ error: "Google authentication failed" });
   }
 });
 
