@@ -296,6 +296,10 @@
       emit();
     },
 
+    clearDemoData: async () => {
+      return del("/api/admin/clear-demo");
+    },
+
     upsertVendor: async (vendor) => {
       const { id, ...rest } = vendor;
       let saved;
