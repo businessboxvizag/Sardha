@@ -186,6 +186,7 @@
     Auth,
     login:  (email, password) => post("/api/auth/login",    { email, password }),
     register: (data)           => post("/api/auth/register", data),
+    loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     logout: () => {
       Auth.clearSession();
       if (_socket) { _socket.disconnect(); _socket = null; }
