@@ -49,9 +49,10 @@
           <h2 class="auth-title">Business Wheels</h2>
           <p class="auth-sub" id="authSub">${roleLabel} sign in</p>
 
+          ${role !== "admin" ? `
           <button class="btn google-btn" id="googleSignIn">${GOOGLE_SVG}</button>
-
           <div class="auth-divider"><span>or</span></div>
+          ` : ""}
 
           <div class="field" id="nameField" style="display:none">
             <label>Full name</label>
@@ -79,7 +80,8 @@
     `;
 
     /* ── Google Sign-In ── */
-    document.getElementById("googleSignIn").addEventListener("click", async () => {
+    const googleBtn = document.getElementById("googleSignIn");
+    if (googleBtn) googleBtn.addEventListener("click", async () => {
       const errEl = document.getElementById("authErr");
       errEl.textContent = "";
       const fbAuth = getFirebaseAuth();
