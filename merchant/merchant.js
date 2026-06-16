@@ -143,7 +143,7 @@
         await BW.loadVendorProducts(vendor.id);
         BW.joinVendorRoom(vendor.id);
         BW.subscribe(() => render());
-        toast("Your store is ready! ð");
+        toast("Your store is ready!");
         render();
       } catch (err) {
         errEl.textContent = err.message || "Failed to create store.";
@@ -188,18 +188,17 @@
 
     const pending = BW.orders({ vendorId: state.vendorId, status: S.PLACED }).length;
     const nav = el("div", { class: "sidebar" }, [
-      navItem("orders",    "ð", "Orders",       pending),
-      navItem("dispatch",  "ðµ", "Live Dispatch"),
-      navItem("inventory", "ð¦", "Inventory"),
-      navItem("customers", "ð¥", "Customers"),
-      navItem("qr",        "ð±", "My QR Code"),
+      navItem("orders",    "Orders",       pending),
+      navItem("dispatch",  "Live Dispatch"),
+      navItem("inventory", "Inventory"),
+      navItem("customers", "Customers"),
+      navItem("qr",        "QR Code"),
     ]);
 
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
 
-    function navItem(route, ico, label, count) {
+    function navItem(route, label, count) {
       return el("div", { class: "nav-item" + (active === route ? " active" : ""), onClick: () => go(route) }, [
-        el("span", { class: "ico" }, ico),
         el("span", { style: "flex:1" }, label),
         count ? el("span", { class: "badge PLACED" }, String(count)) : document.createTextNode(""),
       ]);
@@ -228,8 +227,7 @@
       list.forEach((o) => col.appendChild(orderCard(o)));
       cols.appendChild(col);
     });
-
-    shell("orders", [
+     shell("orders", [
       el("h1", { class: "page-title" }, "Orders"),
       el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " Â· accept new orders, then dispatch a rider."),
       cols,
@@ -265,7 +263,7 @@
       ]),
       el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " Â· " + itemCount + " items Â· " + money(o.total)),
       el("div", { class: "small muted" }, o.items.map((l) => l.qty + "Ã " + l.name).join(", ")),
-      riderName ? el("div", { class: "small", style: "margin-top:6px" }, "ðµ " + riderName) : document.createTextNode(""),
+      riderName ? el("div", { class: "small muted", style: "margin-top:6px" }, "Rider: " + riderName) : document.createTextNode(""),
       actions.length ? el("div", { class: "row", style: "gap:8px;margin-top:10px" }, actions) : document.createTextNode(""),
     ]);
   }
@@ -321,7 +319,7 @@
         el("div", { class: "row between" }, [
           el("div", {}, [
             el("div", { style: "font-weight:600" }, "ðµ " + r.name),
-            el("div", { class: "muted small" }, r.vehicle + " Â· â­ " + r.rating + " Â· " + (isFinite(dist) ? dist.toFixed(1) + " km" : "â")),
+            el("div", { class: "muted small" }, r.vehicle + " Â· " + r.rating + " rating Â· " + (isFinite(dist) ? dist.toFixed(1) + " km away" : "â")),
           ]),
           el("div", { class: "row", style: "gap:8px" }, [
             el("span", { class: "badge " + r.status }, r.status.replace("_", " ")),
@@ -376,7 +374,7 @@
         el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
         el("td", {}, cust ? cust.name : "â"),
         el("td", {}, statusBadge(o.status)),
-        el("td", {}, r ? "ðµ " + r.name : el("span", { class: "muted" }, "â")),
+        el("td", {}, r ? r.name : el("span", { class: "muted" }, "â")),
         el("td", {}, el("div", { class: "row", style: "gap:6px" }, act)),
       ]);
     }) : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:24px" }, "No active deliveries."))];
@@ -629,13 +627,13 @@
         el("div", { style: "background:#fff9f5;border:1px solid #ffe0c8;border-radius:12px;padding:20px;margin-bottom:16px" }, [
           el("h3", { style: "margin:0 0 14px;font-size:14px;color:#f07830" }, "How it works"),
           ...[
-            ["1ï¸â£", "Customer scans QR code with their phone"],
-            ["2ï¸â£", "First-time? They install the app â your store loads automatically"],
-            ["3ï¸â£", "Returning? Your store is added to their existing app"],
-            ["4ï¸â£", "They can collect stores from multiple merchants over time"],
-          ].map(([ico, text]) =>
-            el("div", { style: "display:flex;gap:10px;margin-bottom:10px;font-size:13px;color:#555" }, [
-              el("span", {}, ico),
+            ["1.", "Customer scans QR code with their phone"],
+            ["2.", "First-time? They install the app â your store loads automatically"],
+            ["3.", "Returning? Your store is added to their existing app"],
+            ["4.", "They can collect stores from multiple merchants over time"],
+          ].map(([num, text]) =>
+            el("div", { style: "display:flex;gap:12px;margin-bottom:10px;font-size:13px;color:#555;align-items:flex-start" }, [
+              el("span", { style: "font-weight:700;color:#f07830;min-width:16px" }, num),
               el("span", {}, text),
             ])
           ),
@@ -647,13 +645,13 @@
           target: "_blank",
           class: "btn primary",
           style: "display:block;text-align:center;text-decoration:none;padding:14px;border-radius:10px;font-weight:600;margin-bottom:10px",
-        }, "â¬ï¸ Download QR Image"),
+        }, "Download QR Image"),
 
         el("button", {
           class: "btn",
           style: "display:block;width:100%;padding:14px;border-radius:10px;font-weight:600;cursor:pointer",
           onClick: () => { navigator.clipboard?.writeText(scanUrl).then(() => toast("Link copied!")); },
-        }, "ð Copy Scan Link"),
+        }, "Copy Scan Link"),
       ]),
     ];
 
