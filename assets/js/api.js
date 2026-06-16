@@ -1,12 +1,12 @@
 /* =====================================================================
- * Business Wheels — API Client
+ * Business Wheels â API Client
  * ---------------------------------------------------------------------
  * Drop-in replacement for store.js.  Exposes window.BW with the same
- * synchronous read interface (vendors(), orders(), …) backed by a
+ * synchronous read interface (vendors(), orders(), â¦) backed by a
  * local cache that is populated from the real Node/Firebase backend.
  *
- * Mutations (placeOrder, setOrderStatus, assignRider, …) are async
- * — they POST/PATCH the server and refresh the cache.  Socket.io
+ * Mutations (placeOrder, setOrderStatus, assignRider, â¦) are async
+ * â they POST/PATCH the server and refresh the cache.  Socket.io
  * pushes live updates so every tab/device stays in sync.
  *
  * Auth: JWT stored in sessionStorage under "bw_token".
@@ -14,11 +14,11 @@
 (function (global) {
   "use strict";
 
-  /* ── Configuration ────────────────────────────────────────── */
+  /* ââ Configuration ââââââââââââââââââââââââââââââââââââââââââ */
   // Update this if your backend runs on a different origin
   const API_BASE = window.BW_API_BASE || "http://localhost:3000";
 
-  /* ── Order status constants (same as server) ──────────────── */
+  /* ââ Order status constants (same as server) ââââââââââââââââ */
   const STATUS = {
     PLACED: "PLACED", ACCEPTED: "ACCEPTED", ASSIGNED: "ASSIGNED",
     PICKED_UP: "PICKED_UP", OUT_FOR_DELIVERY: "OUT_FOR_DELIVERY",
@@ -34,7 +34,7 @@
     DELIVERED: "Delivered", CANCELLED: "Cancelled",
   };
 
-  /* ── Auth helpers ─────────────────────────────────────────── */
+  /* ââ Auth helpers âââââââââââââââââââââââââââââââââââââââââââ */
   const Auth = {
     getToken: () => sessionStorage.getItem("bw_token"),
     getUser:  () => { try { return JSON.parse(sessionStorage.getItem("bw_user")); } catch { return null; } },
@@ -49,7 +49,7 @@
     isLoggedIn: () => !!sessionStorage.getItem("bw_token"),
   };
 
-  /* ── HTTP helpers ─────────────────────────────────────────── */
+  /* ââ HTTP helpers âââââââââââââââââââââââââââââââââââââââââââ */
   async function api(method, path, body) {
     const token = Auth.getToken();
     const res = await fetch(API_BASE + path, {
@@ -71,18 +71,18 @@
   const patch = (path, body) => api("PATCH",  path, body);
   const del  = (path)        => api("DELETE", path);
 
-  /* ── Local cache ──────────────────────────────────────────── */
+  /* ââ Local cache ââââââââââââââââââââââââââââââââââââââââââââ */
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
   };
 
-  /* ── Pub/sub ──────────────────────────────────────────────── */
+  /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
   const _listeners = new Set();
   function emit() { _listeners.forEach((fn) => { try { fn(_cache); } catch (e) { console.error(e); } }); }
   function subscribe(fn) { _listeners.add(fn); return () => _listeners.delete(fn); }
 
-  /* ── Socket.io ────────────────────────────────────────────── */
+  /* ââ Socket.io ââââââââââââââââââââââââââââââââââââââââââââââ */
   let _socket = null;
 
   function connectSocket() {
@@ -117,7 +117,7 @@
     });
   }
 
-  /* ── Init: load all data, connect socket ──────────────────── */
+  /* ââ Init: load all data, connect socket ââââââââââââââââââââ */
   async function init(role) {
     // Determine what to load based on role
     const loads = [
@@ -157,14 +157,14 @@
     return _cache;
   }
 
-  /* ── Load vendor products lazily (merchant inventory) ─────── */
+  /* ââ Load vendor products lazily (merchant inventory) âââââââ */
   async function loadVendorProducts(vendorId) {
     const prods = await get(`/api/vendors/${vendorId}/products`);
     _cache.products[vendorId] = prods;
     return prods;
   }
 
-  /* ── Refresh helpers ──────────────────────────────────────── */
+  /* ââ Refresh helpers ââââââââââââââââââââââââââââââââââââââââ */
   async function refreshOrders(vendorId) {
     const path = vendorId ? `/api/orders?vendorId=${vendorId}` : "/api/orders";
     _cache.orders = await get(path);
@@ -175,9 +175,9 @@
     emit();
   }
 
-  /* ─────────────────────────────────────────────────────────── */
+  /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
   /* PUBLIC API  (window.BW)                                     */
-  /* ─────────────────────────────────────────────────────────── */
+  /* âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ */
   const API = {
     /* Constants */
     STATUS, STATUS_FLOW, STATUS_LABEL,
@@ -204,7 +204,7 @@
     /* Init */
     init,
 
-    /* ── Synchronous reads from cache ── */
+    /* ââ Synchronous reads from cache ââ */
     vendors:       () => [..._cache.vendors],
     vendor:        (id) => _cache.vendors.find((v) => v.id === id) || null,
     products:      (vendorId) => vendorId ? (_cache.products[vendorId] || []) : Object.values(_cache.products).flat(),
@@ -224,7 +224,7 @@
     favorites:     ()   => [..._cache.favorites],
     analytics:     ()   => _cache.analytics,
 
-    /* ── Async mutations ── */
+    /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items }) => {
       const order = await post("/api/orders", { vendorId, items });
       _cache.orders.unshift(order);
@@ -257,6 +257,19 @@
       if (r) r.status = "on_delivery";
       emit();
       return order;
+    },
+
+    // Auto-pick nearest available fleet rider â no manual selection needed
+    autoAssignRider: async (orderId) => {
+      const result = await post(`/api/orders/${orderId}/auto-assign`, {});
+      const { order, rider } = result;
+      const idx = _cache.orders.findIndex((o) => o.id === orderId);
+      if (idx >= 0) _cache.orders[idx] = order;
+      // Mark rider busy in cache
+      const r = _cache.riders.find((r) => r.id === rider.id);
+      if (r) r.status = "on_delivery";
+      emit();
+      return { order, rider };
     },
 
     setRiderStatus: async (riderId, status) => {
