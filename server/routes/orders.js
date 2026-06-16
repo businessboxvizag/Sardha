@@ -18,7 +18,7 @@ function emitOrderUpdate(io, order) {
   io.to("admin").emit("order:updated", order);
 }
 
-/* ── GET /api/orders ────────────────────────────────────────── */
+/* ââ GET /api/orders ââââââââââââââââââââââââââââââââââââââââââ */
 router.get("/", requireAuth, async (req, res) => {
   try {
     let query = db.collection("orders");
@@ -39,20 +39,20 @@ router.get("/", requireAuth, async (req, res) => {
     }
 
     // Optional filters
-    if (req.query.status) query = query.where("status", "==", req.query.status);
+  2 if (req.query.status) query = query.where("status", "==", req.query.status);
 
-const snap = await query.get();
-        const orders = snap.docs.map(toOrder).sort((a, b) =>
-                new Date(b.createdAt) - new Date(a.createdAt)
-                                                       );
-        res.json(orders);
+    const snap = await query.get();
+    const orders = snap.docs.map(toOrder).sort((a, b) =>
+      new Date(b.createdAt) - new Date(a.createdAt)
+    );
+    res.json(orders);
   } catch (err) {
     console.error("GET /orders:", err);
     res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
-/* ── GET /api/orders/:id ────────────────────────────────────── */
+/* ââ GET /api/orders/:id ââââââââââââââââââââââââââââââââââââââ */
 router.get("/:id", requireAuth, async (req, res) => {
   try {
     const doc = await db.collection("orders").doc(req.params.id).get();
@@ -63,7 +63,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-/* ── POST /api/orders  (customer places order) ──────────────── */
+/* ââ POST /api/orders  (customer places order) ââââââââââââââââ */
 router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
   try {
     const { vendorId, items } = req.body;
@@ -119,7 +119,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
   }
 });
 
-/* ── PATCH /api/orders/:id/status ───────────────────────────── */
+/* ââ PATCH /api/orders/:id/status âââââââââââââââââââââââââââââ */
 router.patch("/:id/status", requireAuth, async (req, res) => {
   try {
     const { status } = req.body;
@@ -168,7 +168,7 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   }
 });
 
-/* ── PATCH /api/orders/:id/advance ─────────────────────────── */
+/* ââ PATCH /api/orders/:id/advance âââââââââââââââââââââââââââ */
 router.patch("/:id/advance", requireAuth, async (req, res) => {
   try {
     const ref = db.collection("orders").doc(req.params.id);
@@ -210,7 +210,7 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
   }
 });
 
-/* ── PATCH /api/orders/:id/assign ─────────────────────────────
+/* ââ PATCH /api/orders/:id/assign âââââââââââââââââââââââââââââ
    Assign or reassign a rider to an order (merchant / admin)     */
 router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async (req, res) => {
   try {
@@ -230,10 +230,10 @@ router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async
 
     // Free the previously assigned rider (if any)
     if (order.riderId && order.riderId !== riderId) {
-      await db.collection("riders").doc(order.riderId).update({ status: "available" });
+      await db.collection("riders").dob(order.riderId).update({ status: "available" });
     }
 
-    await db.collection("riders").doc(riderId).update({ status: "on_delivery" });
+    await db.collection("riders").dob(riderId).update({ status: "on_delivery" });
 
     const newStatus = ["PLACED", "ACCEPTED"].includes(order.status) ? "ASSIGNED" : order.status;
     const updates = {
@@ -255,6 +255,77 @@ router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to assign rider" });
+  }
+});
+
+/* ââ POST /api/orders/:id/auto-assign âââââââââââââââââââââââââ
+   Auto-pick the nearest available fleet rider (merchant / admin) */
+router.post("/:id/auto-assign", requireAuth, requireRole("merchant", "admin"), async (req, res) => {
+  try {
+    const orderDoc = await db.collection("orders").doc(req.params.id).get();
+    if (!orderDoc.exists) return res.status(404).json({ error: "Order not found" });
+    const order = orderDoc.data();
+
+    // Get vendor location so we can rank by proximity
+    const vendorDoc = await db.collection("vendors").doc(order.vendorId).get();
+    const vendor = vendorDoc.exists ? vendorDoc.data() : null;
+    const vLat = vendor?.lat || 0;
+    const vLng = vendor?.lng || 0;
+
+    // Fetch all available riders from the shared fleet
+    const ridersSnap = await db.collection("riders").where("status", "==", "available").get();
+    if (ridersSnap.empty) {
+      return res.status(409).json({ error: "No available riders right now. Try again shortly." });
+    }
+
+    // Rank by distance to vendor (haversine)
+    function haversine(la1, lo1, la2, lo2) {
+      if (!la1 || !lo1 || !la2 || !lo2) return Infinity;
+      const R = 6371, toR = (d) => (d * Math.PI) / 180;
+      const dLa = toR(la2 - la1), dLo = toR(lo2 - lo1);
+      const a = Math.sin(dLa / 2) ** 2 + Math.cos(toR(la1)) * Math.cos(toR(la2)) * Math.sin(dLo / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    const ranked = ridersSnap.docs
+      .map((d) => ({ id: d.id, ...d.data(), dist: haversine(d.data().lat, d.data().lng, vLat, vLng) }))
+      .sort((a, b) => a.dist - b.dist);
+
+    const rider = ranked[0];
+    const now = new Date().toISOString();
+
+    // Free any previously assigned rider
+    if (order.riderId && order.riderId !== rider.id) {
+      await db.collection("riders").dob(order.riderId).update({ status: "available" });
+    }
+
+    await db.collection("riders").dob(rider.id).update({ status: "on_delivery" });
+
+    const newStatus = ["PLACED", "ACCEPTED"].includes(order.status) ? "ASSIGNED" : order.status;
+    const updates = {
+      riderId: rider.id,
+      status: newStatus,
+      updatedAt: now,
+      history: [
+        ...(order.history || []),
+        { status: "ASSIGNED", at: now, note: "Auto-assigned to " + rider.name },
+      ],
+    };
+
+    await db.collection("orders").doc(req.params.id).update(updates);
+    const updated = await db.collection("orders").doc(req.params.id).get();
+    const updatedOrder = toOrder(updated);
+
+    emitOrderUpdate(req.app.get("io"), updatedOrder);
+
+    // Also notify rider's room
+    const io = req.app.get("io");
+    if (io) io.to(`rider:${rider.id}`).emit("order:assigned", updatedOrder);
+
+    res.json({ order: updatedOrder, rider: { id: rider.id, name: rider.name, vehicle: rider.vehicle, dist: rider.dist } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to auto-assign rider" });
   }
 });
 
