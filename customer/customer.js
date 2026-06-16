@@ -1,12 +1,12 @@
 /* =========================================================
- * Customer App — real API version
+ * Customer App â real API version
  * ========================================================= */
 (function () {
   "use strict";
   const { el, money, timeAgo, clockTime, toast, topbar, project, statusBadge, tracker } = UI;
 
   const state = {
-    route: "discover",
+    route: "stores",
     vendorId: null,
     trackOrderId: null,
     cart: {},
@@ -77,17 +77,17 @@
     const user = BW.Auth.getUser();
 
     const cartBtn = el("button", { class: "btn primary sm", onClick: openCart }, [
-      document.createTextNode("🛒 Cart"),
+      document.createTextNode("ð Cart"),
       cartCount() ? el("span", { class: "badge", style: "background:#1a1205" }, String(cartCount())) : document.createTextNode(""),
     ]);
     const logoutBtn = el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out");
 
-    root.appendChild(topbar("Customer · " + (user ? user.name : ""), [cartBtn, logoutBtn]));
+    root.appendChild(topbar("Customer Â· " + (user ? user.name : ""), [cartBtn, logoutBtn]));
 
     const nav = el("div", { class: "sidebar" }, [
-      navItem("discover",  "🔍", "Discover"),
-      navItem("history",   "🧾", "My Orders"),
-      navItem("favorites", "❤️",  "Favorites"),
+      navItem("stores",    "ðª", "My Stores"),
+      navItem("history",   "ð§¾", "My Orders"),
+      navItem("favorites", "â¤ï¸",  "Favorites"),
     ]);
 
     const content = el("div", { class: "content" }, body);
@@ -101,49 +101,59 @@
     }
   }
 
-  /* ---- Unlocked vendors helpers ---- */
+  /* ---- Unlocked vendors (QR-only) ---- */
   function getUnlockedVendors() {
     try {
       const raw = localStorage.getItem("bw_unlocked_vendors");
-      if (!raw) return null;
+      if (!raw) return [];
       const list = JSON.parse(raw);
-      return Array.isArray(list) && list.length > 0 ? list : null;
-    } catch { return null; }
+      return Array.isArray(list) ? list : [];
+    } catch { return []; }
   }
 
-  /* ====================== DISCOVER ====================== */
-  function viewDiscover() {
-    const favs = BW.favorites();
+  /* ====================== MY STORES ====================== */
+  function viewStores() {
     const unlocked = getUnlockedVendors();
+    const favs = BW.favorites();
+
+    // Empty state â no QR scans yet
+    if (!unlocked.length) {
+      shell("stores", [
+        el("h1", { class: "page-title" }, "My Stores"),
+        el("div", { class: "empty", style: "margin-top:40px" }, [
+          el("div", { class: "e" }, "ð²"),
+          el("p", { style: "margin:12px 0 6px;font-size:15px;font-weight:600;color:#f0f0f0" }, "No stores yet"),
+          el("p", { class: "muted small", style: "max-width:240px;margin:0 auto;line-height:1.6" },
+            "Scan a merchant's QR code to add their store to your app."),
+        ]),
+      ]);
+      return;
+    }
 
     const searchBar = el("div", { class: "field" }, [
       el("input", {
-        placeholder: "Search vendors, food, groceries…",
+        placeholder: "Search your storesâ¦",
         value: state.search,
         onInput: (e) => { state.search = e.target.value; renderGrid(); },
       }),
     ]);
 
-    // Scan-to-unlock banner (only shown when customer arrived via QR)
-    const scanHint = unlocked
-      ? el("div", { style: "display:flex;align-items:center;gap:10px;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px" }, [
-          el("span", { style: "font-size:20px" }, "📲"),
-          el("span", { style: "flex:1;color:#bbb" }, [
-            el("strong", { style: "color:#f5a623" }, String(unlocked.length) + " store" + (unlocked.length !== 1 ? "s" : "") + " unlocked"),
-            document.createTextNode(" · Scan more QR codes to add stores"),
-          ]),
-        ])
-      : null;
+    const countHint = el("div", { style: "display:flex;align-items:center;gap:10px;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px" }, [
+      el("span", { style: "font-size:18px" }, "ðª"),
+      el("span", { style: "flex:1;color:#bbb" }, [
+        el("strong", { style: "color:#f5a623" }, String(unlocked.length) + " store" + (unlocked.length !== 1 ? "s" : "") + " in your collection"),
+        document.createTextNode(" Â· Scan more QR codes to add stores"),
+      ]),
+    ]);
 
     const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
-    const body = [
-      el("h1", { class: "page-title" }, "Discover nearby vendors"),
-      el("p", { class: "page-sub" }, "Order from local shops and street vendors around you."),
-      ...(scanHint ? [scanHint] : []),
+    shell("stores", [
+      el("h1", { class: "page-title" }, "My Stores"),
+      el("p", { class: "page-sub" }, "Stores you've added by scanning their QR code."),
+      countHint,
       searchBar,
       grid,
-    ];
-    shell("discover", body);
+    ]);
     renderGrid();
 
     function renderGrid() {
@@ -151,18 +161,13 @@
       if (!g) return;
       g.innerHTML = "";
 
-      const currentUnlocked = getUnlockedVendors();
       const list = BW.vendors().filter((v) => {
-        // If customer arrived via QR, only show unlocked vendors
-        if (currentUnlocked && !currentUnlocked.includes(v.id)) return false;
+        if (!unlocked.includes(v.id)) return false;
         return !state.search || (v.name + v.category + v.area).toLowerCase().includes(state.search.toLowerCase());
       });
 
       if (!list.length) {
-        const msg = currentUnlocked && !state.search
-          ? [el("div", { class: "e" }, "📲"), "Scan a store's QR code to unlock it."]
-          : [el("div", { class: "e" }, "🔍"), "No vendors match your search."];
-        g.appendChild(el("div", { class: "empty" }, msg));
+        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, "ð"), "No stores match your search."]));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));
@@ -182,12 +187,12 @@
             await BW.toggleFavorite(v.id);
             render();
           },
-        }, isFav ? "❤️" : "🤍"),
+        }, isFav ? "â¤ï¸" : "ð¤"),
       ]),
       el("h3", { style: "margin:8px 0 2px" }, v.name),
-      el("div", { class: "muted small" }, v.category + " · " + v.area),
+      el("div", { class: "muted small" }, v.category + " Â· " + v.area),
       el("div", { class: "row", style: "margin-top:10px;gap:8px" }, [
-        el("span", { class: "tag" }, "⭐ " + v.rating),
+        el("span", { class: "tag" }, "â­ " + v.rating),
         el("span", { class: "tag" }, "~" + v.prepMins + " min prep"),
       ]),
     ]);
@@ -219,26 +224,26 @@
     });
 
     const body = [
-      el("button", { class: "btn ghost sm", onClick: () => go("discover") }, "← Back"),
+      el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "â Back"),
       el("div", { class: "row between", style: "margin:14px 0 4px" }, [
         el("div", { class: "row", style: "gap:14px" }, [
           el("div", { class: "vendor-emoji", style: "font-size:44px" }, v.img),
           el("div", {}, [
             el("h1", { class: "page-title", style: "margin:0" }, v.name),
-            el("div", { class: "muted" }, v.category + " · " + v.area + " · ⭐ " + v.rating),
+            el("div", { class: "muted" }, v.category + " Â· " + v.area + " Â· â­ " + v.rating),
           ]),
         ]),
         el("button", {
           class: "btn ghost",
           onClick: async () => { await BW.toggleFavorite(v.id); render(); },
-        }, favs.includes(v.id) ? "❤️ Favorited" : "🤍 Favorite"),
+        }, favs.includes(v.id) ? "â¤ï¸ Favorited" : "ð¤ Favorite"),
       ]),
       el("div", { class: "card", style: "margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Menu"),
         list,
       ]),
     ];
-    shell("discover", body);
+    shell("stores", body);
   }
 
   /* ====================== CART ====================== */
@@ -246,7 +251,7 @@
     if (cartCount() === 0) {
       UI.modal({
         title: "Your cart",
-        body: el("div", { class: "empty" }, [el("div", { class: "e" }, "🛒"), "Your cart is empty."]),
+        body: el("div", { class: "empty" }, [el("div", { class: "e" }, "ð"), "Your cart is empty."]),
       });
       return;
     }
@@ -261,7 +266,7 @@
             el("div", { class: "muted small" }, money(l.price)),
           ]),
           el("div", { class: "qty" }, [
-            el("button", { onClick: () => { setQty(l.productId, l.qty - 1); refresh(); } }, "−"),
+            el("button", { onClick: () => { setQty(l.productId, l.qty - 1); refresh(); } }, "â"),
             el("span", {}, String(l.qty)),
             el("button", { onClick: () => { setQty(l.productId, l.qty + 1); refresh(); } }, "+"),
           ]),
@@ -287,11 +292,11 @@
     rebuild();
 
     closeFn = UI.modal({
-      title: "Your cart · " + v.name,
+      title: "Your cart Â· " + v.name,
       body: linesWrap,
       footer: [
         el("button", { class: "btn ghost",    onClick: () => closeFn() }, "Keep shopping"),
-        el("button", { class: "btn primary",  onClick: () => { placeOrder(); closeFn(); } }, "Place order →"),
+        el("button", { class: "btn primary",  onClick: () => { placeOrder(); closeFn(); } }, "Place order â"),
       ],
     });
   }
@@ -320,11 +325,11 @@
     if (rider) BW.joinOrderRoom(o.id);
 
     const body = [
-      el("button", { class: "btn ghost sm", onClick: () => go("history") }, "← My Orders"),
+      el("button", { class: "btn ghost sm", onClick: () => go("history") }, "â My Orders"),
       el("div", { class: "row between", style: "margin:14px 0" }, [
         el("div", {}, [
           el("h1", { class: "page-title", style: "margin:0" }, "Order " + o.id.slice(-6).toUpperCase()),
-          el("div", { class: "muted" }, v.name + " · placed " + timeAgo(o.createdAt)),
+          el("div", { class: "muted" }, v.name + " Â· placed " + timeAgo(o.createdAt)),
         ]),
         statusBadge(o.status),
       ]),
@@ -335,15 +340,15 @@
           mapFor(v, cust, rider),
           rider
             ? el("div", { class: "row between", style: "margin-top:12px" }, [
-                el("div", {}, [el("div", { style: "font-weight:600" }, "🛵 " + rider.name), el("div", { class: "muted small" }, rider.vehicle + " · ⭐ " + rider.rating)]),
+                el("div", {}, [el("div", { style: "font-weight:600" }, "ðµ " + rider.name), el("div", { class: "muted small" }, rider.vehicle + " Â· â­ " + rider.rating)]),
                 el("a", { class: "btn ghost sm", href: "tel:" + rider.phone }, "Call rider"),
               ])
-            : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a rider to be assigned…"),
+            : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a rider to be assignedâ¦"),
         ]),
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Order summary"),
           ...o.items.map((l) => el("div", { class: "row between small", style: "padding:5px 0" }, [
-            el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
+            el("span", {}, l.qty + "Ã " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
           ])),
           el("div", { class: "line", style: "border-top:1px solid var(--border);margin-top:8px;padding-top:10px" }, [
             el("strong", {}, "Total"), el("strong", {}, money(o.total)),
@@ -365,9 +370,9 @@
         el("div", { class: "lbl small" }, lbl),
       ]);
     };
-    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "🏪", "Vendor"));
-    if (customer) map.appendChild(pin(customer.lat, customer.lng, "🏠", "You"));
-    if (rider) map.appendChild(pin(rider.lat, rider.lng, "🛵", rider.name.split(" ")[0]));
+    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "ðª", "Vendor"));
+    if (customer) map.appendChild(pin(customer.lat, customer.lng, "ð ", "You"));
+    if (rider) map.appendChild(pin(rider.lat, rider.lng, "ðµ", rider.name.split(" ")[0]));
     return map;
   }
 
@@ -380,14 +385,14 @@
     if (!orders.length) {
       body = [
         el("h1", { class: "page-title" }, "My Orders"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "🧾"), "No orders yet. Discover a vendor to get started."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, "ð§¾"), "No orders yet. Scan a store's QR code to get started."]),
       ];
     } else {
       const rows = orders.map((o) => {
         const v = BW.vendor(o.vendorId);
         return el("tr", { class: "clickable", onClick: () => go("track", { trackOrderId: o.id }) }, [
           el("td", {}, el("strong", {}, o.id.slice(-6).toUpperCase())),
-          el("td", {}, v ? v.img + " " + v.name : "—"),
+          el("td", {}, v ? v.img + " " + v.name : "â"),
           el("td", {}, o.items.reduce((s, l) => s + l.qty, 0) + " items"),
           el("td", {}, money(o.total)),
           el("td", {}, statusBadge(o.status)),
@@ -416,7 +421,7 @@
     if (!vendors.length) {
       body = [
         el("h1", { class: "page-title" }, "Favorites"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "❤️"), "No favorites yet. Tap the heart on any vendor."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, "â¤ï¸"), "No favorites yet. Open a store and tap the heart."]),
       ];
     } else {
       const grid = el("div", { class: "grid cols-3" });
@@ -433,7 +438,7 @@
       case "track":     return viewTrack();
       case "history":   return viewHistory();
       case "favorites": return viewFavorites();
-      default:          return viewDiscover();
+      default:          return viewStores();
     }
   }
 
