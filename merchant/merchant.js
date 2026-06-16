@@ -442,232 +442,236 @@
       el("div", { class: "row between" }, [
         el("div", {}, [
           el("h1", { class: "page-title" }, "Inventory"),
-          el("p", { class: "page-sub" }, (vendor ? vendor.img + " " + vendor.name : "") + " Â· " + productË[Ý
-È][\ÈKJK[
-]ÛÈÛ\ÜÎ[X\HÛÛXÚÎ
+          el("p", { class: "page-sub" }, (vendor ? vendor.img + " " + vendor.name : "") + " Â· " + products.length + " items"),
+        ]),
+        el("button", { class: "btn primary", onClick: () => editProduct(null) }, "+ Add item"),
+      ]),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, headers.map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: String(headers.length), class: "muted", style: "text-align:center;padding:24px" }, "No items yet. Click \"+ Add item\" to get started."))]),
+        ]),
+      ]),
+    ]);
+  }
 
-HOY]ÙXÝ
-[
-HKÈY][HKJK[
-]ÈÛ\ÜÎØ\Ý[NY[ÎÛÝ\ÝÎY[KÂ[
-XHßKÂ[
-XYßK[
-ßKXY\ËX\
+  function editProduct(p) {
+    const vendor  = BW.vendor(state.vendorId);
+    const food    = isFoodVendor(vendor);
+    const pharma  = isPharmacyVendor(vendor);
+    const general = isGeneralVendor(vendor);
+    const isNew   = !p;
 
-
-HO[
-ßK
-JJJK[
-ÙHßKÝÜË[ÝÈÝÜÈÙ[
-ßK[
-ÈÛÛÜ[Ý[ÊXY\Ë[Ý
-KÛ\ÜÎ]]YÝ[N^X[YÛÙ[\ÜY[ÎKÈ][\ÈY]ÛXÚÈÈY][WÈÙ]Ý\YJWJKJKJKJNÂB[Ý[ÛY]ÙXÝ
-
-HÂÛÛÝ[ÜHË[ÜÝ]K[ÜY
-NÂÛÛÝÛÙH\ÑÛÙ[Ü[ÜNÂÛÛÝ\XHH\Ô\XXÞU[Ü[ÜNÂÛÛÝÙ[\[H\ÑÙ[\[[Ü[ÜNÂÛÛÝ\Ó]ÈH\ÂÛÛÝ[YTXÙZÛ\H\XHÈKË\XÙ][[ÛÛÝYÚÞ\\][Z[ø )Ù[\[ÈKËÛÜ[Ý\^Ù[ÛÛØ]x )KËX\Ø[HÜØKÛÛÛÙYx )ÂÛÛÝ[YQ[H[
-[]È[YNÈ[YHXÙZÛ\[YTXÙZÛ\JNÂÛÛÝXÙQ[H[
-[]È\N[X\[YNÈXÙHXÙZÛ\Z[JNÂÛÛÝY[ÈHÂ[
-]ÈÛ\ÜÎY[KÙ[
-X[ßK][H[YHK[YQ[JKNÂÊ8 %\XØ]YÛÜH^HY[È8 %
-Â]XÚÔ]Q[[][ÝØÚÑ[]Q[ÂY
-\XJHÂÊ\XXÞNXÚÈ]H
-È[]\H
-KËLX]ËÜÝ\L[H
-ÂXÚÔ]Q[H[
-[]Â\N[X\[YN	]HOOH[Y[YÈ]HXÙZÛ\KËLZ[Ý[NÚYLÙ^LJNÂ[][H[
-Ù[XÝßJNÂTPPÖWÕSUËÜXXÚ
+    const namePlaceholder = pharma  ? "e.g. Paracetamol, Cough Syrup, Vitamin Câ¦"
+                          : general ? "e.g. Toor Dal, Surf Excel, Colgateâ¦"
+                          :           "e.g. Masala Dosa, Cold Coffeeâ¦";
 
-JHO[][\[Ú[
-[
-Ü[ÛÈ[YNK[YK	[]OOHK[YHÈÈÙ[XÝYHßJHKKX[
-JB
-NÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÙ[
-X[ßKXÙH
-8 ®JHKXÙQ[JJNÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÂ[
-X[ßKXÚÈÚ^HK[
-]ÈÛ\ÜÎÝÈÝ[NØ\Ø[YÛZ][\ÎÙ[\KÜXÚÔ]Q[[][JK[
-]ÈÛ\ÜÎ]]YÛX[Ý[NX\Ú[]ÜKKËLX]ËÜÝ\0­ÈL[0­ÈÌØ\Ý[\È0­ÈMHÈÜX[HKJJNÂH[ÙHY
-Ù[\[
-HÂÊÙ[\[ÈÜØÙ\NXÙH\Ý[]H
-ÈÜ[Û[ÝØÚÈ]H
-Â[][H[
-Ù[XÝßJNÂÑSTSÕSUËÜXXÚ
+    const nameEl  = el("input", { value: p ? p.name : "", placeholder: namePlaceholder });
+    const priceEl = el("input", { type: "number", value: p ? p.price : "", placeholder: "0", min: "0" });
 
-JHO[][\[Ú[
-[
-Ü[ÛÈ[YNK[YK	[]OOHK[YHÈÈÙ[XÝYHßJHKKX[
-JB
-NÂÝØÚÑ[H[
-[]Â\N[X\[YN	]HOOH[Y[YÈ]HXÙZÛ\Ü[Û[Z[JNÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÂ[
-X[ßKXÙH
-8 ®JH8 %ÛÛ\K[
-]ÈÛ\ÜÎÝÈÝ[NØ\Ø[YÛZ][\ÎÙ[\KÜXÙQ[[][JKJJNÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÂ[
-X[ßKÝØÚÈ]H
-Ü[Û[
-HKÝØÚÑ[JJNÂH[ÙHÂÊÛÙ
-È]\][È[ÙNXÙH
-ÈÜ[Û[]KX]Z[XH
-ÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÙ[
-X[ßKXÙH
-8 ®JHKXÙQ[JJNÂY
-ÛÙ
-HÂ]Q[H[
-[]Â\N[X\[YN	]HOOH[Y[YÈ]HXÙZÛ\KËZ[JNÂY[Ë\Ú
-[
-]ÈÛ\ÜÎY[KÙ[
-X[ßK]X[]H]Z[XHK]Q[JJNÂBBÛÛÝÛÜÙHHRK[Ù[
-Â]N\Ó]ÈÈY][HY]][HÙN[
-]ßKY[ÊKÛÝ\Â[
-]ÛÈÛ\ÜÎÚÜÝÛÛXÚÎ
+    const fields = [
+      el("div", { class: "field" }, [el("label", {}, "Item name"), nameEl]),
+    ];
 
-HOÛÜÙJ
-HKØ[Ù[K[
-]ÛÈÛ\ÜÎ[X\HÛÛXÚÎ\Þ[È
+    /* â per-category extra fields â */
+    let packQtyEl, unitEl, stockEl, qtyEl;
 
-HOÂY
-[[YQ[[YK[J
-JHÈØ\Ý
-][H[YH\È\]Z\YNÈ]\ÈBHÂÛÛÝ^[ØYHÂYÈY[Y[Y[ÜYÝ]K[ÜY[YN[YQ[[YK[J
-KXÙNXÙQ[[YHÈ[X\XÙQ[[YJHNÂY
-\XJHÂ^[ØY[]H[][[YNÂY
-XÚÔ]Q[[YHOOHH^[ØY]HH[X\XÚÔ]Q[[YJNÂH[ÙHY
-Ù[\[
-HÂ^[ØY[]H[][[YHYXÙHÂY
-ÝØÚÑ[[YHOOHH^[ØY]HH[X\ÝØÚÑ[[YJNÂH[ÙHY
-ÛÙ	]Q[	]Q[[YHOOHHÂ^[ØY]HH[X\]Q[[YJNÂB]ØZ]Ë\Ù\ÙXÝ
-^[ØY
-NÂØ\Ý
-\Ó]ÈÈ][HYY][H\]YNÂÛÜÙJ
-NÂHØ]Ú
-\HÈØ\Ý
-\Ü
-È\Y\ÜØYÙJNÈBHKØ]HKKJNÂBÊOOOOOOOOOOOOOOOOOOOOOHÕTÕÓQTÈOOOOOOOOOOOOOOOOOOOOOH
-Â[Ý[ÛY]ÐÝ\ÝÛY\Ê
-HÂÛÛÝÜ\ÈHËÜ\ÊÈ[ÜYÝ]K[ÜYJNÂÛÛÝX\HßNÂÜ\ËÜXXÚ
+    if (pharma) {
+      /* Pharmacy: pack qty + unit type (e.g. "10 tablets/strip", "100 ml") */
+      packQtyEl = el("input", {
+        type: "number",
+        value: p && p.qty !== undefined ? p.qty : "",
+        placeholder: "e.g. 10",
+        min: "0",
+        style: "width:90px;flex:0 0 90px",
+      });
+      unitEl = el("select", {});
+      PHARMACY_UNITS.forEach((u) =>
+        unitEl.appendChild(el("option", { value: u.value, ...(p && p.unit === u.value ? { selected: "" } : {}) }, u.label))
+      );
+      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (â¹)"), priceEl]));
+      fields.push(el("div", { class: "field" }, [
+        el("label", {}, "Pack size"),
+        el("div", { class: "row", style: "gap:8px;align-items:center" }, [packQtyEl, unitEl]),
+        el("div", { class: "muted small", style: "margin-top:4px" },
+          "e.g. 10 tablets/strip Â· 100 ml Â· 30 capsules Â· 15 g cream"),
+      ]));
 
-ÊHOÂÛÛÝÈHËÝ\ÝÛY\Ê
-K[
+    } else if (general) {
+      /* General / Grocery: "Price per [unit]" + optional stock qty */
+      unitEl = el("select", {});
+      GENERAL_UNITS.forEach((u) =>
+        unitEl.appendChild(el("option", { value: u.value, ...(p && p.unit === u.value ? { selected: "" } : {}) }, u.label))
+      );
+      stockEl = el("input", {
+        type: "number",
+        value: p && p.qty !== undefined ? p.qty : "",
+        placeholder: "optional",
+        min: "0",
+      });
+      fields.push(el("div", { class: "field" }, [
+        el("label", {}, "Price (â¹) â sold per"),
+        el("div", { class: "row", style: "gap:8px;align-items:center" }, [priceEl, unitEl]),
+      ]));
+      fields.push(el("div", { class: "field" }, [
+        el("label", {}, "Stock qty (optional)"),
+        stockEl,
+      ]));
 
-ÊHOËYOOHËÝ\ÝÛY\Y
-NÂY
-XÊH]\ÂY
-[X\ØËYJHX\ØËYHHÈËÜ\ÎÜ[\ÝËÜX]Y]NÂX\ØËYKÜ\È
-ÏHNÂX\ØËYKÜ[
-ÏHËÝ[ÂY
-]È]JËÜX]Y]
-H]È]JX\ØËYK\Ý
-JHX\ØËYK\ÝHËÜX]Y]ÂJNÂÛÛÝ\ÝHØXÝ[Y\ÊX\
-KÛÜ
+    } else {
+      /* Food + everything else: price + optional qty-available */
+      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (â¹)"), priceEl]));
+      if (food) {
+        qtyEl = el("input", {
+          type: "number",
+          value: p && p.qty !== undefined ? p.qty : "",
+          placeholder: "e.g. 20",
+          min: "0",
+        });
+        fields.push(el("div", { class: "field" }, [el("label", {}, "Quantity available"), qtyEl]));
+      }
+    }
 
-KHOÜ[HKÜ[
-NÂÛÛÝÝÜÈH\Ý[ÝÈ\ÝX\
+    const close = UI.modal({
+      title: isNew ? "Add item" : "Edit item",
+      body: el("div", {}, fields),
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn primary", onClick: async () => {
+          if (!nameEl.value.trim()) { toast("Item name is required"); return; }
+          try {
+            const payload = {
+              id: p ? p.id : undefined,
+              vendorId: state.vendorId,
+              name: nameEl.value.trim(),
+              price: priceEl.value ? Number(priceEl.value) : 0,
+            };
+            if (pharma) {
+              payload.unit = unitEl.value;
+              if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value);
+            } else if (general) {
+              payload.unit = unitEl.value || "piece";
+              if (stockEl.value !== "") payload.qty = Number(stockEl.value);
+            } else if (food && qtyEl && qtyEl.value !== "") {
+              payload.qty = Number(qtyEl.value);
+            }
+            await BW.upsertProduct(payload);
+            toast(isNew ? "Item added" : "Item updated");
+            close();
+          } catch (err) { toast("Error: " + err.message); }
+        } }, "Save"),
+      ],
+    });
+  }
 
-
-HO[
-ßKÂ[
-ßK[
-ÝÛÈßKË[YJJK[
-ÈÛ\ÜÎ]]YKËÛH¸ %K[
-ßKÝ[ÊÜ\ÊJK[
-ßK[Û^JÜ[
-JK[
-ÈÛ\ÜÎ]]YÛX[K[YPYÛÊ\Ý
-JKJJHÙ[
-ßK[
-ÈÛÛÜ[HÛ\ÜÎ]]YÝ[N^X[YÛÙ[\ÜY[ÎKÈÝ\ÝÛY\ÈY]JWNÂÚ[
-Ý\ÝÛY\ÈÂ[
-HÈÛ\ÜÎYÙK]]HKÝ\ÝÛY\ÈK[
-ÈÛ\ÜÎYÙK\ÝXK[ÜHÚÈ]HÜ\YÛH[ÝK[ÙYHÜ[K[
-]ÈÛ\ÜÎØ\Ý[NY[ÎÛÝ\ÝÎY[KÂ[
-XHßKÂ[
-XYßK[
-ßKÈÝ\ÝÛY\ÛHÜ\ÈÝ[Ü[\ÝÜ\KX\
+  /* ====================== CUSTOMERS ====================== */
+  function viewCustomers() {
+    const orders = BW.orders({ vendorId: state.vendorId });
+    const map = {};
+    orders.forEach((o) => {
+      const c = BW.customers().find((c) => c.id === o.customerId);
+      if (!c) return;
+      if (!map[c.id]) map[c.id] = { c, orders: 0, spend: 0, last: o.createdAt };
+      map[c.id].orders += 1;
+      map[c.id].spend  += o.total;
+      if (new Date(o.createdAt) > new Date(map[c.id].last)) map[c.id].last = o.createdAt;
+    });
+    const list = Object.values(map).sort((a, b) => b.spend - a.spend);
 
-
-HO[
-ßK
-JJJK[
-ÙHßKÝÜÊKJKJKJNÂBÊKKKKHÙ[ÈKKKKH
-Â[Ý[Û]\Ú[JLKÌKLÌHÂY
-[LH[ÌH[L[ÌH]\[[]NÂÛÛÝH
-ÍÌKÔH
-
-HO
-
-X]JHÈNÂÛÛÝHHÔLHLJKÈHÔÌHÌJNÂÛÛÝHHX]Ú[HÈH
-
-ÈX]ÛÜÊÔLJJH
-X]ÛÜÊÔLJH
-X]Ú[ÈÈH
-Â]\
-
-X]][X]Ü\
-JKX]Ü\
-HHJJNÂBÊOOOOOOOOOOOOOOOOOOOOOHTÓÑHOOOOOOOOOOOOOOOOOOOOOH
-Â[Ý[ÛY]ÔT
-HÂÛÛÝ[ÜHË[ÜÝ]K[ÜY
-NÂY
-][ÜHÈÚ[
-\Ù[
-ÈÛ\ÜÎ]]YKÙ[XÝH[Ü\ÝWJNÈ]\ÈBÛÛÝØØ[\HÎËØ\Ú[\ÜË]ÚY[Ë\Ù[\ÜØØ[ÏÝH
-È[ÜYÂÛÛÝ\ÜÈHÎËØ\K\Ù\\ÛÛKÝKØÜX]K\\XÛÙKÏÜÚ^OL	XØÏSIÜX]\É]OH
-È[ÛÙUTPÛÛ\Û[
-ØØ[\
-NÂÛÛÝÙHHÂ[
-HÈÛ\ÜÎYÙK]]HK^HTÛÙHK[
-ÈÛ\ÜÎYÙK\ÝXK\Ü^H\ÈT][Ý\ÝÜKÝ\ÝÛY\ÈØØ[ÛÙHÈ[ØÚÈ[Ý\Ù\XÙ\ËK[
-]ÈÝ[NX^]ÚYÛX\Ú[]]ÈKÂ[
-]ÈÝ[NXÚÙÜÝ[ÙØÜ\\ÛÛYÙLÎØÜ\\Y]\ÎMÜY[ÎÝ^X[YÛÙ[\ÛX\Ú[XÝÛNØÞ\ÚYÝÎLØJL
-
-HKÂ[
-[YÈÈÜÎ\ÜËÚYZYÚ[TÛÙHÝ[N\Ü^NØÚÎÛX\Ú[]]ÈMØÜ\\Y]\ÎJK[
-]ÈÝ[NÛ\Ú^NNÙÛ]ÙZYÚÌØÛÛÜÌXLXLÛX\Ú[XÝÛNK[Ü[YÈ
-È
-È[Ü[YJK[
-]ÈÝ[NÛ\Ú^NLØÛÛÜÎNNNÝÛÜXXZÎXZËX[KØØ[\
-KJK[
-]ÈÝ[NXÚÙÜÝ[ÙYNØÜ\\ÛÛYÙLÎØÜ\\Y]\ÎLÜY[ÎÛX\Ú[XÝÛNMKÂ[
-ÈÈÝ[NX\Ú[MÙÛ\Ú^NMØÛÛÜÙ
-ÎÌKÝÈ]ÛÜÜÈKÂÈ{î#ø èÈÝ\ÝÛY\ØØ[ÈTÛÙHÚ]Z\ÛHKÈ»î#ø èÈ\Ý][YOÈ^H[Ý[H\8 %[Ý\ÝÜHØYÈ]]ÛX]XØ[HKÈûî#ø èÈ]\[ÏÈ[Ý\ÝÜH\ÈYYÈZ\^\Ý[È\KÈ;î#ø èÈ^HØ[ÛÛXÝÝÜ\ÈÛH][\HY\Ú[ÈÝ\[YHKKX\
+    const rows = list.length ? list.map((x) => el("tr", {}, [
+      el("td", {}, el("strong", {}, x.c.name)),
+      el("td", { class: "muted" }, x.c.phone || "â"),
+      el("td", {}, String(x.orders)),
+      el("td", {}, money(x.spend)),
+      el("td", { class: "muted small" }, timeAgo(x.last)),
+    ])) : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:24px" }, "No customers yet."))];
 
-ÚXÛË^JHO[
-]ÈÝ[N\Ü^N^ÙØ\LÛX\Ú[XÝÛNLÙÛ\Ú^NLÜØÛÛÜÍMMHKÂ[
-Ü[ßKXÛÊK[
-Ü[ßK^
-KJB
-KJK[
-HÂY\ÜËÝÛØY[Ü[YK\XÙJ×ÊËÙËÈH
-ÈÔTÈ\Ù]Ø[ÈÛ\ÜÎ[X\HÝ[N\Ü^NØÚÎÝ^X[YÛÙ[\Ý^YXÛÜ][ÛÛNÜY[ÎMØÜ\\Y]\ÎLÙÛ]ÙZYÚÛX\Ú[XÝÛNLK¸«!ûî#ÈÝÛØYT[XYÙHK[
-]ÛÂÛ\ÜÎÝ[N\Ü^NØÚÎÝÚYL	NÜY[ÎMØÜ\\Y]\ÎLÙÛ]ÙZYÚØÝ\ÛÜÚ[\ÛÛXÚÎ
+    shell("customers", [
+      el("h1", { class: "page-title" }, "Customers"),
+      el("p", { class: "page-sub" }, "People who have ordered from you, ranked by spend."),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Customer", "Phone", "Orders", "Total spend", "Last order"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows),
+        ]),
+      ]),
+    ]);
+  }
 
-HOÈ]YØ]ÜÛ\Ø\ËÜ]U^
-ØØ[\
-K[
+  /* ----- geo ----- */
+  function haversine(la1, lo1, la2, lo2) {
+    if (!la1 || !lo1 || !la2 || !lo2) return Infinity;
+    const R = 6371, toR = (d) => (d * Math.PI) / 180;
+    const dLa = toR(la2 - la1), dLo = toR(lo2 - lo1);
+    const a = Math.sin(dLa / 2) ** 2 + Math.cos(toR(la1)) * Math.cos(toR(la2)) * Math.sin(dLo / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
 
-HOØ\Ý
-[ÈÛÜYYHJNÈKK¼'å%ÈÛÜHØØ[[ÈKJKNÂÚ[
-\ÙJNÂB[Ý[Û[\
-HÂÝÚ]Ú
-Ý]KÝ]JHÂØ\ÙH\Ü]Ú]\Y]Ñ\Ü]Ú
+  /* ====================== QR CODE ====================== */
+  function viewQR() {
+    const vendor = BW.vendor(state.vendorId);
+    if (!vendor) { shell("qr", [el("p", { class: "muted" }, "Select a vendor first.")]); return; }
 
-NÂØ\ÙH[[ÜH]\Y]Ò[[ÜJ
-NÂØ\ÙHÝ\ÝÛY\È]\Y]ÐÝ\ÝÛY\Ê
-NÂØ\ÙH\]\Y]ÔT
-NÂY][]\Y]ÓÜ\Ê
-NÂBBÛÝ
+    const scanUrl = "https://business-wheels.vercel.app/scan/?v=" + vendor.id;
+    const qrSrc = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&ecc=M&format=png&data=" + encodeURIComponent(scanUrl);
 
-KØ]Ú
+    const body = [
+      el("h1", { class: "page-title" }, "My QR Code"),
+      el("p", { class: "page-sub" }, "Display this QR at your store. Customers scan once to unlock your services."),
 
-\HOÂÛÛÛÛK\ÜÛÝZ[Y\NÂÛÝ[\SH]Û\ÜÏHË[ØY[ÈÝ[OHÛÛÜ\K\Y
-HZ[YÈÛÛXÝÈÙ\\\ÈHXÚÙ[[[ÏÏÙ]ÂJNÂJJ
-NÂ
+      el("div", { style: "max-width:400px;margin:0 auto" }, [
+        el("div", { style: "background:#fff;border:1px solid #ffe0c8;border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;box-shadow:0 2px 12px rgba(240,120,48,0.08)" }, [
+          el("img", { src: qrSrc, width: "220", height: "220", alt: "QR Code", style: "display:block;margin:0 auto 16px;border-radius:8px" }),
+          el("div", { style: "font-size:18px;font-weight:700;color:#1a1a24;margin-bottom:4px" }, vendor.img + " " + vendor.name),
+          el("div", { style: "font-size:12px;color:#999;word-break:break-all" }, scanUrl),
+        ]),
+
+        el("div", { style: "background:#fff9f5;border:1px solid #ffe0c8;border-radius:12px;padding:20px;margin-bottom:16px" }, [
+          el("h3", { style: "margin:0 0 14px;font-size:14px;color:#f07830" }, "How it works"),
+          ...[
+            ["1ï¸â£", "Customer scans QR code with their phone"],
+            ["2ï¸â£", "First-time? They install the app â your store loads automatically"],
+            ["3ï¸â£", "Returning? Your store is added to their existing app"],
+            ["4ï¸â£", "They can collect stores from multiple merchants over time"],
+          ].map(([ico, text]) =>
+            el("div", { style: "display:flex;gap:10px;margin-bottom:10px;font-size:13px;color:#555" }, [
+              el("span", {}, ico),
+              el("span", {}, text),
+            ])
+          ),
+        ]),
+
+        el("a", {
+          href: qrSrc,
+          download: vendor.name.replace(/\s+/g, "_") + "_QR.png",
+          target: "_blank",
+          class: "btn primary",
+          style: "display:block;text-align:center;text-decoration:none;padding:14px;border-radius:10px;font-weight:600;margin-bottom:10px",
+        }, "â¬ï¸ Download QR Image"),
+
+        el("button", {
+          class: "btn",
+          style: "display:block;width:100%;padding:14px;border-radius:10px;font-weight:600;cursor:pointer",
+          onClick: () => { navigator.clipboard?.writeText(scanUrl).then(() => toast("Link copied!")); },
+        }, "ð Copy Scan Link"),
+      ]),
+    ];
+
+    shell("qr", body);
+  }
+
+  function render() {
+    switch (state.route) {
+      case "dispatch":  return viewDispatch();
+      case "inventory": return viewInventory();
+      case "customers": return viewCustomers();
+      case "qr":        return viewQR();
+      default:          return viewOrders();
+    }
+  }
+
+  boot().catch((err) => {
+    console.error("Boot failed:", err);
+    root.innerHTML = `<div class="bw-loading" style="color:var(--red)">Failed to connect to server. Is the backend running?</div>`;
+  });
+})();
