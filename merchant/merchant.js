@@ -35,18 +35,18 @@
     { value: "capsules",       label: "Capsules"                     },
     { value: "ml",             label: "ml  (Syrup / Tonic / Liquid)" },
     { value: "mg",             label: "mg  (Powder / Sachet)"        },
-    { value: "g",              label: "g   (Cream / Gel / Ointment)" },
+    { value: "g",              label: "g  (Cream / Gel / Ointment)" },
     { value: "drops",          label: "Drops  (Eye / Ear)"           },
     { value: "vial",           label: "Vial / Injection"             },
-    { value: "sachet",         label: "Sachet / Powder packet"       },
+    { value: "sachet",         label: "Sactet / Powder packet"       },
     { value: "units",          label: "Units (other)"                },
   ];
   const GENERAL_UNITS = [
     { value: "piece",   label: "Per piece / pcs"  },
     { value: "kg",      label: "Per kg"           },
-    { value: "g",       label: "Per gram (g)"     },
+    { value: "g",       label: "Per gram (g)"    },
     { value: "liter",   label: "Per liter"        },
-    { value: "ml",      label: "Per ml"           },
+    { value: "ml",      label: "Per ml"          },
     { value: "packet",  label: "Per packet"       },
     { value: "box",     label: "Per box"          },
     { value: "bottle",  label: "Per bottle"       },
@@ -227,7 +227,8 @@
       list.forEach((o) => col.appendChild(orderCard(o)));
       cols.appendChild(col);
     });
-     shell("orders", [
+
+    shell("orders", [
       el("h1", { class: "page-title" }, "Orders"),
       el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " Â· accept new orders, then dispatch a rider."),
       cols,
@@ -251,7 +252,7 @@
         catch (err) { toast("Error: " + err.message); }
       } }, "Reject"));
     } else if (o.status === S.ACCEPTED) {
-      actions.push(el("button", { class: "btn accent sm", onClick: (e) => { e.stopPropagation(); openDispatch(o); } }, "Dispatch rider"));
+      actions.push(el("button", { class: "btn accent sm", onClick: async (e) => { e.stopPropagation(); await autoDispatch(o); } }, "Dispatch rider"));
     }
 
     const riderName = o.riderId ? (BW.riders().find((r) => r.id === o.riderId) || {}).name : null;
@@ -303,35 +304,15 @@
   }
 
   /* ====================== DISPATCH ====================== */
-  function openDispatch(order) {
-    const riders = BW.riders();
-    const vendor = BW.vendor(order.vendorId);
-    const ranked = riders
-      .map((r) => ({ r, dist: haversine(r.lat, r.lng, vendor ? vendor.lat : 0, vendor ? vendor.lng : 0), avail: r.status === "available" }))
-      .sort((a, b) => (b.avail - a.avail) || (a.dist - b.dist));
-
-    const list = el("div", {});
-    if (!ranked.length) {
-      list.appendChild(el("p", { class: "muted" }, "No riders registered yet. Ask admin to add riders."));
+  // Auto-assigns the nearest available fleet rider â no manual selection
+  async function autoDispatch(order) {
+    try {
+      const { rider } = await BW.autoAssignRider(order.id);
+      const distTxt = isFinite(rider.dist) ? " Â· " + rider.dist.toFixed(1) + " km away" : "";
+      toast("Rider assigned: " + rider.name + distTxt);
+    } catch (err) {
+      toast(err.message || "No available riders right now");
     }
-    ranked.forEach(({ r, dist, avail }) => {
-      list.appendChild(el("div", { class: "card", style: "margin-bottom:10px" }, [
-        el("div", { class: "row between" }, [
-          el("div", {}, [
-            el("div", { style: "font-weight:600" }, "ðµ " + r.name),
-            el("div", { class: "muted small" }, r.vehicle + " Â· " + r.rating + " rating Â· " + (isFinite(dist) ? dist.toFixed(1) + " km away" : "â")),
-          ]),
-          el("div", { class: "row", style: "gap:8px" }, [
-            el("span", { class: "badge " + r.status }, r.status.replace("_", " ")),
-            el("button", { class: "btn primary sm", disabled: !avail, onClick: async () => {
-              try { await BW.assignRider(order.id, r.id); toast("Dispatched to " + r.name); close(); }
-              catch (err) { toast("Error: " + err.message); }
-            } }, avail ? "Assign" : "Busy"),
-          ]),
-        ]),
-      ]));
-    });
-    const close = UI.modal({ title: "Dispatch rider Â· #" + order.id.slice(-6).toUpperCase(), body: list });
   }
 
   function viewDispatch() {
@@ -363,7 +344,10 @@
       const r = o.riderId ? BW.riders().find((r) => r.id === o.riderId) : null;
       const act = [];
       if (!r && [S.ACCEPTED, S.ASSIGNED].includes(o.status)) {
-        act.push(el("button", { class: "btn accent sm", onClick: () => openDispatch(o) }, "Assign"));
+        act.push(el("button", { class: "btn accent sm", onClick: async () => {
+          try { const { rider } = await BW.autoAssignRider(o.id); toast("Assigned to " + rider.name); }
+          catch (err) { toast(err.message || "No available riders"); }
+        } }, "Auto-assign"));
       } else if (o.status !== S.DELIVERED) {
         act.push(el("button", { class: "btn primary sm", onClick: async () => {
           try { await BW.advanceOrder(o.id); }
@@ -381,7 +365,7 @@
 
     shell("dispatch", [
       el("h1", { class: "page-title" }, "Live Dispatch"),
-      el("p", { class: "page-sub" }, "Track active deliveries and assign riders in real time."),
+      el("p", { class: "page-sub" }, "Fleet riders are auto-assigned by proximity. Monitor live deliveries here."),
       el("div", { class: "grid cols-2" }, [
         el("div", { class: "card" }, [el("h3", { style: "margin-top:0" }, "Map"), map]),
         el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
