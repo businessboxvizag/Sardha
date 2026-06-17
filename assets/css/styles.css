@@ -1,5 +1,5 @@
 /* =========================================================
- * Business Wheels â shared stylesheet
+ * Business Wheels — shared stylesheet
  * ========================================================= */
 :root {
   --bg: #fdf8f4;
@@ -257,3 +257,37 @@ label { font-size: 12px; color: var(--muted); font-weight: 600; display: block; 
   animation: spin .7s linear infinite; margin: 0 auto 14px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Rider app ---------- */
+.topbar-name { font-size: 13px; font-weight: 600; color: var(--muted); }
+.btn.success { background: var(--green, #22c55e); border: none; color: #fff; }
+
+.rider-status-card {
+  margin: 20px auto; max-width: 480px; padding: 24px 20px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow); text-align: center;
+}
+.rider-status-top { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 10px; }
+.rider-deliveries-count { font-size: 12px; color: var(--muted); }
+.rider-gps-line { margin: 0; font-size: 12px; color: var(--muted); }
+
+.rider-orders { max-width: 480px; margin: 0 auto; padding: 0 16px 32px; }
+.rider-orders .page-title { margin-bottom: 14px; }
+
+.rider-card { margin-bottom: 16px; padding: 0 !important; }
+.order-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+}
+.order-id { font-size: 13px; font-weight: 700; font-family: monospace; color: var(--muted); }
+.rider-card-body { padding: 12px 16px; }
+.rider-row { display: flex; gap: 8px; margin-bottom: 8px; font-size: 14px; align-items: flex-start; }
+.rider-row:last-child { margin-bottom: 0; }
+.rider-row-label { min-width: 80px; color: var(--muted); font-weight: 500; flex-shrink: 0; }
+.rider-row-val { color: var(--text); word-break: break-word; }
+.rider-advance-btn { display: block; width: calc(100% - 32px); margin: 12px 16px 16px; font-size: 15px; font-weight: 700; padding: 13px; }
+
+@media (max-width: 520px) {
+  .rider-status-card { margin: 12px; border-radius: 12px; }
+  .rider-orders { padding: 0 12px 24px; }
+}

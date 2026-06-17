@@ -12,10 +12,10 @@ const toOrder = (doc) => ({ id: doc.id, ...doc.data() });
 
 function emitOrderUpdate(io, order) {
   if (!io) return;
-  // Broadcast to vendor room, customer room, and admin room
   io.to(`vendor:${order.vendorId}`).emit("order:updated", order);
   io.to(`customer:${order.customerId}`).emit("order:updated", order);
   io.to("admin").emit("order:updated", order);
+  if (order.riderId) io.to(`rider:${order.riderId}`).emit("order:updated", order);
 }
 
 /* ââ GET /api/orders ââââââââââââââââââââââââââââââââââââââââââ */
@@ -36,10 +36,13 @@ router.get("/", requireAuth, async (req, res) => {
       // merchants see orders for their vendor(s)
       const vendorId = req.query.vendorId;
       if (vendorId) query = query.where("vendorId", "==", vendorId);
+    } else if (req.user.role === "rider") {
+      // riders only see orders assigned to them
+      query = query.where("riderId", "==", req.user.uid);
     }
 
     // Optional filters
-  2 if (req.query.status) query = query.where("status", "==", req.query.status);
+    if (req.query.status) query = query.where("status", "==", req.query.status);
 
     const snap = await query.get();
     const orders = snap.docs.map(toOrder).sort((a, b) =>

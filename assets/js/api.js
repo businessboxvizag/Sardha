@@ -150,6 +150,10 @@
         get("/api/customers").then((c) => { _cache.customers = c; }),
         get("/api/analytics").then((a) => { _cache.analytics = a; }),
       );
+    } else if (role === "rider") {
+      loads.push(
+        get("/api/orders").then((o) => { _cache.orders = o; }),
+      );
     }
 
     await Promise.all(loads);
@@ -279,6 +283,19 @@
       emit();
       return rider;
     },
+
+    // Rider toggles own availability (available ↔ offline)
+    setMyRiderStatus: async (riderId, status) => {
+      const rider = await patch(`/api/riders/${riderId}/availability`, { status });
+      const idx = _cache.riders.findIndex((r) => r.id === riderId);
+      if (idx >= 0) _cache.riders[idx] = rider;
+      emit();
+      return rider;
+    },
+
+    // Rider pushes GPS position to server
+    updateMyLocation: (riderId, lat, lng) =>
+      patch(`/api/riders/${riderId}/location`, { lat, lng }),
 
     toggleFavorite: async (vendorId) => {
       const vendorIds = await post("/api/customers/me/favorites/toggle", { vendorId });

@@ -37,7 +37,7 @@
   }
 
   function renderLoginScreen(role, resolve) {
-    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin" }[role];
+    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Rider" }[role] || role;
     const root = document.getElementById("root");
 
     root.innerHTML = `

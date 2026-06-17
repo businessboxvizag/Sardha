@@ -43,7 +43,6 @@ router.patch("/:id/status", requireAuth, requireRole("admin"), async (req, res) 
     const updated = await ref.get();
     const rider = toRider(updated);
 
-    // Emit to admin room
     const io = req.app.get("io");
     if (io) io.to("admin").emit("rider:updated", rider);
 
@@ -53,25 +52,51 @@ router.patch("/:id/status", requireAuth, requireRole("admin"), async (req, res) 
   }
 });
 
+/* ── PATCH /api/riders/:id/availability ─────────────────────── */
+/* Rider toggles own online/offline status. Admin can also use this. */
+router.patch("/:id/availability", requireAuth, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.uid !== req.params.id) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { status } = req.body;
+  if (!["available", "offline"].includes(status)) {
+    return res.status(400).json({ error: "status must be available or offline" });
+  }
+  try {
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+    if (doc.data().status === "on_delivery" && status === "offline") {
+      return res.status(400).json({ error: "Complete your delivery before going offline" });
+    }
+    await ref.update({ status });
+    const updated = await ref.get();
+    const rider = toRider(updated);
+    const io = req.app.get("io");
+    if (io) {
+      io.to("admin").emit("rider:updated", rider);
+      io.to("rider:" + req.params.id).emit("rider:updated", rider);
+    }
+    res.json(rider);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update availability" });
+  }
+});
+
 /* ── PATCH /api/riders/:id/location ────────────────────────── */
-// Called by the rider's own app to broadcast GPS position
 router.patch("/:id/location", requireAuth, async (req, res) => {
   try {
     const { lat, lng } = req.body;
     if (lat === undefined || lng === undefined) {
       return res.status(400).json({ error: "lat and lng required" });
     }
-
     const ref = db.collection("riders").doc(req.params.id);
     await ref.update({ lat: Number(lat), lng: Number(lng) });
-
     const io = req.app.get("io");
     if (io) {
       io.to("admin").emit("rider:location", { riderId: req.params.id, lat, lng });
-      // Also emit to any customer tracking an order this rider is on
-      io.to(`rider:${req.params.id}`).emit("rider:location", { riderId: req.params.id, lat, lng });
+      io.to("rider:" + req.params.id).emit("rider:location", { riderId: req.params.id, lat, lng });
     }
-
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to update rider location" });
