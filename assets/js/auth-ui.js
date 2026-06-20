@@ -40,6 +40,8 @@
     const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Rider" }[role] || role;
     const root = document.getElementById("root");
 
+    const canSelfRegister = role === "customer" || role === "merchant";
+
     root.innerHTML = `
       <div class="auth-wrap">
         <div class="auth-card">
@@ -63,6 +65,18 @@
             <label>Full name</label>
             <input id="authName" type="text" placeholder="Your name" />
           </div>
+
+          <!-- Merchant-only: store location (shown during registration) -->
+          <div id="merchantLocField" style="display:none">
+            <div class="field">
+              <label>Store location</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="btn ghost sm" id="gpsLocBtn" style="white-space:nowrap">📍 Use my location</button>
+                <span id="gpsStatus" class="muted small"></span>
+              </div>
+            </div>
+          </div>
+
           <div class="field">
             <label>Email</label>
             <input id="authEmail" type="email" placeholder="you@example.com" />
@@ -75,7 +89,7 @@
 
           <button class="btn primary" id="authSubmit" style="width:100%">Sign in</button>
 
-          ${role === "customer" ? `
+          ${canSelfRegister ? `
             <p class="auth-toggle">
               <span id="authToggleText">Don't have an account?</span>
               <a href="#" id="authToggleLink">Register</a>
@@ -121,6 +135,32 @@
       }
     });
 
+    /* ── GPS location (merchant registration) ── */
+    let _merchantLat = null, _merchantLng = null;
+    const gpsBtn = document.getElementById("gpsLocBtn");
+    if (gpsBtn) {
+      gpsBtn.addEventListener("click", () => {
+        const statusEl = document.getElementById("gpsStatus");
+        if (!navigator.geolocation) { statusEl.textContent = "GPS not supported"; return; }
+        gpsBtn.disabled = true;
+        statusEl.textContent = "Acquiring…";
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            _merchantLat = pos.coords.latitude;
+            _merchantLng = pos.coords.longitude;
+            statusEl.textContent = `✅ ${_merchantLat.toFixed(5)}, ${_merchantLng.toFixed(5)}`;
+            gpsBtn.textContent = "📍 Update";
+            gpsBtn.disabled = false;
+          },
+          (err) => {
+            statusEl.textContent = "⚠️ " + (err.code === 1 ? "Permission denied" : "GPS unavailable");
+            gpsBtn.disabled = false;
+          },
+          { enableHighAccuracy: true, timeout: 12000 }
+        );
+      });
+    }
+
     /* ── Toggle register/login ── */
     let isRegister = false;
     const toggle = document.getElementById("authToggleLink");
@@ -128,7 +168,10 @@
       toggle.addEventListener("click", (e) => {
         e.preventDefault();
         isRegister = !isRegister;
-        document.getElementById("nameField").style.display   = isRegister ? "" : "none";
+        document.getElementById("nameField").style.display = isRegister ? "" : "none";
+        // Merchant-only location field
+        const locField = document.getElementById("merchantLocField");
+        if (locField) locField.style.display = (isRegister && role === "merchant") ? "" : "none";
         document.getElementById("authToggleText").textContent = isRegister ? "Already have an account?" : "Don't have an account?";
         toggle.textContent = isRegister ? "Sign in" : "Register";
         document.getElementById("authSub").textContent = isRegister ? `${roleLabel} registration` : `${roleLabel} sign in`;
@@ -159,9 +202,12 @@
       try {
         let data;
         if (isRegister) {
-          data = await BW.register({ email, password, name, role });
+          data = await BW.register({
+            email, password, name, role,
+            lat: _merchantLat, lng: _merchantLng,
+          });
         } else {
-          data = await BW.login(email, password);
+          data = await BW.login(email, password, role);
         }
 
         if (data.user.role !== role) {

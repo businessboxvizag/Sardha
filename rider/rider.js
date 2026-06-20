@@ -131,6 +131,19 @@
     return wrap;
   }
 
+  /* ── Map link helpers ───────────────────────────────── */
+  function mapsLink(lat, lng, label) {
+    if (!lat || !lng) return null;
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    return el("a", { class: "rider-map-btn", href: url, target: "_blank", rel: "noopener" }, "📍 " + label);
+  }
+
+  function directionsLink(fromLat, fromLng, toLat, toLng) {
+    if (!fromLat || !fromLng || !toLat || !toLng) return null;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=driving`;
+    return el("a", { class: "rider-map-btn rider-map-btn--nav", href: url, target: "_blank", rel: "noopener" }, "🗺️ Navigate");
+  }
+
   /* ── Order card ─────────────────────────────────────── */
   function renderCard(o) {
     const vendor = BW.vendor(o.vendorId);
@@ -144,17 +157,29 @@
     };
     const next = NEXT[o.status];
 
+    const vendorLat = vendor && vendor.lat;
+    const vendorLng = vendor && vendor.lng;
+    const custLat   = o.deliverLat;
+    const custLng   = o.deliverLng;
+
+    const mapBtns = [
+      mapsLink(vendorLat, vendorLng, "Pickup"),
+      mapsLink(custLat, custLng, "Delivery"),
+      directionsLink(vendorLat, vendorLng, custLat, custLng),
+    ].filter(Boolean);
+
     return el("div", { class: "card rider-card" }, [
       el("div", { class: "order-card-head" }, [
         el("span", { class: "order-id" }, "#" + o.id.slice(-6).toUpperCase()),
         el("span", { class: "badge " + o.status }, BW.STATUS_LABEL[o.status] || o.status),
       ]),
       el("div", { class: "rider-card-body" }, [
-        row("From",       vendor ? (vendor.emoji || "🏪") + " " + vendor.name : "—"),
+        row("From",       vendor ? (vendor.img || vendor.emoji || "🏪") + " " + vendor.name : "—"),
         row("Deliver to", deliverTo),
         row("Items",      itemCount + " item" + (itemCount !== 1 ? "s" : "") + " · " + money(o.total || 0)),
         row("Placed",     timeAgo(o.createdAt)),
       ]),
+      mapBtns.length ? el("div", { class: "rider-map-row" }, mapBtns) : null,
       next ? el("button", {
         class: "btn " + next.cls + " rider-advance-btn",
         onclick: () => doAdvance(o.id),

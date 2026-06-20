@@ -35,18 +35,18 @@
     { value: "capsules",       label: "Capsules"                     },
     { value: "ml",             label: "ml  (Syrup / Tonic / Liquid)" },
     { value: "mg",             label: "mg  (Powder / Sachet)"        },
-    { value: "g",              label: "g  (Cream / Gel / Ointment)" },
+    { value: "g",              label: "g   (Cream / Gel / Ointment)" },
     { value: "drops",          label: "Drops  (Eye / Ear)"           },
     { value: "vial",           label: "Vial / Injection"             },
-    { value: "sachet",         label: "Sactet / Powder packet"       },
+    { value: "sachet",         label: "Sachet / Powder packet"       },
     { value: "units",          label: "Units (other)"                },
   ];
   const GENERAL_UNITS = [
     { value: "piece",   label: "Per piece / pcs"  },
     { value: "kg",      label: "Per kg"           },
-    { value: "g",       label: "Per gram (g)"    },
+    { value: "g",       label: "Per gram (g)"     },
     { value: "liter",   label: "Per liter"        },
-    { value: "ml",      label: "Per ml"          },
+    { value: "ml",      label: "Per ml"           },
     { value: "packet",  label: "Per packet"       },
     { value: "box",     label: "Per box"          },
     { value: "bottle",  label: "Per bottle"       },
@@ -63,19 +63,19 @@
   ];
 
   const CATEGORY_OPTIONS = [
-    { value: "Restaurant",   label: "ð½ï¸  Restaurant" },
-    { value: "Street Food",  label: "ð¥  Street Food / Chaat" },
-    { value: "Bakery",       label: "ð¥  Bakery / Cafe" },
-    { value: "Sweets",       label: "ð¬  Sweets & Snacks" },
-    { value: "Groceries",    label: "ð  Groceries" },
-    { value: "Pharmacy",     label: "ð  Pharmacy" },
-    { value: "Florist",      label: "ð  Florist" },
-    { value: "Electronics",  label: "ð±  Electronics" },
-    { value: "Clothing",     label: "ð  Clothing / Textiles" },
-    { value: "General",      label: "ðª  General Store" },
+    { value: "Restaurant",   label: "🍽️  Restaurant" },
+    { value: "Street Food",  label: "🥘  Street Food / Chaat" },
+    { value: "Bakery",       label: "🥖  Bakery / Cafe" },
+    { value: "Sweets",       label: "🍬  Sweets & Snacks" },
+    { value: "Groceries",    label: "🛒  Groceries" },
+    { value: "Pharmacy",     label: "💊  Pharmacy" },
+    { value: "Florist",      label: "💐  Florist" },
+    { value: "Electronics",  label: "📱  Electronics" },
+    { value: "Clothing",     label: "👗  Clothing / Textiles" },
+    { value: "General",      label: "🏪  General Store" },
   ];
 
-  const EMOJI_OPTIONS = ["ðª","ð½ï¸","ð¥","ð¥","ð","ð","ð","ð","ð","ð","â","ð±","ð§","ð®","ð"];
+  const EMOJI_OPTIONS = ["🏪","🍽️","🥘","🥖","🛒","💊","💐","🎂","🍕","🍜","☕","🍱","🧁","🌮","🍔"];
 
   const state = { route: "orders", vendorId: null, detailOrderId: null };
   const root = document.getElementById("root");
@@ -85,13 +85,16 @@
     await BWAuth.requireLogin("merchant");
     await BW.init("merchant");
 
+    const me = BW.Auth.getUser();
     const vendors = BW.vendors();
     if (!vendors.length) {
       renderSetup();
       return;
     }
 
-    state.vendorId = vendors[0].id;
+    // Prefer the vendor whose ID matches the merchant's UID (created on registration)
+    const myVendor = vendors.find((v) => v.id === me.uid || v.userId === me.uid) || vendors[0];
+    state.vendorId = myVendor.id;
     await BW.loadVendorProducts(state.vendorId);
     if (state.vendorId) BW.joinVendorRoom(state.vendorId);
 
@@ -103,16 +106,16 @@
   function renderSetup() {
     const user = BW.Auth.getUser();
     root.innerHTML = "";
-    root.appendChild(topbar("Merchant Â· " + (user ? user.name : ""), []));
+    root.appendChild(topbar("Merchant · " + (user ? user.name : ""), []));
 
-    const nameEl = el("input", { placeholder: "e.g. Sharma Kirana, Hotel Udupi Palaceâ¦" });
-    const areaEl = el("input", { placeholder: "e.g. MG Road, Koramangalaâ¦" });
+    const nameEl = el("input", { placeholder: "e.g. Sharma Kirana, Hotel Udupi Palace…" });
+    const areaEl = el("input", { placeholder: "e.g. MG Road, Koramangala…" });
 
     const catEl = el("select", {});
     CATEGORY_OPTIONS.forEach((c) => catEl.appendChild(el("option", { value: c.value }, c.label)));
 
-    const emojiDisplay = el("span", { style: "font-size:32px;cursor:pointer" }, "ðª");
-    let chosenEmoji = "ðª";
+    const emojiDisplay = el("span", { style: "font-size:32px;cursor:pointer" }, "🏪");
+    let chosenEmoji = "🏪";
     const emojiGrid = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" });
     EMOJI_OPTIONS.forEach((e) => {
       const btn = el("button", {
@@ -131,12 +134,12 @@
       if (!name) { errEl.textContent = "Store name is required."; return; }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = "Creating your storeâ¦";
+      submitBtn.textContent = "Creating your store…";
       try {
         const vendor = await BW.upsertVendor({
           name,
           category: catEl.value,
-          area: area || "â",
+          area: area || "—",
           img: chosenEmoji,
         });
         state.vendorId = vendor.id;
@@ -154,7 +157,7 @@
 
     const content = el("div", { style: "max-width:480px;margin:40px auto;padding:0 16px" }, [
       el("h1", { class: "page-title" }, "Welcome! Set up your store"),
-      el("p",  { class: "page-sub"   }, "You only need to do this once. Fill in the basics â you can change everything later."),
+      el("p",  { class: "page-sub"   }, "You only need to do this once. Fill in the basics — you can change everything later."),
       el("div", { class: "card", style: "margin-top:24px" }, [
         el("div", { class: "field" }, [el("label", {}, "Store name"), nameEl]),
         el("div", { class: "field" }, [el("label", {}, "Type of store"), catEl]),
@@ -184,7 +187,7 @@
     const user = BW.Auth.getUser();
 
     const logoutBtn = el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out");
-    root.appendChild(topbar("Merchant Â· " + (user ? user.name : ""), [logoutBtn]));
+    root.appendChild(topbar("Merchant · " + (user ? user.name : ""), [logoutBtn]));
 
     const pending = BW.orders({ vendorId: state.vendorId, status: S.PLACED }).length;
     const nav = el("div", { class: "sidebar" }, [
@@ -223,14 +226,14 @@
           el("strong", {}, g.key), el("span", { class: "tag" }, String(list.length)),
         ]),
       ]);
-      if (!list.length) col.appendChild(el("div", { class: "muted small", style: "padding:10px 0" }, "â"));
+      if (!list.length) col.appendChild(el("div", { class: "muted small", style: "padding:10px 0" }, "—"));
       list.forEach((o) => col.appendChild(orderCard(o)));
       cols.appendChild(col);
     });
 
     shell("orders", [
       el("h1", { class: "page-title" }, "Orders"),
-      el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " Â· accept new orders, then dispatch a rider."),
+      el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " · accept new orders, then dispatch a rider."),
       cols,
     ]);
   }
@@ -262,8 +265,8 @@
         el("strong", {}, "#" + o.id.slice(-6).toUpperCase()),
         statusBadge(o.status),
       ]),
-      el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " Â· " + itemCount + " items Â· " + money(o.total)),
-      el("div", { class: "small muted" }, o.items.map((l) => l.qty + "Ã " + l.name).join(", ")),
+      el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " · " + itemCount + " items · " + money(o.total)),
+      el("div", { class: "small muted" }, o.items.map((l) => l.qty + "× " + l.name).join(", ")),
       riderName ? el("div", { class: "small muted", style: "margin-top:6px" }, "Rider: " + riderName) : document.createTextNode(""),
       actions.length ? el("div", { class: "row", style: "gap:8px;margin-top:10px" }, actions) : document.createTextNode(""),
     ]);
@@ -277,16 +280,16 @@
       tracker(o.status),
       el("div", { class: "card", style: "margin-top:12px" }, [
         ...o.items.map((l) => el("div", { class: "row between small", style: "padding:5px 0" }, [
-          el("span", {}, l.qty + "Ã " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
+          el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
         ])),
         el("div", { class: "line", style: "border:none" }, [el("strong", {}, "Total"), el("strong", {}, money(o.total))]),
       ]),
-      cust ? el("div", { class: "muted small", style: "margin-top:10px" }, "Customer: " + cust.name + " Â· " + (cust.phone || "")) : document.createTextNode(""),
+      cust ? el("div", { class: "muted small", style: "margin-top:10px" }, "Customer: " + cust.name + " · " + (cust.phone || "")) : document.createTextNode(""),
       cust ? el("div", { class: "muted small" }, "Deliver to: " + cust.address) : document.createTextNode(""),
       el("div", { class: "card", style: "margin-top:12px" }, [
         el("strong", { class: "small" }, "Timeline"),
         ...(o.history || []).map((h) => el("div", { class: "row between small muted", style: "padding:4px 0" }, [
-          el("span", {}, BW.STATUS_LABEL[h.status] + (h.note ? " â " + h.note : "")),
+          el("span", {}, BW.STATUS_LABEL[h.status] + (h.note ? " — " + h.note : "")),
           el("span", {}, clockTime(h.at)),
         ])),
       ]),
@@ -298,17 +301,17 @@
       footer.push(el("button", { class: "btn primary", onClick: async () => {
         try { await BW.advanceOrder(o.id); toast("Status advanced"); close(); }
         catch (err) { toast("Error: " + err.message); }
-      } }, "Advance â " + BW.STATUS_LABEL[statusFlow[i + 1]]));
+      } }, "Advance → " + BW.STATUS_LABEL[statusFlow[i + 1]]));
     }
     const close = UI.modal({ title: "Order #" + o.id.slice(-6).toUpperCase(), body, footer });
   }
 
   /* ====================== DISPATCH ====================== */
-  // Auto-assigns the nearest available fleet rider â no manual selection
+  // Auto-assigns the nearest available fleet rider — no manual selection
   async function autoDispatch(order) {
     try {
       const { rider } = await BW.autoAssignRider(order.id);
-      const distTxt = isFinite(rider.dist) ? " Â· " + rider.dist.toFixed(1) + " km away" : "";
+      const distTxt = isFinite(rider.dist) ? " · " + rider.dist.toFixed(1) + " km away" : "";
       toast("Rider assigned: " + rider.name + distTxt);
     } catch (err) {
       toast(err.message || "No available riders right now");
@@ -331,11 +334,11 @@
         el("div", { class: "head" }, head), el("div", { class: "lbl small" }, lbl),
       ]));
     };
-    addPin(vendor.lat, vendor.lng, "ðª", vendor.name.split(" ")[0]);
+    addPin(vendor.lat, vendor.lng, "🏪", vendor.name.split(" ")[0]);
     active.forEach((o) => {
       if (o.riderId) {
         const r = BW.riders().find((r) => r.id === o.riderId);
-        if (r) addPin(r.lat, r.lng, "ðµ", r.name.split(" ")[0]);
+        if (r) addPin(r.lat, r.lng, "🛵", r.name.split(" ")[0]);
       }
     });
 
@@ -356,9 +359,9 @@
       }
       return el("tr", {}, [
         el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
-        el("td", {}, cust ? cust.name : "â"),
+        el("td", {}, cust ? cust.name : "—"),
         el("td", {}, statusBadge(o.status)),
-        el("td", {}, r ? r.name : el("span", { class: "muted" }, "â")),
+        el("td", {}, r ? r.name : el("span", { class: "muted" }, "—")),
         el("td", {}, el("div", { class: "row", style: "gap:6px" }, act)),
       ]);
     }) : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:24px" }, "No active deliveries."))];
@@ -387,25 +390,25 @@
     const general = isGeneralVendor(vendor);
 
     let headers;
-    if (food)         headers = ["Item", "Price (â¹)", "Qty available", ""];
-    else if (pharma)  headers = ["Item", "Price (â¹)", "Pack size", ""];
-    else if (general) headers = ["Item", "Price (â¹)", "Unit / sold per", ""];
-    else              headers = ["Item", "Price (â¹)", ""];
+    if (food)         headers = ["Item", "Price (₹)", "Qty available", ""];
+    else if (pharma)  headers = ["Item", "Price (₹)", "Pack size", ""];
+    else if (general) headers = ["Item", "Price (₹)", "Unit / sold per", ""];
+    else              headers = ["Item", "Price (₹)", ""];
 
     const rows = products.map((p) => {
       const cells = [
         el("td", {}, el("strong", {}, p.name)),
-        el("td", {}, p.price ? money(p.price) : el("span", { class: "muted" }, "â")),
+        el("td", {}, p.price ? money(p.price) : el("span", { class: "muted" }, "—")),
       ];
 
       if (food) {
-        cells.push(el("td", {}, p.qty !== undefined ? String(p.qty) : el("span", { class: "muted" }, "â")));
+        cells.push(el("td", {}, p.qty !== undefined ? String(p.qty) : el("span", { class: "muted" }, "—")));
       } else if (pharma) {
         const label = (p.qty !== undefined && p.unit) ? `${p.qty} ${p.unit}`
                     : p.unit ? p.unit : null;
-        cells.push(el("td", {}, label ? label : el("span", { class: "muted" }, "â")));
+        cells.push(el("td", {}, label ? label : el("span", { class: "muted" }, "—")));
       } else if (general) {
-        cells.push(el("td", {}, p.unit ? "per " + p.unit : el("span", { class: "muted" }, "â")));
+        cells.push(el("td", {}, p.unit ? "per " + p.unit : el("span", { class: "muted" }, "—")));
       }
 
       cells.push(el("td", {}, el("div", { class: "row", style: "gap:6px" }, [
@@ -424,7 +427,7 @@
       el("div", { class: "row between" }, [
         el("div", {}, [
           el("h1", { class: "page-title" }, "Inventory"),
-          el("p", { class: "page-sub" }, (vendor ? vendor.img + " " + vendor.name : "") + " Â· " + products.length + " items"),
+          el("p", { class: "page-sub" }, (vendor ? vendor.img + " " + vendor.name : "") + " · " + products.length + " items"),
         ]),
         el("button", { class: "btn primary", onClick: () => editProduct(null) }, "+ Add item"),
       ]),
@@ -444,9 +447,9 @@
     const general = isGeneralVendor(vendor);
     const isNew   = !p;
 
-    const namePlaceholder = pharma  ? "e.g. Paracetamol, Cough Syrup, Vitamin Câ¦"
-                          : general ? "e.g. Toor Dal, Surf Excel, Colgateâ¦"
-                          :           "e.g. Masala Dosa, Cold Coffeeâ¦";
+    const namePlaceholder = pharma  ? "e.g. Paracetamol, Cough Syrup, Vitamin C…"
+                          : general ? "e.g. Toor Dal, Surf Excel, Colgate…"
+                          :           "e.g. Masala Dosa, Cold Coffee…";
 
     const nameEl  = el("input", { value: p ? p.name : "", placeholder: namePlaceholder });
     const priceEl = el("input", { type: "number", value: p ? p.price : "", placeholder: "0", min: "0" });
@@ -455,7 +458,7 @@
       el("div", { class: "field" }, [el("label", {}, "Item name"), nameEl]),
     ];
 
-    /* â per-category extra fields â */
+    /* — per-category extra fields — */
     let packQtyEl, unitEl, stockEl, qtyEl;
 
     if (pharma) {
@@ -471,12 +474,12 @@
       PHARMACY_UNITS.forEach((u) =>
         unitEl.appendChild(el("option", { value: u.value, ...(p && p.unit === u.value ? { selected: "" } : {}) }, u.label))
       );
-      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (â¹)"), priceEl]));
+      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (₹)"), priceEl]));
       fields.push(el("div", { class: "field" }, [
         el("label", {}, "Pack size"),
         el("div", { class: "row", style: "gap:8px;align-items:center" }, [packQtyEl, unitEl]),
         el("div", { class: "muted small", style: "margin-top:4px" },
-          "e.g. 10 tablets/strip Â· 100 ml Â· 30 capsules Â· 15 g cream"),
+          "e.g. 10 tablets/strip · 100 ml · 30 capsules · 15 g cream"),
       ]));
 
     } else if (general) {
@@ -492,7 +495,7 @@
         min: "0",
       });
       fields.push(el("div", { class: "field" }, [
-        el("label", {}, "Price (â¹) â sold per"),
+        el("label", {}, "Price (₹) — sold per"),
         el("div", { class: "row", style: "gap:8px;align-items:center" }, [priceEl, unitEl]),
       ]));
       fields.push(el("div", { class: "field" }, [
@@ -502,7 +505,7 @@
 
     } else {
       /* Food + everything else: price + optional qty-available */
-      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (â¹)"), priceEl]));
+      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (₹)"), priceEl]));
       if (food) {
         qtyEl = el("input", {
           type: "number",
@@ -562,7 +565,7 @@
 
     const rows = list.length ? list.map((x) => el("tr", {}, [
       el("td", {}, el("strong", {}, x.c.name)),
-      el("td", { class: "muted" }, x.c.phone || "â"),
+      el("td", { class: "muted" }, x.c.phone || "—"),
       el("td", {}, String(x.orders)),
       el("td", {}, money(x.spend)),
       el("td", { class: "muted small" }, timeAgo(x.last)),
@@ -612,7 +615,7 @@
           el("h3", { style: "margin:0 0 14px;font-size:14px;color:#f07830" }, "How it works"),
           ...[
             ["1.", "Customer scans QR code with their phone"],
-            ["2.", "First-time? They install the app â your store loads automatically"],
+            ["2.", "First-time? They install the app — your store loads automatically"],
             ["3.", "Returning? Your store is added to their existing app"],
             ["4.", "They can collect stores from multiple merchants over time"],
           ].map(([num, text]) =>

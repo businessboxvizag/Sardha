@@ -75,6 +75,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
+    logins: [], allUsers: [],
   };
 
   /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
@@ -149,6 +150,8 @@
         get("/api/orders").then((o) => { _cache.orders = o; }),
         get("/api/customers").then((c) => { _cache.customers = c; }),
         get("/api/analytics").then((a) => { _cache.analytics = a; }),
+        get("/api/admin/logins").then((l) => { _cache.logins = l; }),
+        get("/api/admin/users").then((u) => { _cache.allUsers = u; }),
       );
     } else if (role === "rider") {
       loads.push(
@@ -188,7 +191,7 @@
 
     /* Auth */
     Auth,
-    login:  (email, password) => post("/api/auth/login",    { email, password }),
+    login:  (email, password, role) => post("/api/auth/login", { email, password, role }),
     register: (data)           => post("/api/auth/register", data),
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     logout: () => {
@@ -227,6 +230,8 @@
     order:         (id) => _cache.orders.find((o) => o.id === id) || null,
     favorites:     ()   => [..._cache.favorites],
     analytics:     ()   => _cache.analytics,
+    logins:        ()   => [..._cache.logins],
+    allUsers:      ()   => [..._cache.allUsers],
 
     /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items }) => {
@@ -347,6 +352,10 @@
 
     refreshOrders,
     refreshAnalytics,
+    refreshLogins: async () => {
+      _cache.logins = await get("/api/admin/logins");
+      emit();
+    },
     loadVendorProducts,
 
     // No-op reset (use admin tools or re-seed the server)
