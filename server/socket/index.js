@@ -33,6 +33,9 @@ function setupSocket(io) {
     if (role === "admin") {
       socket.join("admin");
     }
+    if (role === "rider") {
+      socket.join(`rider:${uid}`);
+    }
 
     // ── Client-driven room subscriptions ────────────────────────
     socket.on("join:vendor", (vendorId) => {

@@ -71,6 +71,13 @@ button { font-family: inherit; }
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--surface-2); color: var(--brand); border-color: var(--border); border-left: 3px solid var(--brand); padding-left: 9px; }
+/* Text-based nav icon badge */
+.nav-ico-text {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 7px;
+  background: var(--surface-2); font-size: 10px; font-weight: 700;
+  letter-spacing: -0.5px; flex-shrink: 0;
+}
 .content { flex: 1; padding: 24px; overflow: auto; }
 
 .page-title { margin: 0 0 4px; font-size: 22px; font-weight: 800; }
@@ -224,17 +231,26 @@ label { font-size: 12px; color: var(--muted); font-weight: 600; display: block; 
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 36px 32px; box-shadow: var(--shadow);
 }
-.auth-logo { font-size: 42px; text-align: center; margin-bottom: 6px; }
+/* Auth brand mark (replaces emoji logo) */
+.auth-brand-mark {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: var(--brand); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800; margin: 0 auto 10px;
+  letter-spacing: -1px;
+}
 .auth-title { text-align: center; margin: 0 0 4px; font-size: 22px; font-weight: 800; }
 .auth-sub { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+.auth-greet {
+  font-size: 15px; font-weight: 600; color: var(--text);
+  margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
 .auth-err { color: var(--red); font-size: 12px; min-height: 18px; margin-bottom: 10px; text-align: center; }
-.auth-toggle { text-align: center; font-size: 13px; color: var(--muted); margin-top: 16px; }
-.auth-toggle a { color: var(--brand); font-weight: 600; margin-left: 5px; }
 .google-btn {
   width: 100%; display: flex; align-items: center; justify-content: center;
   background: #fff; color: #3c4043; border: 1px solid #dadce0;
   font-size: 14px; font-weight: 500; padding: 10px 16px;
-  border-radius: 8px; cursor: pointer; transition: background .15s;
+  border-radius: 8px; cursor: pointer; transition: background .15s; gap: 2px;
 }
 .google-btn:hover { background: #f8f8f8; }
 .google-btn:disabled { opacity: .6; cursor: not-allowed; }
@@ -244,6 +260,25 @@ label { font-size: 12px; color: var(--muted); font-weight: 600; display: block; 
 }
 .auth-divider::before, .auth-divider::after {
   content: ""; flex: 1; height: 1px; background: var(--border);
+}
+
+/* Portal icon (replaces emoji pico) */
+.portal-icon {
+  width: 48px; height: 48px; border-radius: 12px; margin-bottom: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 800; color: #fff; letter-spacing: -1px;
+}
+.portal-icon--customer { background: #4f46e5; }
+.portal-icon--merchant { background: #0891b2; }
+.portal-icon--admin    { background: #7c3aed; }
+.portal-icon--rider    { background: #b45309; }
+
+/* Portal brand logo */
+.brand-logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--brand); color: #fff;
+  font-size: 14px; font-weight: 800; flex-shrink: 0;
 }
 
 /* ---------- Loading spinner ---------- */
@@ -305,4 +340,18 @@ label { font-size: 12px; color: var(--muted); font-weight: 600; display: block; 
 @media (max-width: 520px) {
   .rider-status-card { margin: 12px; border-radius: 12px; }
   .rider-orders { padding: 0 12px 24px; }
+}
+
+/* ---------- QR Scan view ---------- */
+.scan-wrap { max-width: 480px; margin: 0 auto; padding: 0 16px 32px; }
+.scan-camera-box {
+  background: #000; border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--border); margin-bottom: 8px;
+  min-height: 180px; display: flex; flex-direction: column;
+}
+.scan-file-section { margin-top: 8px; }
+.scan-file-section input[type="file"] {
+  display: block; width: 100%; font-size: 13px;
+  padding: 8px; border: 1px dashed var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--text);
 }

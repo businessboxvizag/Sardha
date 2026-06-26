@@ -81,7 +81,7 @@ router.post("/register", async (req, res) => {
         userId: uid,
         category: "General",
         area: "",
-        img: "🏪",
+        img: "",
         rating: 5.0,
         prepMins: 15,
         lat: lat != null ? Number(lat) : null,
@@ -183,6 +183,30 @@ router.post("/google", async (req, res) => {
   } catch (err) {
     console.error("google auth:", err);
     res.status(401).json({ error: "Google authentication failed" });
+  }
+});
+
+/* ── POST /api/auth/check-email ─────────────────────────────── */
+/* Returns whether an email is registered (+ name + authProvider).
+   Used by the frontend to decide sign-in vs sign-up flow.       */
+router.post("/check-email", async (req, res) => {
+  try {
+    const { email, role } = req.body;
+    if (!email) return res.status(400).json({ error: "email required" });
+
+    const snap = await db.collection("users").where("email", "==", email).get();
+    if (snap.empty) return res.json({ exists: false });
+
+    // If role specified, prefer the matching-role account
+    const doc = role
+      ? (snap.docs.find((d) => d.data().role === role) || snap.docs[0])
+      : snap.docs[0];
+
+    const { name, authProvider } = doc.data();
+    res.json({ exists: true, name: name || null, authProvider: authProvider || "email" });
+  } catch (err) {
+    console.error("check-email:", err);
+    res.status(500).json({ error: "Check failed" });
   }
 });
 

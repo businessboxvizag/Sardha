@@ -1,5 +1,5 @@
 /* =========================================================
- * Customer App â real API version
+ * Customer App — real API version
  * ========================================================= */
 (function () {
   "use strict";
@@ -65,6 +65,8 @@
 
   /* ----- navigation ----- */
   function go(route, extra = {}) {
+    // Stop any active camera scan before leaving the scan view
+    if (window._scanCleanup) { window._scanCleanup(); window._scanCleanup = null; }
     Object.assign(state, { route }, extra);
     window.scrollTo(0, 0);
     render();
@@ -77,17 +79,18 @@
     const user = BW.Auth.getUser();
 
     const cartBtn = el("button", { class: "btn primary sm", onClick: openCart }, [
-      document.createTextNode("ð Cart"),
+      document.createTextNode("Cart"),
       cartCount() ? el("span", { class: "badge", style: "background:#1a1205" }, String(cartCount())) : document.createTextNode(""),
     ]);
     const logoutBtn = el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out");
 
-    root.appendChild(topbar("Customer Â· " + (user ? user.name : ""), [cartBtn, logoutBtn]));
+    root.appendChild(topbar("Customer · " + (user ? user.name : ""), [cartBtn, logoutBtn]));
 
     const nav = el("div", { class: "sidebar" }, [
-      navItem("stores",    "ðª", "My Stores"),
-      navItem("history",   "ð§¾", "My Orders"),
-      navItem("favorites", "â¤ï¸",  "Favorites"),
+      navItem("stores",    "St", "My Stores"),
+      navItem("history",   "Or", "My Orders"),
+      navItem("favorites", "Fv", "Favorites"),
+      navItem("scan",      "QR", "Scan QR"),
     ]);
 
     const content = el("div", { class: "content" }, body);
@@ -97,7 +100,7 @@
       return el("div", {
         class: "nav-item" + (active === route ? " active" : ""),
         onClick: () => go(route),
-      }, [el("span", { class: "ico" }, ico), el("span", {}, label)]);
+      }, [el("span", { class: "ico nav-ico-text" }, ico), el("span", {}, label)]);
     }
   }
 
@@ -116,12 +119,12 @@
     const unlocked = getUnlockedVendors();
     const favs = BW.favorites();
 
-    // Empty state â no QR scans yet
+    // Empty state — no QR scans yet
     if (!unlocked.length) {
       shell("stores", [
         el("h1", { class: "page-title" }, "My Stores"),
         el("div", { class: "empty", style: "margin-top:40px" }, [
-          el("div", { class: "e" }, "ð²"),
+          el("div", { class: "e" }, ""),
           el("p", { style: "margin:12px 0 6px;font-size:15px;font-weight:600;color:#f0f0f0" }, "No stores yet"),
           el("p", { class: "muted small", style: "max-width:240px;margin:0 auto;line-height:1.6" },
             "Scan a merchant's QR code to add their store to your app."),
@@ -132,17 +135,17 @@
 
     const searchBar = el("div", { class: "field" }, [
       el("input", {
-        placeholder: "Search your storesâ¦",
+        placeholder: "Search your stores…",
         value: state.search,
         onInput: (e) => { state.search = e.target.value; renderGrid(); },
       }),
     ]);
 
     const countHint = el("div", { style: "display:flex;align-items:center;gap:10px;background:#1a1a24;border:1px solid #2a2a3a;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px" }, [
-      el("span", { style: "font-size:18px" }, "ðª"),
+      el("span", { style: "font-size:13px;font-weight:700;color:var(--brand)" }, "M"),
       el("span", { style: "flex:1;color:#bbb" }, [
         el("strong", { style: "color:#f5a623" }, String(unlocked.length) + " store" + (unlocked.length !== 1 ? "s" : "") + " in your collection"),
-        document.createTextNode(" Â· Scan more QR codes to add stores"),
+        document.createTextNode(" · Scan more QR codes to add stores"),
       ]),
     ]);
 
@@ -167,7 +170,7 @@
       });
 
       if (!list.length) {
-        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, "ð"), "No stores match your search."]));
+        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, "🔍"), "No stores match your search."]));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));
@@ -187,12 +190,12 @@
             await BW.toggleFavorite(v.id);
             render();
           },
-        }, isFav ? "â¤ï¸" : "ð¤"),
+        }, isFav ? "❤️" : "🤍"),
       ]),
       el("h3", { style: "margin:8px 0 2px" }, v.name),
-      el("div", { class: "muted small" }, v.category + " Â· " + v.area),
+      el("div", { class: "muted small" }, v.category + " · " + v.area),
       el("div", { class: "row", style: "margin-top:10px;gap:8px" }, [
-        el("span", { class: "tag" }, "â­ " + v.rating),
+        el("span", { class: "tag" }, "⭐ " + v.rating),
         el("span", { class: "tag" }, "~" + v.prepMins + " min prep"),
       ]),
     ]);
@@ -224,19 +227,19 @@
     });
 
     const body = [
-      el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "â Back"),
+      el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "← Back"),
       el("div", { class: "row between", style: "margin:14px 0 4px" }, [
         el("div", { class: "row", style: "gap:14px" }, [
           el("div", { class: "vendor-emoji", style: "font-size:44px" }, v.img),
           el("div", {}, [
             el("h1", { class: "page-title", style: "margin:0" }, v.name),
-            el("div", { class: "muted" }, v.category + " Â· " + v.area + " Â· â­ " + v.rating),
+            el("div", { class: "muted" }, v.category + " · " + v.area + " · ⭐ " + v.rating),
           ]),
         ]),
         el("button", {
           class: "btn ghost",
           onClick: async () => { await BW.toggleFavorite(v.id); render(); },
-        }, favs.includes(v.id) ? "â¤ï¸ Favorited" : "ð¤ Favorite"),
+        }, favs.includes(v.id) ? "❤️ Favorited" : "🤍 Favorite"),
       ]),
       el("div", { class: "card", style: "margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Menu"),
@@ -251,7 +254,7 @@
     if (cartCount() === 0) {
       UI.modal({
         title: "Your cart",
-        body: el("div", { class: "empty" }, [el("div", { class: "e" }, "ð"), "Your cart is empty."]),
+        body: el("div", { class: "empty" }, [el("div", { class: "e" }, "🛒"), "Your cart is empty."]),
       });
       return;
     }
@@ -266,7 +269,7 @@
             el("div", { class: "muted small" }, money(l.price)),
           ]),
           el("div", { class: "qty" }, [
-            el("button", { onClick: () => { setQty(l.productId, l.qty - 1); refresh(); } }, "â"),
+            el("button", { onClick: () => { setQty(l.productId, l.qty - 1); refresh(); } }, "−"),
             el("span", {}, String(l.qty)),
             el("button", { onClick: () => { setQty(l.productId, l.qty + 1); refresh(); } }, "+"),
           ]),
@@ -292,11 +295,11 @@
     rebuild();
 
     closeFn = UI.modal({
-      title: "Your cart Â· " + v.name,
+      title: "Your cart · " + v.name,
       body: linesWrap,
       footer: [
         el("button", { class: "btn ghost",    onClick: () => closeFn() }, "Keep shopping"),
-        el("button", { class: "btn primary",  onClick: () => { placeOrder(); closeFn(); } }, "Place order â"),
+        el("button", { class: "btn primary",  onClick: () => { placeOrder(); closeFn(); } }, "Place order →"),
       ],
     });
   }
@@ -325,11 +328,11 @@
     if (rider) BW.joinOrderRoom(o.id);
 
     const body = [
-      el("button", { class: "btn ghost sm", onClick: () => go("history") }, "â My Orders"),
+      el("button", { class: "btn ghost sm", onClick: () => go("history") }, "← My Orders"),
       el("div", { class: "row between", style: "margin:14px 0" }, [
         el("div", {}, [
           el("h1", { class: "page-title", style: "margin:0" }, "Order " + o.id.slice(-6).toUpperCase()),
-          el("div", { class: "muted" }, v.name + " Â· placed " + timeAgo(o.createdAt)),
+          el("div", { class: "muted" }, v.name + " · placed " + timeAgo(o.createdAt)),
         ]),
         statusBadge(o.status),
       ]),
@@ -340,15 +343,15 @@
           mapFor(v, cust, rider),
           rider
             ? el("div", { class: "row between", style: "margin-top:12px" }, [
-                el("div", {}, [el("div", { style: "font-weight:600" }, "ðµ " + rider.name), el("div", { class: "muted small" }, rider.vehicle + " Â· â­ " + rider.rating)]),
+                el("div", {}, [el("div", { style: "font-weight:600" }, "🛵 " + rider.name), el("div", { class: "muted small" }, rider.vehicle + " · ⭐ " + rider.rating)]),
                 el("a", { class: "btn ghost sm", href: "tel:" + rider.phone }, "Call rider"),
               ])
-            : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a rider to be assignedâ¦"),
+            : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a rider to be assigned…"),
         ]),
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Order summary"),
           ...o.items.map((l) => el("div", { class: "row between small", style: "padding:5px 0" }, [
-            el("span", {}, l.qty + "Ã " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
+            el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
           ])),
           el("div", { class: "line", style: "border-top:1px solid var(--border);margin-top:8px;padding-top:10px" }, [
             el("strong", {}, "Total"), el("strong", {}, money(o.total)),
@@ -370,9 +373,9 @@
         el("div", { class: "lbl small" }, lbl),
       ]);
     };
-    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "ðª", "Vendor"));
-    if (customer) map.appendChild(pin(customer.lat, customer.lng, "ð ", "You"));
-    if (rider) map.appendChild(pin(rider.lat, rider.lng, "ðµ", rider.name.split(" ")[0]));
+    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "🏪", "Vendor"));
+    if (customer) map.appendChild(pin(customer.lat, customer.lng, "🏠", "You"));
+    if (rider) map.appendChild(pin(rider.lat, rider.lng, "🛵", rider.name.split(" ")[0]));
     return map;
   }
 
@@ -385,14 +388,14 @@
     if (!orders.length) {
       body = [
         el("h1", { class: "page-title" }, "My Orders"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "ð§¾"), "No orders yet. Scan a store's QR code to get started."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, "🧾"), "No orders yet. Scan a store's QR code to get started."]),
       ];
     } else {
       const rows = orders.map((o) => {
         const v = BW.vendor(o.vendorId);
         return el("tr", { class: "clickable", onClick: () => go("track", { trackOrderId: o.id }) }, [
           el("td", {}, el("strong", {}, o.id.slice(-6).toUpperCase())),
-          el("td", {}, v ? v.img + " " + v.name : "â"),
+          el("td", {}, v ? v.img + " " + v.name : "—"),
           el("td", {}, o.items.reduce((s, l) => s + l.qty, 0) + " items"),
           el("td", {}, money(o.total)),
           el("td", {}, statusBadge(o.status)),
@@ -421,7 +424,7 @@
     if (!vendors.length) {
       body = [
         el("h1", { class: "page-title" }, "Favorites"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "â¤ï¸"), "No favorites yet. Open a store and tap the heart."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, "❤️"), "No favorites yet. Open a store and tap the heart."]),
       ];
     } else {
       const grid = el("div", { class: "grid cols-3" });
@@ -431,6 +434,153 @@
     shell("favorites", body);
   }
 
+  /* ====================== SCAN QR ====================== */
+  function viewScan() {
+    let _stream = null;
+    let _detector = null;
+    let _scanLoop = null;
+
+    function stopCamera() {
+      if (_scanLoop) { cancelAnimationFrame(_scanLoop); _scanLoop = null; }
+      if (_stream) { _stream.getTracks().forEach((t) => t.stop()); _stream = null; }
+    }
+
+    function addVendorById(vendorId) {
+      if (!vendorId) return;
+      const unlocked = getUnlockedVendors();
+      if (!unlocked.includes(vendorId)) {
+        unlocked.push(vendorId);
+        localStorage.setItem("bw_unlocked_vendors", JSON.stringify(unlocked));
+      }
+    }
+
+    function processUrl(urlStr) {
+      try {
+        const url = new URL(urlStr);
+        const v = url.searchParams.get("v");
+        if (v) return v;
+        // fallback: /scan/VENDOR_ID pattern
+        const m = url.pathname.match(/\/scan\/([^/?#]+)/);
+        return m ? m[1] : null;
+      } catch { return null; }
+    }
+
+    function startCamera(videoEl, resultEl, successCb) {
+      if (!("BarcodeDetector" in window)) {
+        resultEl.textContent = "Camera scanning unavailable in this browser. Use file upload below.";
+        return;
+      }
+      _detector = new BarcodeDetector({ formats: ["qr_code"] });
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then((stream) => {
+          _stream = stream;
+          videoEl.srcObject = stream;
+          videoEl.play();
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+
+          function tick() {
+            if (!_stream) return;
+            if (videoEl.readyState >= 2) {
+              canvas.width = videoEl.videoWidth;
+              canvas.height = videoEl.videoHeight;
+              ctx.drawImage(videoEl, 0, 0);
+              _detector.detect(canvas).then((codes) => {
+                if (codes.length > 0) {
+                  const rawValue = codes[0].rawValue;
+                  const vendorId = processUrl(rawValue);
+                  if (vendorId) {
+                    stopCamera();
+                    addVendorById(vendorId);
+                    successCb(vendorId);
+                  } else {
+                    resultEl.textContent = "QR code found but could not identify a vendor. Try again.";
+                  }
+                }
+              }).catch(() => {});
+            }
+            _scanLoop = requestAnimationFrame(tick);
+          }
+          tick();
+        })
+        .catch((err) => {
+          resultEl.textContent = err.name === "NotAllowedError"
+            ? "Camera access denied. Please allow camera access or use file upload below."
+            : "Could not start camera. Use file upload below.";
+        });
+    }
+
+    function onSuccess(vendorId) {
+      const vendor = BW.vendor(vendorId);
+      const successEl = document.getElementById("scanSuccess");
+      if (successEl) {
+        successEl.style.display = "";
+        successEl.innerHTML = "";
+        successEl.appendChild(el("p", { style: "font-size:15px;font-weight:600;margin:0 0 4px" },
+          vendor ? `Store added: ${vendor.name}` : "Store added successfully"));
+        successEl.appendChild(el("p", { class: "muted small", style: "margin:0 0 16px" },
+          "You can now order from this store in My Stores."));
+        successEl.appendChild(el("button", { class: "btn primary", onClick: () => go("stores") }, "Browse stores"));
+      }
+    }
+
+    const wrap = el("div", { class: "scan-wrap" }, []);
+
+    shell("scan", [
+      el("h1", { class: "page-title" }, "Scan QR Code"),
+      el("p", { class: "page-sub" }, "Point your camera at a merchant's QR code to add their store."),
+
+      el("div", { class: "scan-camera-box" }, [
+        el("video", { id: "scanVideo", autoplay: true, playsinline: true, style: "width:100%;border-radius:10px;background:#000;max-height:280px;object-fit:cover" }, []),
+        el("div", { id: "scanResult", class: "auth-err", style: "margin-top:8px;text-align:left" }, []),
+      ]),
+
+      el("div", { id: "scanSuccess", style: "display:none;margin-top:16px;padding:16px;background:var(--surface-2);border-radius:10px;border:1px solid var(--border)" }, []),
+
+      el("div", { class: "scan-file-section" }, [
+        el("p", { class: "muted small", style: "margin:16px 0 8px" }, "Or upload a QR code image:"),
+        el("input", {
+          type: "file", accept: "image/*", id: "scanFileInput",
+          style: "font-size:13px",
+          onChange: (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const img = new Image();
+            img.onload = () => {
+              if (!_detector) _detector = new BarcodeDetector({ formats: ["qr_code"] }).catch(() => null);
+              if (!("BarcodeDetector" in window)) {
+                document.getElementById("scanResult").textContent = "BarcodeDetector not supported. Try a Chromium browser.";
+                return;
+              }
+              const det = new BarcodeDetector({ formats: ["qr_code"] });
+              det.detect(img).then((codes) => {
+                const resultEl = document.getElementById("scanResult");
+                if (!codes.length) { resultEl.textContent = "No QR code found in image."; return; }
+                const vendorId = processUrl(codes[0].rawValue);
+                if (vendorId) { addVendorById(vendorId); onSuccess(vendorId); }
+                else { resultEl.textContent = "QR code found but vendor not recognized."; }
+              }).catch(() => {
+                document.getElementById("scanResult").textContent = "Could not read QR code from image.";
+              });
+            };
+            img.src = URL.createObjectURL(file);
+          },
+        }),
+      ]),
+    ]);
+
+    // Start camera after DOM is ready
+    setTimeout(() => {
+      const videoEl = document.getElementById("scanVideo");
+      const resultEl = document.getElementById("scanResult");
+      if (videoEl && resultEl) startCamera(videoEl, resultEl, onSuccess);
+    }, 0);
+
+    // Stop camera when navigating away
+    const origGo = go;
+    window._scanCleanup = stopCamera;
+  }
+
   /* ====================== ROUTER ====================== */
   function render() {
     switch (state.route) {
@@ -438,6 +588,7 @@
       case "track":     return viewTrack();
       case "history":   return viewHistory();
       case "favorites": return viewFavorites();
+      case "scan":      return viewScan();
       default:          return viewStores();
     }
   }

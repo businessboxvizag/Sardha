@@ -66,6 +66,8 @@ const DEMO_USERS = [
   { uid: "c_anita",    email: "anita@demo.bw",    password: "demo1234", role: "customer", name: "Anita Desai",  phone: "+91 99000 22222" },
   { uid: "c_rohit",    email: "rohit@demo.bw",    password: "demo1234", role: "customer", name: "Rohit Verma",  phone: "+91 99000 33333" },
   { uid: "admin1",     email: "admin@demo.bw",    password: "admin1234",role: "admin",    name: "Platform Admin", phone: null },
+  { uid: "m_bakery",   email: "bakery@demo.bw",   password: "demo1234", role: "merchant", name: "Daily Bread Bakery", phone: "+91 80000 11111", vendorId: "v1" },
+  { uid: "m_chaat",    email: "chaat@demo.bw",    password: "demo1234", role: "merchant", name: "Gupta Chaat Corner",  phone: "+91 80000 22222", vendorId: "v2" },
 ];
 
 const CUSTOMER_PROFILES = [

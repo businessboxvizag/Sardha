@@ -193,6 +193,7 @@
     Auth,
     login:  (email, password, role) => post("/api/auth/login", { email, password, role }),
     register: (data)           => post("/api/auth/register", data),
+    checkEmail: (email, role)  => post("/api/auth/check-email", { email, role }),
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     logout: () => {
       Auth.clearSession();

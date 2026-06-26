@@ -100,8 +100,8 @@
       ? myRider.deliveriesToday + " delivered today"
       : null;
 
-    const gpsLine = gpsActive ? "📍 Location sharing active" :
-      gpsError ? "⚠️ " + gpsError : "📡 Acquiring GPS…";
+    const gpsLine = gpsActive ? "Location sharing active" :
+      gpsError ? "Warning: " + gpsError : "Acquiring GPS signal...";
 
     return el("div", { class: "rider-status-card" }, [
       el("div", { class: "rider-status-top" }, [
@@ -135,13 +135,13 @@
   function mapsLink(lat, lng, label) {
     if (!lat || !lng) return null;
     const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    return el("a", { class: "rider-map-btn", href: url, target: "_blank", rel: "noopener" }, "📍 " + label);
+    return el("a", { class: "rider-map-btn", href: url, target: "_blank", rel: "noopener" }, label);
   }
 
   function directionsLink(fromLat, fromLng, toLat, toLng) {
     if (!fromLat || !fromLng || !toLat || !toLng) return null;
     const url = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=driving`;
-    return el("a", { class: "rider-map-btn rider-map-btn--nav", href: url, target: "_blank", rel: "noopener" }, "🗺️ Navigate");
+    return el("a", { class: "rider-map-btn rider-map-btn--nav", href: url, target: "_blank", rel: "noopener" }, "Navigate");
   }
 
   /* ── Order card ─────────────────────────────────────── */
@@ -151,9 +151,9 @@
     const deliverTo = o.deliverTo || o.deliveryAddress || "Address not set";
 
     const NEXT = {
-      [S.ASSIGNED]:         { label: "✅ Confirm Pickup",   cls: "primary" },
-      [S.PICKED_UP]:        { label: "🛺 Out for Delivery", cls: "accent"  },
-      [S.OUT_FOR_DELIVERY]: { label: "📦 Mark Delivered",   cls: "success" },
+      [S.ASSIGNED]:         { label: "Confirm Pickup",   cls: "primary" },
+      [S.PICKED_UP]:        { label: "Out for Delivery", cls: "accent"  },
+      [S.OUT_FOR_DELIVERY]: { label: "Mark Delivered",   cls: "success" },
     };
     const next = NEXT[o.status];
 
@@ -163,8 +163,8 @@
     const custLng   = o.deliverLng;
 
     const mapBtns = [
-      mapsLink(vendorLat, vendorLng, "Pickup"),
-      mapsLink(custLat, custLng, "Delivery"),
+      mapsLink(vendorLat, vendorLng, "Pickup location"),
+      mapsLink(custLat, custLng, "Delivery location"),
       directionsLink(vendorLat, vendorLng, custLat, custLng),
     ].filter(Boolean);
 

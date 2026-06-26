@@ -3,83 +3,79 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Business Wheels — Platform Portal</title>
+  <title>Sardha — Platform Portal</title>
   <link rel="stylesheet" href="assets/css/styles.css" />
 </head>
 <body>
   <div class="topbar">
     <div class="brand">
-      <span class="logo">🛺</span>
-      <span>Business Wheels<small>On-demand local delivery</small></span>
+      <span class="brand-logo">S</span>
+      <span>Sardha<small>On-demand local delivery</small></span>
     </div>
     <span class="spacer"></span>
-    <button class="btn ghost sm" id="reset">Reset demo data</button>
   </div>
 
   <div class="portal">
-    <h1>One platform, four front doors.</h1>
+    <h1>One platform. Four interfaces.</h1>
     <p class="lede">
-      Business Wheels connects local street vendors and small shops with salaried,
-      location-tracked riders for on-demand delivery. Pick an interface to explore —
-      all four share a single live datastore, so an order placed in the Customer app
-      appears instantly in the Merchant, Admin, and Rider views.
+      Sardha connects local street vendors and small shops with salaried,
+      location-tracked riders for on-demand delivery. Each interface shares a
+      single live datastore — an order placed in the Customer app appears
+      instantly in the Merchant, Admin, and Rider views.
     </p>
 
     <div class="portal-grid">
       <a class="card hover portal-card" href="customer/index.html">
-        <div class="pico">🛍️</div>
-        <h3>Customer App</h3>
-        <p>Discover nearby vendors, order in a few taps, and track your rider on the map in real time.</p>
+        <div class="portal-icon portal-icon--customer">C</div>
+        <h3>Customer</h3>
+        <p>Browse local vendors, place orders, and track your delivery in real time.</p>
         <div class="chip-list">
-          <span class="tag">Discovery</span><span class="tag">Cart & checkout</span>
-          <span class="tag">Live tracking</span><span class="tag">History</span><span class="tag">Favorites</span>
+          <span class="tag">Discovery</span>
+          <span class="tag">Cart &amp; checkout</span>
+          <span class="tag">Live tracking</span>
+          <span class="tag">Order history</span>
         </div>
       </a>
 
       <a class="card hover portal-card" href="merchant/index.html">
-        <div class="pico">🏪</div>
-        <h3>Merchant App</h3>
-        <p>Accept incoming orders, manage your inventory, dispatch to riders, and keep a customer book.</p>
+        <div class="portal-icon portal-icon--merchant">M</div>
+        <h3>Merchant</h3>
+        <p>Manage your store, accept incoming orders, and track deliveries.</p>
         <div class="chip-list">
-          <span class="tag">Order queue</span><span class="tag">Inventory</span>
-          <span class="tag">Live dispatch</span><span class="tag">Customers</span>
+          <span class="tag">Order queue</span>
+          <span class="tag">Inventory</span>
+          <span class="tag">Live dispatch</span>
+          <span class="tag">Analytics</span>
         </div>
       </a>
 
       <a class="card hover portal-card" href="admin/index.html">
-        <div class="pico">🛰️</div>
-        <h3>Admin Dashboard</h3>
-        <p>Oversee the whole operation: live fleet map, dynamic task assignment, vendors and analytics.</p>
+        <div class="portal-icon portal-icon--admin">A</div>
+        <h3>Admin</h3>
+        <p>Oversee the full operation — fleet, vendors, orders, and platform analytics.</p>
         <div class="chip-list">
-          <span class="tag">Fleet</span><span class="tag">Task assignment</span>
-          <span class="tag">Vendors</span><span class="tag">Analytics</span>
+          <span class="tag">Fleet monitor</span>
+          <span class="tag">Task assignment</span>
+          <span class="tag">Vendors</span>
+          <span class="tag">Monitor</span>
         </div>
       </a>
 
       <a class="card hover portal-card" href="rider/index.html">
-        <div class="pico">🛺</div>
-        <h3>Rider App</h3>
-        <p>View assigned deliveries, confirm pickups, update delivery status, and share live GPS location.</p>
+        <div class="portal-icon portal-icon--rider">R</div>
+        <h3>Rider</h3>
+        <p>View assigned deliveries, update order status, and share live GPS location.</p>
         <div class="chip-list">
-          <span class="tag">Active orders</span><span class="tag">Status updates</span>
-          <span class="tag">Live GPS</span>
+          <span class="tag">Active orders</span>
+          <span class="tag">Status updates</span>
+          <span class="tag">Navigation</span>
         </div>
       </a>
     </div>
 
     <p class="muted small" style="margin-top:34px">
-      Tip: open the apps in separate browser tabs and watch updates propagate live between them.
+      Open each interface in a separate browser tab to see live updates propagate across all four apps.
     </p>
   </div>
-
-  <script src="assets/js/store.js"></script>
-  <script>
-    document.getElementById("reset").addEventListener("click", function () {
-      if (confirm("Reset all demo data back to seed state?")) {
-        BW.reset();
-        alert("Demo data reset.");
-      }
-    });
-  </script>
 </body>
 </html>

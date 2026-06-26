@@ -36,18 +36,18 @@
 
     const unassigned = BW.orders().filter((o) => !o.riderId && [S.PLACED, S.ACCEPTED].includes(o.status)).length;
     const nav = el("div", { class: "sidebar" }, [
-      navItem("overview",  "📊", "Overview"),
-      navItem("fleet",     "🛵", "Fleet"),
-      navItem("assign",    "🎯", "Task Assignment", unassigned),
-      navItem("vendors",   "🏪", "Vendors"),
-      navItem("analytics", "📈", "Analytics"),
-      navItem("monitor",   "👁️", "Monitor"),
+      navItem("overview",  "Ov", "Overview"),
+      navItem("fleet",     "Fl", "Fleet"),
+      navItem("assign",    "Ta", "Task Assignment", unassigned),
+      navItem("vendors",   "Ve", "Vendors"),
+      navItem("analytics", "An", "Analytics"),
+      navItem("monitor",   "Mo", "Monitor"),
     ]);
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
 
     function navItem(route, ico, label, count) {
       return el("div", { class: "nav-item" + (active === route ? " active" : ""), onClick: () => go(route) }, [
-        el("span", { class: "ico" }, ico),
+        el("span", { class: "ico nav-ico-text" }, ico),
         el("span", { style: "flex:1" }, label),
         count ? el("span", { class: "badge PLACED" }, String(count)) : document.createTextNode(""),
       ]);

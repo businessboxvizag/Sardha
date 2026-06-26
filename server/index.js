@@ -29,19 +29,24 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
-app.set("io", io);
+app.set("io", io); // routes access io via req.app.get("io")
 
 require("./socket")(io);
 
 /* ── API Routes ──────────────────────────────────────────────── */
-app.use("/api/public",    require("./routes/public"));
+app.use("/api/public",    require("./routes/public"));   // no auth — scan page
 app.use("/api/auth",      require("./routes/auth"));
 app.use("/api/vendors",   require("./routes/vendors"));
 app.use("/api/orders",    require("./routes/orders"));
 app.use("/api/riders",    require("./routes/riders"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/analytics", require("./routes/analytics"));
-app.use("/api/admin",     require("./routes/admin"));
+app.use("/api/admin",    require("./routes/admin"));
+
+/* ── Expose Mapbox token safely ──────────────────────────────── */
+app.get("/api/config", (req, res) => {
+  res.json({ mapboxToken: process.env.MAPBOX_TOKEN || "" });
+});
 
 /* ── Health check ────────────────────────────────────────────── */
 app.get("/health", (req, res) => res.json({ ok: true, ts: Date.now() }));
