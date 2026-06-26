@@ -45,12 +45,35 @@
     ]);
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
 
+    // Bottom nav (mobile only)
+    root.appendChild(el("div", { class: "bottom-nav" }, [
+      bnItem("overview",  "Ov", "Overview"),
+      bnItem("fleet",     "Fl", "Fleet"),
+      bnItem("assign",    "Ta", "Tasks",   unassigned || null),
+      bnItem("vendors",   "Ve", "Vendors"),
+      bnItem("monitor",   "Mo", "Monitor"),
+    ]));
+
     function navItem(route, ico, label, count) {
       return el("div", { class: "nav-item" + (active === route ? " active" : ""), onClick: () => go(route) }, [
         el("span", { class: "ico nav-ico-text" }, ico),
         el("span", { style: "flex:1" }, label),
         count ? el("span", { class: "badge PLACED" }, String(count)) : document.createTextNode(""),
       ]);
+    }
+
+    function bnItem(route, ico, label, badge) {
+      const wrap = el("div", { class: "bottom-nav-item-wrap" }, [
+        el("button", {
+          class: "bottom-nav-item" + (active === route ? " active" : ""),
+          onClick: () => go(route),
+        }, [
+          el("span", { class: "bn-ico" }, ico),
+          document.createTextNode(label),
+        ]),
+      ]);
+      if (badge) wrap.appendChild(el("span", { class: "bn-badge" }, String(badge)));
+      return wrap;
     }
   }
 
@@ -108,10 +131,10 @@
     riders.forEach((r) => {
       if (!r.lat || !r.lng) return;
       const { x, y } = project(r.lat, r.lng);
-      const head = r.status === "available" ? "🟢" : r.status === "on_delivery" ? "🟣" : "⚪";
-      map.appendChild(el("div", { class: "pin", style: `left:${x}%;top:${y}%` }, [
-        el("div", { class: "head" }, "🛵"),
-        el("div", { class: "lbl small" }, head + " " + r.name.split(" ")[0]),
+      const statusCls = r.status === "available" ? "pin-available" : r.status === "on_delivery" ? "pin-busy" : "pin-offline";
+      map.appendChild(el("div", { class: "pin " + statusCls, style: `left:${x}%;top:${y}%` }, [
+        el("div", { class: "head" }, "R"),
+        el("div", { class: "lbl small" }, r.name.split(" ")[0]),
       ]));
     });
 
@@ -143,7 +166,11 @@
         el("div", { class: "card" }, [
           el("div", { class: "row between" }, [
             el("h3", { style: "margin:0" }, "Live fleet map"),
-            el("div", { class: "row small muted", style: "gap:12px" }, [el("span", {}, "🟢 available"), el("span", {}, "🟣 on delivery"), el("span", {}, "⚪ offline")]),
+            el("div", { class: "row small muted", style: "gap:12px" }, [
+              el("span", { class: "fleet-legend fleet-legend--available" }, "Available"),
+              el("span", { class: "fleet-legend fleet-legend--busy" }, "On delivery"),
+              el("span", { class: "fleet-legend fleet-legend--offline" }, "Offline"),
+            ]),
           ]),
           el("div", { style: "margin-top:12px" }, map),
         ]),
@@ -163,10 +190,10 @@
     const unassigned = orders.filter((o) => !o.riderId);
 
     const autoBtn = el("button", { class: "btn primary", onClick: autoAssignAll, disabled: !unassigned.length },
-      "⚡ Auto-assign all (" + unassigned.length + ")");
+      "Auto-assign all (" + unassigned.length + ")");
 
     const cards = unassigned.length ? unassigned.map((o) => assignmentCard(o)) :
-      [el("div", { class: "empty" }, [el("div", { class: "e" }, "✅"), "All active orders have a rider assigned."])];
+      [el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "All active orders have a rider assigned."])];
 
     const assignedRows = orders.filter((o) => o.riderId).map((o) => {
       const v = BW.vendor(o.vendorId);
@@ -175,7 +202,7 @@
         el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
         el("td", {}, v ? v.name : "—"),
         el("td", {}, statusBadge(o.status)),
-        el("td", {}, r ? "🛵 " + r.name : "—"),
+        el("td", {}, r ? r.name : "—"),
         el("td", {}, el("button", { class: "btn ghost sm", onClick: () => openReassign(o) }, "Reassign")),
       ]);
     });
@@ -303,12 +330,10 @@
     const name     = el("input", { value: v ? v.name : "", placeholder: "Vendor name" });
     const category = el("input", { value: v ? v.category : "", placeholder: "Groceries / Street Food …" });
     const area     = el("input", { value: v ? v.area : "", placeholder: "Area / locality" });
-    const emoji    = el("input", { value: v ? v.img : "🏪", placeholder: "🏪" });
     const body = el("div", {}, [
       el("div", { class: "field" }, [el("label", {}, "Name"), name]),
       el("div", { class: "field" }, [el("label", {}, "Category"), category]),
       el("div", { class: "field" }, [el("label", {}, "Area"), area]),
-      el("div", { class: "field" }, [el("label", {}, "Icon (emoji)"), emoji]),
     ]);
     const close = UI.modal({
       title: isNew ? "Onboard vendor" : "Edit vendor",
@@ -323,7 +348,7 @@
               name: name.value.trim(),
               category: category.value.trim() || "General",
               area: area.value.trim() || "—",
-              img: emoji.value.trim() || "🏪",
+              img: "",
               rating: v ? v.rating : 5.0,
               prepMins: v ? v.prepMins : 10,
               lat: v ? v.lat : 12.95,
@@ -415,11 +440,11 @@
       }, label);
     }
 
-    const tabs = el("div", { style: "display:flex;gap:8px;margin-bottom:20px" }, [
-      tabBtn("logins",    "🔐 Logins"),
-      tabBtn("orders",    "📦 Orders"),
-      tabBtn("customers", "👥 Customers"),
-      tabBtn("payments",  "💰 Payments"),
+    const tabs = el("div", { style: "display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" }, [
+      tabBtn("logins",    "Logins"),
+      tabBtn("orders",    "Orders"),
+      tabBtn("customers", "Customers"),
+      tabBtn("payments",  "Payments"),
     ]);
 
     let body;
@@ -488,11 +513,11 @@
       return el("tr", {}, [
         el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
         el("td", { class: "muted small" }, clockTime(o.createdAt)),
-        el("td", {}, v ? (v.img || "🏪") + " " + v.name : "—"),
+        el("td", {}, v ? v.name : "—"),
         el("td", {}, cust ? cust.name : "—"),
         el("td", {}, money(o.total)),
         el("td", {}, statusBadge(o.status)),
-        el("td", {}, rider ? "🛺 " + rider.name : el("span", { class: "muted" }, "—")),
+        el("td", {}, rider ? rider.name : el("span", { class: "muted" }, "—")),
         el("td", { class: "muted small" }, dur),
       ]);
     });
@@ -548,8 +573,8 @@
     const rows = orders.slice(0, 100).map((o) => {
       const v    = BW.vendor(o.vendorId);
       const cust = BW.customers().find((c) => c.id === o.customerId);
-      const payStatus = o.status === "DELIVERED" ? "✅ Paid" :
-        o.status === "CANCELLED" ? "❌ Cancelled" : "⏳ Pending";
+      const payStatus = o.status === "DELIVERED" ? "Paid" :
+        o.status === "CANCELLED" ? "Cancelled" : "Pending";
       return el("tr", {}, [
         el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
         el("td", { class: "muted small" }, clockTime(o.createdAt)),

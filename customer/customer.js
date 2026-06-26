@@ -96,11 +96,33 @@
     const content = el("div", { class: "content" }, body);
     root.appendChild(el("div", { class: "app" }, [nav, content]));
 
+    // Bottom nav (mobile only — hidden on desktop via CSS)
+    root.appendChild(el("div", { class: "bottom-nav" }, [
+      bnItem("stores",    "St", "Stores"),
+      bnItem("history",   "Or", "Orders"),
+      bnItem("favorites", "Fv", "Favs"),
+      bnItem("scan",      "QR", "Scan"),
+    ]));
+
     function navItem(route, ico, label) {
       return el("div", {
         class: "nav-item" + (active === route ? " active" : ""),
         onClick: () => go(route),
       }, [el("span", { class: "ico nav-ico-text" }, ico), el("span", {}, label)]);
+    }
+
+    function bnItem(route, ico, label, badge) {
+      const wrap = el("div", { class: "bottom-nav-item-wrap" }, [
+        el("button", {
+          class: "bottom-nav-item" + (active === route ? " active" : ""),
+          onClick: () => go(route),
+        }, [
+          el("span", { class: "bn-ico" }, ico),
+          document.createTextNode(label),
+        ]),
+      ]);
+      if (badge) wrap.appendChild(el("span", { class: "bn-badge" }, String(badge)));
+      return wrap;
     }
   }
 
@@ -170,7 +192,7 @@
       });
 
       if (!list.length) {
-        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, "🔍"), "No stores match your search."]));
+        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No stores match your search."]));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));
@@ -181,7 +203,7 @@
     const isFav = favs.includes(v.id);
     return el("div", { class: "card hover", onClick: () => openVendor(v.id) }, [
       el("div", { class: "row between" }, [
-        el("div", { class: "vendor-emoji" }, v.img),
+        el("div", { class: "vendor-initial" }, (v.name || "?")[0].toUpperCase()),
         el("button", {
           class: "x",
           title: "Favorite",
@@ -190,12 +212,12 @@
             await BW.toggleFavorite(v.id);
             render();
           },
-        }, isFav ? "❤️" : "🤍"),
+        }, isFav ? "Saved" : "Save"),
       ]),
       el("h3", { style: "margin:8px 0 2px" }, v.name),
       el("div", { class: "muted small" }, v.category + " · " + v.area),
       el("div", { class: "row", style: "margin-top:10px;gap:8px" }, [
-        el("span", { class: "tag" }, "⭐ " + v.rating),
+        el("span", { class: "tag" }, v.rating + " rating"),
         el("span", { class: "tag" }, "~" + v.prepMins + " min prep"),
       ]),
     ]);
@@ -230,16 +252,16 @@
       el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "← Back"),
       el("div", { class: "row between", style: "margin:14px 0 4px" }, [
         el("div", { class: "row", style: "gap:14px" }, [
-          el("div", { class: "vendor-emoji", style: "font-size:44px" }, v.img),
+          el("div", { class: "vendor-initial vendor-initial--lg" }, (v.name || "?")[0].toUpperCase()),
           el("div", {}, [
             el("h1", { class: "page-title", style: "margin:0" }, v.name),
-            el("div", { class: "muted" }, v.category + " · " + v.area + " · ⭐ " + v.rating),
+            el("div", { class: "muted" }, v.category + " · " + v.area + " · " + v.rating + " rating"),
           ]),
         ]),
         el("button", {
           class: "btn ghost",
           onClick: async () => { await BW.toggleFavorite(v.id); render(); },
-        }, favs.includes(v.id) ? "❤️ Favorited" : "🤍 Favorite"),
+        }, favs.includes(v.id) ? "Saved" : "Save"),
       ]),
       el("div", { class: "card", style: "margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Menu"),
@@ -254,7 +276,7 @@
     if (cartCount() === 0) {
       UI.modal({
         title: "Your cart",
-        body: el("div", { class: "empty" }, [el("div", { class: "e" }, "🛒"), "Your cart is empty."]),
+        body: el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "Your cart is empty."]),
       });
       return;
     }
@@ -343,7 +365,7 @@
           mapFor(v, cust, rider),
           rider
             ? el("div", { class: "row between", style: "margin-top:12px" }, [
-                el("div", {}, [el("div", { style: "font-weight:600" }, "🛵 " + rider.name), el("div", { class: "muted small" }, rider.vehicle + " · ⭐ " + rider.rating)]),
+                el("div", {}, [el("div", { style: "font-weight:600" }, rider.name), el("div", { class: "muted small" }, rider.vehicle + " · " + rider.rating + " rating")]),
                 el("a", { class: "btn ghost sm", href: "tel:" + rider.phone }, "Call rider"),
               ])
             : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a rider to be assigned…"),
@@ -373,9 +395,9 @@
         el("div", { class: "lbl small" }, lbl),
       ]);
     };
-    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "🏪", "Vendor"));
-    if (customer) map.appendChild(pin(customer.lat, customer.lng, "🏠", "You"));
-    if (rider) map.appendChild(pin(rider.lat, rider.lng, "🛵", rider.name.split(" ")[0]));
+    if (vendor) map.appendChild(pin(vendor.lat, vendor.lng, "M", "Vendor"));
+    if (customer) map.appendChild(pin(customer.lat, customer.lng, "Y", "You"));
+    if (rider) map.appendChild(pin(rider.lat, rider.lng, "R", rider.name.split(" ")[0]));
     return map;
   }
 
@@ -388,14 +410,14 @@
     if (!orders.length) {
       body = [
         el("h1", { class: "page-title" }, "My Orders"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "🧾"), "No orders yet. Scan a store's QR code to get started."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No orders yet. Scan a store's QR code to get started."]),
       ];
     } else {
       const rows = orders.map((o) => {
         const v = BW.vendor(o.vendorId);
         return el("tr", { class: "clickable", onClick: () => go("track", { trackOrderId: o.id }) }, [
           el("td", {}, el("strong", {}, o.id.slice(-6).toUpperCase())),
-          el("td", {}, v ? v.img + " " + v.name : "—"),
+          el("td", {}, v ? v.name : "—"),
           el("td", {}, o.items.reduce((s, l) => s + l.qty, 0) + " items"),
           el("td", {}, money(o.total)),
           el("td", {}, statusBadge(o.status)),
@@ -424,7 +446,7 @@
     if (!vendors.length) {
       body = [
         el("h1", { class: "page-title" }, "Favorites"),
-        el("div", { class: "empty" }, [el("div", { class: "e" }, "❤️"), "No favorites yet. Open a store and tap the heart."]),
+        el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No favorites yet. Open a store and tap the heart."]),
       ];
     } else {
       const grid = el("div", { class: "grid cols-3" });

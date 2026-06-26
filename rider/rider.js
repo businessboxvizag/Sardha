@@ -61,7 +61,7 @@
   async function doAdvance(orderId) {
     try {
       const order = await BW.advanceOrder(orderId);
-      toast("✓ " + BW.STATUS_LABEL[order.status]);
+      toast(BW.STATUS_LABEL[order.status]);
     } catch (err) {
       toast(err.message || "Failed to update order");
     }
@@ -118,7 +118,7 @@
 
     if (!orders.length) {
       wrap.appendChild(el("div", { class: "empty" }, [
-        el("div", { class: "e" }, "✅"),
+        el("div", { class: "e" }, ""),
         el("p", {}, "No active deliveries. Orders will appear here when assigned."),
       ]));
       return wrap;
@@ -174,7 +174,7 @@
         el("span", { class: "badge " + o.status }, BW.STATUS_LABEL[o.status] || o.status),
       ]),
       el("div", { class: "rider-card-body" }, [
-        row("From",       vendor ? (vendor.img || vendor.emoji || "🏪") + " " + vendor.name : "—"),
+        row("From",       vendor ? vendor.name : "—"),
         row("Deliver to", deliverTo),
         row("Items",      itemCount + " item" + (itemCount !== 1 ? "s" : "") + " · " + money(o.total || 0)),
         row("Placed",     timeAgo(o.createdAt)),

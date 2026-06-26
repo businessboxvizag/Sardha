@@ -63,19 +63,19 @@
   ];
 
   const CATEGORY_OPTIONS = [
-    { value: "Restaurant",   label: "🍽️  Restaurant" },
-    { value: "Street Food",  label: "🥘  Street Food / Chaat" },
-    { value: "Bakery",       label: "🥖  Bakery / Cafe" },
-    { value: "Sweets",       label: "🍬  Sweets & Snacks" },
-    { value: "Groceries",    label: "🛒  Groceries" },
-    { value: "Pharmacy",     label: "💊  Pharmacy" },
-    { value: "Florist",      label: "💐  Florist" },
-    { value: "Electronics",  label: "📱  Electronics" },
-    { value: "Clothing",     label: "👗  Clothing / Textiles" },
-    { value: "General",      label: "🏪  General Store" },
+    { value: "Restaurant",   label: "Restaurant" },
+    { value: "Street Food",  label: "Street Food / Chaat" },
+    { value: "Bakery",       label: "Bakery / Cafe" },
+    { value: "Sweets",       label: "Sweets & Snacks" },
+    { value: "Groceries",    label: "Groceries" },
+    { value: "Pharmacy",     label: "Pharmacy" },
+    { value: "Florist",      label: "Florist" },
+    { value: "Electronics",  label: "Electronics" },
+    { value: "Clothing",     label: "Clothing / Textiles" },
+    { value: "General",      label: "General Store" },
   ];
 
-  const EMOJI_OPTIONS = ["🏪","🍽️","🥘","🥖","🛒","💊","💐","🎂","🍕","🍜","☕","🍱","🧁","🌮","🍔"];
+  const EMOJI_OPTIONS = [];
 
   const state = { route: "orders", vendorId: null, detailOrderId: null };
   const root = document.getElementById("root");
@@ -114,17 +114,8 @@
     const catEl = el("select", {});
     CATEGORY_OPTIONS.forEach((c) => catEl.appendChild(el("option", { value: c.value }, c.label)));
 
-    const emojiDisplay = el("span", { style: "font-size:32px;cursor:pointer" }, "🏪");
-    let chosenEmoji = "🏪";
-    const emojiGrid = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" });
-    EMOJI_OPTIONS.forEach((e) => {
-      const btn = el("button", {
-        class: "btn",
-        style: "font-size:22px;padding:6px 10px",
-        onClick: () => { chosenEmoji = e; emojiDisplay.textContent = e; },
-      }, e);
-      emojiGrid.appendChild(btn);
-    });
+    const emojiGrid = el("div", { style: "display:none" }); // icon picker removed
+    let chosenEmoji = "";
 
     const errEl = el("div", { class: "auth-err" });
     const submitBtn = el("button", { class: "btn primary", style: "width:100%", onClick: async () => {
@@ -200,11 +191,34 @@
 
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
 
+    // Bottom nav (mobile only)
+    root.appendChild(el("div", { class: "bottom-nav" }, [
+      bnItem("orders",    "Or", "Orders",   pending || null),
+      bnItem("dispatch",  "Di", "Dispatch"),
+      bnItem("inventory", "In", "Stock"),
+      bnItem("customers", "Cu", "Customers"),
+      bnItem("qr",        "QR", "QR Code"),
+    ]));
+
     function navItem(route, label, count) {
       return el("div", { class: "nav-item" + (active === route ? " active" : ""), onClick: () => go(route) }, [
         el("span", { style: "flex:1" }, label),
         count ? el("span", { class: "badge PLACED" }, String(count)) : document.createTextNode(""),
       ]);
+    }
+
+    function bnItem(route, ico, label, badge) {
+      const wrap = el("div", { class: "bottom-nav-item-wrap" }, [
+        el("button", {
+          class: "bottom-nav-item" + (active === route ? " active" : ""),
+          onClick: () => go(route),
+        }, [
+          el("span", { class: "bn-ico" }, ico),
+          document.createTextNode(label),
+        ]),
+      ]);
+      if (badge) wrap.appendChild(el("span", { class: "bn-badge" }, String(badge)));
+      return wrap;
     }
   }
 
@@ -334,11 +348,11 @@
         el("div", { class: "head" }, head), el("div", { class: "lbl small" }, lbl),
       ]));
     };
-    addPin(vendor.lat, vendor.lng, "🏪", vendor.name.split(" ")[0]);
+    addPin(vendor.lat, vendor.lng, "M", vendor.name.split(" ")[0]);
     active.forEach((o) => {
       if (o.riderId) {
         const r = BW.riders().find((r) => r.id === o.riderId);
-        if (r) addPin(r.lat, r.lng, "🛵", r.name.split(" ")[0]);
+        if (r) addPin(r.lat, r.lng, "R", r.name.split(" ")[0]);
       }
     });
 
@@ -427,7 +441,7 @@
       el("div", { class: "row between" }, [
         el("div", {}, [
           el("h1", { class: "page-title" }, "Inventory"),
-          el("p", { class: "page-sub" }, (vendor ? vendor.img + " " + vendor.name : "") + " · " + products.length + " items"),
+          el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " · " + products.length + " items"),
         ]),
         el("button", { class: "btn primary", onClick: () => editProduct(null) }, "+ Add item"),
       ]),
@@ -607,7 +621,7 @@
       el("div", { style: "max-width:400px;margin:0 auto" }, [
         el("div", { style: "background:#fff;border:1px solid #ffe0c8;border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;box-shadow:0 2px 12px rgba(240,120,48,0.08)" }, [
           el("img", { src: qrSrc, width: "220", height: "220", alt: "QR Code", style: "display:block;margin:0 auto 16px;border-radius:8px" }),
-          el("div", { style: "font-size:18px;font-weight:700;color:#1a1a24;margin-bottom:4px" }, vendor.img + " " + vendor.name),
+          el("div", { style: "font-size:18px;font-weight:700;color:#1a1a24;margin-bottom:4px" }, vendor.name),
           el("div", { style: "font-size:12px;color:#999;word-break:break-all" }, scanUrl),
         ]),
 

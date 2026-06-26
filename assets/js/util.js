@@ -75,15 +75,15 @@
   function topbar(roleLabel, right) {
     return el("div", { class: "topbar" }, [
       el("a", { class: "brand", href: "../index.html" }, [
-        el("span", { class: "logo" }, "🛺"),
+        el("span", { class: "brand-logo" }, "S"),
         el("span", {}, [
-          document.createTextNode("Business Wheels"),
+          document.createTextNode("Sardha"),
           el("small", {}, "On-demand local delivery"),
         ]),
       ]),
       el("span", { class: "spacer" }),
       ...(right || []),
-      el("span", { class: "role-pill" }, roleLabel),
+      el("span", { class: "role-pill topbar-title" }, roleLabel),
     ]);
   }
 
@@ -111,7 +111,7 @@
       else if (i === idx) cls += " active";
       wrap.appendChild(
         el("div", { class: cls }, [
-          el("div", { class: "bead" }, i < idx ? "✓" : String(i + 1)),
+          el("div", { class: "bead" }, i < idx ? "" : String(i + 1)),
           el("div", {}, BW.STATUS_LABEL[s]),
         ])
       );
