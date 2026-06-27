@@ -337,6 +337,7 @@
     },
 
     createMerchant: (data) => post("/api/admin/merchants", data),
+    createRider: (data) => post("/api/admin/riders", data),
     deleteMerchant: async (vendorId) => {
       await del(`/api/admin/merchants/${vendorId}`);
       _cache.vendors = _cache.vendors.filter((v) => v.id !== vendorId);

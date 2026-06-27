@@ -155,4 +155,58 @@ router.delete("/merchants/:vendorId", requireAuth, requireRole("admin"), async (
   }
 });
 
+
+/* ── POST /api/admin/riders ────────────────────────────────────
+ * Admin creates a rider (Saradhi) login account + rider doc.    */
+router.post("/riders", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const { name, email, password, vehicle, shift } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: "name, email and password are required" });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const existing = await db.collection("users").where("email", "==", email).get();
+    if (!existing.empty) {
+      return res.status(409).json({ error: "An account with this email already exists" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const userRef = db.collection("users").doc();
+    const uid = userRef.id;
+    const now = new Date().toISOString();
+
+    await userRef.set({
+      uid, email, passwordHash,
+      role: "rider",
+      name,
+      authProvider: "email",
+      createdAt: now,
+      createdBy: "admin",
+    });
+
+    // Rider doc — id must match uid so rider app can find it
+    await db.collection("riders").doc(uid).set({
+      id: uid,
+      name,
+      email,
+      vehicle: vehicle || "Bike",
+      shift: shift || "Morning",
+      status: "offline",
+      rating: 5.0,
+      deliveriesToday: 0,
+      lat: null,
+      lng: null,
+      createdAt: now,
+    });
+
+    res.status(201).json({ riderId: uid, name, email, password });
+  } catch (err) {
+    console.error("POST /admin/riders:", err);
+    res.status(500).json({ error: "Failed to create rider: " + err.message });
+  }
+});
+
 module.exports = router;

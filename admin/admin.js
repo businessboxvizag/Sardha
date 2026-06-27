@@ -160,8 +160,13 @@
     });
 
     shell("fleet", [
-      el("h1", { class: "page-title" }, "Fleet Management"),
-      el("p", { class: "page-sub" }, "Location-tracked, salaried Saradhis. Set shift status and monitor load."),
+      el("div", { class: "row between", style: "margin-bottom:4px" }, [
+        el("div", {}, [
+          el("h1", { class: "page-title", style: "margin:0" }, "Fleet Management"),
+          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "Location-tracked, salaried Saradhis. Set shift status and monitor load."),
+        ]),
+        el("button", { class: "btn primary", onClick: createRider }, "+ Add Saradhi"),
+      ]),
       el("div", { class: "grid cols-2" }, [
         el("div", { class: "card" }, [
           el("div", { class: "row between" }, [
@@ -293,9 +298,8 @@
   }
 
   /* ====================== VENDORS ====================== */
-  const APP_BASE = window.BW_API_BASE
-    ? window.BW_API_BASE.replace(/\/api$/, "").replace(/\/$/, "")
-    : (window.location.origin.includes("localhost") ? "http://localhost:3000" : "https://sardha.vercel.app");
+  // APP_BASE is the Firebase Hosting origin — scan page lives here, not on the backend
+  const APP_BASE = window.location.origin;
 
   function storeQrUrl(vendorId) {
     return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&ecc=M&format=png&data="
@@ -306,18 +310,23 @@
     const vendors = BW.vendors();
     const orders  = BW.orders();
     const rows = vendors.map((v) => {
+      const isPending = v.status === "pending_setup" || !v.active;
       const vOrders = orders.filter((o) => o.vendorId === v.id);
       const rev = vOrders.filter((o) => o.status !== S.CANCELLED).reduce((s, o) => s + o.total, 0);
+      const displayName = v.name ? v.name : el("span", { class: "muted small" }, "(store not set up yet)");
       return el("tr", {}, [
         el("td", {}, [
           el("div", { style: "display:flex;align-items:center;gap:10px" }, [
-            el("div", { class: "vendor-initial", style: "width:32px;height:32px;font-size:14px;border-radius:8px" }, (v.name||"?")[0].toUpperCase()),
-            el("strong", {}, v.name),
+            el("div", { class: "vendor-initial", style: "width:32px;height:32px;font-size:14px;border-radius:8px" }, (v.name || "?")[0].toUpperCase()),
+            el("div", {}, [
+              el("strong", {}, displayName),
+              isPending ? el("span", { style: "display:inline-block;margin-left:8px;font-size:11px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--muted)" }, "Pending setup") : document.createTextNode(""),
+            ]),
           ]),
         ]),
-        el("td", { class: "muted" }, v.category),
-        el("td", { class: "muted" }, v.area),
-        el("td", {}, BW.products(v.id).length + " items"),
+        el("td", { class: "muted" }, v.category || "—"),
+        el("td", { class: "muted" }, v.area || "—"),
+        el("td", {}, isPending ? el("span", { class: "muted" }, "—") : BW.products(v.id).length + " items"),
         el("td", {}, String(vOrders.length)),
         el("td", {}, money(rev)),
         el("td", {}, [
@@ -348,97 +357,74 @@
   }
 
   function createStore() {
-    const nameEl  = el("input", { placeholder: "e.g. Ravi Kirana Store" });
-    const catEl   = el("select", {});
-    ["General","Restaurant","Street Food","Bakery","Groceries","Pharmacy","Florist","Electronics","Clothing","Sweets"]
-      .forEach((c) => catEl.appendChild(el("option", { value: c }, c)));
-    const areaEl  = el("input", { placeholder: "e.g. Dwaraka Nagar, Vizag" });
+    const nameEl  = el("input", { placeholder: "e.g. Ravi (merchant's name)" });
     const emailEl = el("input", { type: "email", placeholder: "merchant@example.com" });
     const passEl  = el("input", { type: "text", value: genPass(), placeholder: "Set a password" });
-    const phoneEl = el("input", { type: "tel", placeholder: "+91 98765 43210 (optional)" });
     const errEl   = el("div", { class: "auth-err" });
-    let _lat = null, _lng = null;
-    const gpsStatus = el("span", { class: "muted small" });
-    const gpsBtn = el("button", { class: "btn ghost sm", type: "button", onClick: () => {
-      if (!navigator.geolocation) { gpsStatus.textContent = "GPS not supported"; return; }
-      gpsBtn.disabled = true; gpsStatus.textContent = "Locating...";
-      navigator.geolocation.getCurrentPosition(
-        (p) => { _lat = p.coords.latitude; _lng = p.coords.longitude; gpsStatus.textContent = `${_lat.toFixed(4)}, ${_lng.toFixed(4)}`; gpsBtn.disabled = false; },
-        ()  => { gpsStatus.textContent = "Unavailable"; gpsBtn.disabled = false; },
-        { enableHighAccuracy: true, timeout: 12000 }
-      );
-    }}, "Use GPS");
 
     const body = el("div", {}, [
-      el("p", { class: "muted small", style: "margin:0 0 16px" }, "This will create the store and a merchant account. Share the credentials with the store owner."),
-      el("div", { class: "field" }, [el("label", {}, "Store name"), nameEl]),
-      el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
-      el("div", { class: "field" }, [el("label", {}, "Area / locality"), areaEl]),
-      el("div", { class: "field" }, [el("label", {}, "Store location (optional)"), el("div", { style: "display:flex;align-items:center;gap:8px" }, [gpsBtn, gpsStatus])]),
-      el("hr", { style: "border:none;border-top:1px solid var(--border);margin:16px 0" }),
-      el("p", { style: "font-size:12px;font-weight:700;color:var(--muted);margin:0 0 10px" }, "MERCHANT LOGIN CREDENTIALS"),
-      el("div", { class: "field" }, [el("label", {}, "Merchant email"), emailEl]),
-      el("div", { class: "field" }, [el("label", {}, "Password"), passEl]),
-      el("div", { class: "field" }, [el("label", {}, "Phone (optional)"), phoneEl]),
+      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a merchant account. The merchant will set up their store name, location and products after logging in."),
+      el("div", { class: "field" }, [el("label", {}, "Merchant name"), nameEl]),
+      el("div", { class: "field" }, [el("label", {}, "Login email"), emailEl]),
+      el("div", { class: "field" }, [
+        el("label", {}, "Password"),
+        el("div", { style: "display:flex;gap:8px" }, [
+          passEl,
+          el("button", { class: "btn ghost sm", type: "button", onClick: () => { passEl.value = genPass(); } }, "New"),
+        ]),
+      ]),
       errEl,
     ]);
 
     const close = UI.modal({
-      title: "Create Store",
+      title: "Create Merchant Account",
       body,
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
         el("button", { class: "btn primary", onClick: async () => {
           errEl.textContent = "";
-          if (!nameEl.value.trim()) { errEl.textContent = "Store name required."; return; }
-          if (!emailEl.value.trim()) { errEl.textContent = "Merchant email required."; return; }
+          if (!nameEl.value.trim()) { errEl.textContent = "Merchant name required."; return; }
+          if (!emailEl.value.trim()) { errEl.textContent = "Login email required."; return; }
           if (passEl.value.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
           try {
             const result = await BW.createMerchant({
-              storeName: nameEl.value.trim(),
-              category: catEl.value,
-              area: areaEl.value.trim() || "—",
+              merchantName: nameEl.value.trim(),
               email: emailEl.value.trim().toLowerCase(),
               password: passEl.value,
-              phone: phoneEl.value.trim() || null,
-              lat: _lat, lng: _lng,
             });
-            // Refresh vendor list
-            const vendors = await fetch(window.BW_API_BASE + "/api/vendors", {
-              headers: { Authorization: "Bearer " + BW.Auth.getToken() }
-            }).then((r) => r.json());
-            BW.vendors = () => vendors; // temporary override until next init
             close();
             showCreatedStore(result);
-          } catch (err) { errEl.textContent = err.message || "Failed to create store."; }
-        }}, "Create Store"),
+            await BW.init("admin"); // refresh vendor cache so new pending store appears immediately
+            go("vendors");
+          } catch (err) { errEl.textContent = err.message || "Failed to create account."; }
+        }}, "Create Account"),
       ],
     });
   }
 
   function showCreatedStore(result) {
-    const { vendorId, email, password, storeName } = result;
+    const { vendorId, email, password, merchantName } = result;
     const qrSrc = storeQrUrl(vendorId);
     const scanUrl = APP_BASE + "/scan/?v=" + vendorId;
-    const credText = `Store: ${storeName}\nEmail: ${email}\nPassword: ${password}`;
+    const credText = `Email: ${email}\nPassword: ${password}`;
 
     const close = UI.modal({
-      title: "Store Created",
+      title: "Account Created",
       body: el("div", { style: "text-align:center" }, [
-        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these credentials and QR code with the merchant."),
+        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these login credentials with " + merchantName + ". They will set up their store after logging in."),
         el("img", { src: qrSrc, width: "200", height: "200", style: "display:block;margin:0 auto 16px;border-radius:10px" }),
         el("div", { style: "background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:left;font-size:13px;line-height:1.8;margin-bottom:12px" }, [
-          el("div", {}, [el("span", { class: "muted" }, "Store: "), el("strong", {}, storeName)]),
+          el("div", {}, [el("span", { class: "muted" }, "Merchant: "), el("strong", {}, merchantName)]),
           el("div", {}, [el("span", { class: "muted" }, "Email: "), el("strong", {}, email)]),
           el("div", {}, [el("span", { class: "muted" }, "Password: "), el("strong", { style: "font-family:monospace;letter-spacing:1px" }, password)]),
         ]),
         el("div", { style: "display:flex;gap:8px;justify-content:center;flex-wrap:wrap" }, [
           el("button", { class: "btn ghost sm", onClick: () => navigator.clipboard?.writeText(credText).then(() => toast("Credentials copied!")) }, "Copy credentials"),
-          el("a", { class: "btn ghost sm", href: qrSrc, download: storeName.replace(/\s+/g, "_") + "_QR.png" }, "Download QR"),
+          el("a", { class: "btn ghost sm", href: qrSrc, download: merchantName.replace(/\s+/g, "_") + "_QR.png" }, "Download QR"),
         ]),
         el("p", { class: "muted small", style: "margin-top:14px;word-break:break-all" }, scanUrl),
       ]),
-      footer: [el("button", { class: "btn primary", onClick: () => { close(); go("vendors"); } }, "Done")],
+      footer: [el("button", { class: "btn primary", onClick: () => close() }, "Done")],
     });
   }
 
@@ -493,6 +479,81 @@
           catch (err) { toast("Error: " + err.message); }
         }}, "Delete"),
       ],
+    });
+  }
+
+
+  function createRider() {
+    const nameEl    = el("input", { placeholder: "e.g. Ajay Kumar" });
+    const emailEl   = el("input", { type: "email", placeholder: "rider@example.com" });
+    const passEl    = el("input", { type: "text", value: genPass(), placeholder: "Set a password" });
+    const vehicleEl = el("select", {});
+    ["Bike", "Bicycle", "Scooter", "Van"].forEach((v) => vehicleEl.appendChild(el("option", { value: v }, v)));
+    const shiftEl   = el("select", {});
+    ["Morning", "Afternoon", "Evening", "Night"].forEach((s) => shiftEl.appendChild(el("option", { value: s }, s)));
+    const errEl     = el("div", { class: "auth-err" });
+
+    const body = el("div", {}, [
+      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a Saradhi (rider) account. They can log in to the rider app immediately."),
+      el("div", { class: "field" }, [el("label", {}, "Full name"), nameEl]),
+      el("div", { class: "field" }, [el("label", {}, "Login email"), emailEl]),
+      el("div", { class: "field" }, [
+        el("label", {}, "Password"),
+        el("div", { style: "display:flex;gap:8px" }, [
+          passEl,
+          el("button", { class: "btn ghost sm", type: "button", onClick: () => { passEl.value = genPass(); } }, "New"),
+        ]),
+      ]),
+      el("div", { class: "grid cols-2", style: "gap:12px" }, [
+        el("div", { class: "field" }, [el("label", {}, "Vehicle"), vehicleEl]),
+        el("div", { class: "field" }, [el("label", {}, "Shift"), shiftEl]),
+      ]),
+      errEl,
+    ]);
+
+    const close = UI.modal({
+      title: "Add Saradhi",
+      body,
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn primary", onClick: async () => {
+          errEl.textContent = "";
+          if (!nameEl.value.trim())  { errEl.textContent = "Name required."; return; }
+          if (!emailEl.value.trim()) { errEl.textContent = "Email required."; return; }
+          if (passEl.value.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
+          try {
+            const result = await BW.createRider({
+              name: nameEl.value.trim(),
+              email: emailEl.value.trim().toLowerCase(),
+              password: passEl.value,
+              vehicle: vehicleEl.value,
+              shift: shiftEl.value,
+            });
+            close();
+            showCreatedRider(result);
+            await BW.init("admin");
+            go("fleet");
+          } catch (err) { errEl.textContent = err.message || "Failed to create rider."; }
+        }}, "Create Saradhi"),
+      ],
+    });
+  }
+
+  function showCreatedRider(result) {
+    const { name, email, password } = result;
+    const credText = `Email: ${email}\nPassword: ${password}`;
+    const close = UI.modal({
+      title: "Saradhi Account Created",
+      body: el("div", {}, [
+        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these credentials with " + name + " to log in to the Saradhi app."),
+        el("div", { style: "background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.8;margin-bottom:12px" }, [
+          el("div", {}, [el("span", { class: "muted" }, "Name: "), el("strong", {}, name)]),
+          el("div", {}, [el("span", { class: "muted" }, "Email: "), el("strong", {}, email)]),
+          el("div", {}, [el("span", { class: "muted" }, "Password: "), el("strong", { style: "font-family:monospace;letter-spacing:1px" }, password)]),
+        ]),
+        el("button", { class: "btn ghost sm", onClick: () => navigator.clipboard?.writeText(credText).then(() => toast("Credentials copied!")) }, "Copy credentials"),
+      ]),
+      footer: [el("button", { class: "btn primary", onClick: () => close() }, "Done")],
     });
   }
 
