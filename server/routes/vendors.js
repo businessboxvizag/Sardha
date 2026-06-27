@@ -13,11 +13,15 @@ router.get("/", requireAuth, async (req, res) => {
   try {
     let snap;
     if (req.user.role === "merchant") {
+      // Merchants see their own store regardless of active status (setup wizard)
       snap = await db.collection("vendors")
         .where("merchantId", "==", req.user.uid)
-        .where("active", "==", true)
         .get();
+    } else if (req.user.role === "admin") {
+      // Admins see all stores including pending
+      snap = await db.collection("vendors").get();
     } else {
+      // Customers only see active stores
       snap = await db.collection("vendors").where("active", "==", true).get();
     }
     res.json(snap.docs.map(toVendor));
@@ -89,7 +93,7 @@ router.put("/:id", requireAuth, requireRole("merchant", "admin"), async (req, re
       return res.status(403).json({ error: "Not your store" });
     }
 
-    const allowed = ["name", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active"];
+    const allowed = ["name", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active", "status"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 

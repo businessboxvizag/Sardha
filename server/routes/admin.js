@@ -75,10 +75,10 @@ router.get("/users", requireAuth, requireRole("admin"), async (req, res) => {
  * credentials to the merchant and display the store QR.       */
 router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const { storeName, category, area, lat, lng, email, password, phone } = req.body;
+    const { merchantName, email, password } = req.body;
 
-    if (!storeName || !email || !password) {
-      return res.status(400).json({ error: "storeName, email and password are required" });
+    if (!merchantName || !email || !password) {
+      return res.status(400).json({ error: "merchantName, email and password are required" });
     }
     if (password.length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
@@ -102,26 +102,27 @@ router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) =>
     await userRef.set({
       uid, email, passwordHash,
       role: "merchant",
-      name: storeName,
-      phone: phone || null,
+      name: merchantName,
       authProvider: "email",
       createdAt: now,
       createdBy: "admin",
     });
 
-    // Create vendor doc (uid = vendorId for easy lookup)
+    // Create stub vendor doc (merchant completes setup on first login)
     await db.collection("vendors").doc(uid).set({
       id: uid,
-      name: storeName,
+      name: "",
+      merchantId: uid,
       userId: uid,
-      category: category || "General",
-      area: area || "",
+      category: "",
+      area: "",
       img: "",
       rating: 5.0,
       prepMins: 15,
-      lat: lat != null ? Number(lat) : null,
-      lng: lng != null ? Number(lng) : null,
-      status: "active",
+      lat: null,
+      lng: null,
+      active: false,
+      status: "pending_setup",
       createdAt: now,
       createdBy: "admin",
     });
@@ -129,8 +130,8 @@ router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) =>
     res.status(201).json({
       vendorId: uid,
       email,
-      password,          // plain-text returned once so admin can share with merchant
-      storeName,
+      password,
+      merchantName,
     });
   } catch (err) {
     console.error("POST /admin/merchants:", err);
