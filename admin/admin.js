@@ -541,4 +541,207 @@
       ]),
       el("div", { class: "grid cols-2", style: "margin-top:16px" }, [
         el("div", { class: "card" }, [el("h3", { style: "margin-top:0" }, "Revenue by vendor"), bars.length ? el("div", {}, bars) : el("div", { class: "muted small" }, "No data yet.")]),
-        el("div", { class: "card" }, [el("h3", { style: "margin-top
+        el("div", { class: "card" }, [el("h3", { style: "margin-top:0" }, "Order status distribution"), ...distRows]),
+      ]),
+    ]);
+  }
+
+  function haversine(la1, lo1, la2, lo2) {
+    if (!la1 || !lo1 || !la2 || !lo2) return Infinity;
+    const R = 6371, toR = (d) => (d * Math.PI) / 180;
+    const dLa = toR(la2 - la1), dLo = toR(lo2 - lo1);
+    const a = Math.sin(dLa / 2) ** 2 + Math.cos(toR(la1)) * Math.cos(toR(la2)) * Math.sin(dLo / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function render() {
+    switch (state.route) {
+      case "fleet":     return viewFleet();
+      case "assign":    return viewAssign();
+      case "vendors":   return viewVendors();
+      case "analytics": return viewAnalytics();
+      case "monitor":   return viewMonitor();
+      default:          return viewOverview();
+    }
+  }
+
+  /* ====================== MONITOR ====================== */
+  function viewMonitor() {
+    const monState = { tab: viewMonitor._tab || "logins" };
+    viewMonitor._tab = monState.tab;
+
+    function setTab(t) { viewMonitor._tab = t; render(); }
+
+    function tabBtn(id, label) {
+      return el("button", {
+        class: "btn " + (monState.tab === id ? "primary sm" : "ghost sm"),
+        onClick: () => setTab(id),
+      }, label);
+    }
+
+    const tabs = el("div", { style: "display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" }, [
+      tabBtn("logins",    "Logins"),
+      tabBtn("orders",    "Orders"),
+      tabBtn("customers", "Customers"),
+      tabBtn("payments",  "Payments"),
+    ]);
+
+    let body;
+    if (monState.tab === "logins")         body = renderLoginLogs();
+    else if (monState.tab === "orders")    body = renderAllOrders();
+    else if (monState.tab === "customers") body = renderAllCustomers();
+    else                                   body = renderPayments();
+
+    const refreshBtn = el("button", { class: "btn ghost sm", style: "margin-left:auto", onClick: async () => {
+      try { await BW.refreshLogins(); } catch {}
+    } }, "↻ Refresh");
+
+    shell("monitor", [
+      el("div", { class: "row between", style: "align-items:center;margin-bottom:4px" }, [
+        el("div", {}, [
+          el("h1", { class: "page-title" }, "Platform Monitor"),
+          el("p", { class: "page-sub" }, "Full visibility across all users, orders, and activity."),
+        ]),
+        refreshBtn,
+      ]),
+      tabs,
+      body,
+    ]);
+  }
+  viewMonitor._tab = "logins";
+
+  function renderLoginLogs() {
+    const logs = BW.logins();
+    if (!logs.length) {
+      return el("div", { class: "card" }, [
+        el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No login events recorded yet."),
+      ]);
+    }
+    const rows = logs.map((l) => el("tr", {}, [
+      el("td", { class: "muted small" }, clockTime(l.at)),
+      el("td", {}, l.email || "—"),
+      el("td", {}, el("span", { class: "badge " + l.role }, l.role)),
+      el("td", { class: "muted small" }, l.method || "email"),
+      el("td", { class: "muted small" }, l.ip || "—"),
+    ]));
+    return el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+      el("table", {}, [
+        el("thead", {}, el("tr", {}, ["Time", "Email", "Role", "Method", "IP"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, rows),
+      ]),
+    ]);
+  }
+
+  function renderAllOrders() {
+    const orders = BW.orders();
+    if (!orders.length) {
+      return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No orders yet.")]);
+    }
+    const rows = orders.map((o) => {
+      const v     = BW.vendor(o.vendorId);
+      const cust  = BW.customers().find((c) => c.id === o.customerId);
+      const rider = o.riderId ? BW.riders().find((r) => r.id === o.riderId) : null;
+      const hist  = o.history || [];
+      const first = hist[0] ? new Date(hist[0].at) : null;
+      const last  = hist[hist.length - 1] ? new Date(hist[hist.length - 1].at) : null;
+      const dur   = (first && last && last > first)
+        ? Math.round((last - first) / 60000) + " min"
+        : "—";
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", { class: "muted small" }, clockTime(o.createdAt)),
+        el("td", {}, v ? v.name : "—"),
+        el("td", {}, cust ? cust.name : "—"),
+        el("td", {}, money(o.total)),
+        el("td", {}, statusBadge(o.status)),
+        el("td", {}, rider ? rider.name : el("span", { class: "muted" }, "—")),
+        el("td", { class: "muted small" }, dur),
+      ]);
+    });
+    return el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+      el("table", {}, [
+        el("thead", {}, el("tr", {}, ["Order", "Placed at", "Vendor", "Customer", "Total", "Status", "Saradhi", "Duration"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, rows),
+      ]),
+    ]);
+  }
+
+  function renderAllCustomers() {
+    const customers = BW.customers();
+    const allUsers  = BW.allUsers().filter((u) => u.role === "customer");
+    const orders    = BW.orders();
+    if (!customers.length) {
+      return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No customers yet.")]);
+    }
+    const rows = customers.map((c) => {
+      const user  = allUsers.find((u) => u.uid === c.userId);
+      const cOrds = orders.filter((o) => o.customerId === c.id);
+      const spent = cOrds.filter((o) => o.status === "DELIVERED").reduce((s, o) => s + (o.total || 0), 0);
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, c.name)),
+        el("td", { class: "muted small" }, user ? user.email : "—"),
+        el("td", { class: "muted small" }, user ? (user.authProvider === "google" ? "Google" : "Email") : "—"),
+        el("td", {}, c.address || el("span", { class: "muted" }, "—")),
+        el("td", {}, String(cOrds.length)),
+        el("td", {}, money(spent)),
+        el("td", { class: "muted small" }, c.joined || "—"),
+      ]);
+    });
+    return el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+      el("table", {}, [
+        el("thead", {}, el("tr", {}, ["Name", "Email", "Auth", "Address", "Orders", "Spent", "Joined"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, rows),
+      ]),
+    ]);
+  }
+
+  function renderPayments() {
+    const orders    = BW.orders();
+    const delivered = orders.filter((o) => o.status === "DELIVERED");
+    const totalRev  = delivered.reduce((s, o) => s + (o.total || 0), 0);
+    const totalFees = delivered.reduce((s, o) => s + (o.deliveryFee || 0), 0);
+
+    const stat = (k, v, sub) => el("div", { class: "card stat" }, [
+      el("span", { class: "k" }, k),
+      el("span", { class: "v" }, v),
+      sub ? el("span", { class: "d" }, sub) : document.createTextNode(""),
+    ]);
+
+    const rows = orders.slice(0, 100).map((o) => {
+      const v    = BW.vendor(o.vendorId);
+      const cust = BW.customers().find((c) => c.id === o.customerId);
+      const payStatus = o.status === "DELIVERED" ? "Paid" :
+        o.status === "CANCELLED" ? "Cancelled" : "Pending";
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", { class: "muted small" }, clockTime(o.createdAt)),
+        el("td", {}, cust ? cust.name : "—"),
+        el("td", {}, v ? v.name : "—"),
+        el("td", {}, money(o.subtotal || 0)),
+        el("td", {}, money(o.deliveryFee || 0)),
+        el("td", {}, el("strong", {}, money(o.total || 0))),
+        el("td", {}, payStatus),
+      ]);
+    });
+
+    return el("div", {}, [
+      el("div", { class: "grid cols-4", style: "margin-bottom:16px" }, [
+        stat("Gross revenue",   money(totalRev),  delivered.length + " orders"),
+        stat("Delivery fees",   money(totalFees), "collected"),
+        stat("Vendor payouts",  money(totalRev - totalFees), "excl. fees"),
+        stat("Avg order value", delivered.length ? money(Math.round(totalRev / delivered.length)) : "—", ""),
+      ]),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Order", "Date", "Customer", "Vendor", "Subtotal", "Delivery fee", "Total", "Payment"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows),
+        ]),
+      ]),
+    ]);
+  }
+
+  boot().catch((err) => {
+    console.error("Boot failed:", err);
+    root.innerHTML = `<div class="bw-loading" style="color:var(--red)">Failed to connect to server. Is the backend running?</div>`;
+  });
+})();
