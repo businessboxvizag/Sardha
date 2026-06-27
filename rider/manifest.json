@@ -1,7 +1,7 @@
 {
-  "name": "Sardha Rider",
-  "short_name": "Sardha R",
-  "description": "View deliveries and navigate routes",
+  "name": "Sardha Saradhi",
+  "short_name": "Saradhi",
+  "description": "Saradhi delivery navigation app",
   "start_url": "/rider/index.html",
   "scope": "/rider/",
   "display": "standalone",
@@ -10,6 +10,4 @@
   "theme_color": "#b45309",
   "icons": [
     { "src": "/assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
-}
+    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskab

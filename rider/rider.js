@@ -85,7 +85,7 @@
 
   /* ── Top bar ──────────────────────────────────────────── */
   function renderTopBar() {
-    return topbar("Rider", [
+    return topbar("Saradhi", [
       el("span", { class: "topbar-name" }, me ? (me.name || me.email) : ""),
       el("button", { class: "btn ghost sm", onclick: () => BW.logout() }, "Logout"),
     ]);

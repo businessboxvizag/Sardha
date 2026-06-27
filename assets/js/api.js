@@ -29,7 +29,7 @@
     STATUS.PICKED_UP, STATUS.OUT_FOR_DELIVERY, STATUS.DELIVERED,
   ];
   const STATUS_LABEL = {
-    PLACED: "Placed", ACCEPTED: "Accepted", ASSIGNED: "Rider assigned",
+    PLACED: "Placed", ACCEPTED: "Accepted", ASSIGNED: "Saradhi assigned",
     PICKED_UP: "Picked up", OUT_FOR_DELIVERY: "Out for delivery",
     DELIVERED: "Delivered", CANCELLED: "Cancelled",
   };

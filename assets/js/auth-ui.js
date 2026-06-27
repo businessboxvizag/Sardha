@@ -41,7 +41,7 @@
   }
 
   function renderLoginScreen(role, resolve) {
-    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Rider" }[role] || role;
+    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Saradhi" }[role] || role;
     // Only customers can self-register. Merchants/riders are created by admin.
     const canSelfRegister = role === "customer";
     // Google Sign-In only for customers (merchants use admin-set credentials)
