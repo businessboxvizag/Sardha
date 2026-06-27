@@ -47,15 +47,3 @@ Key `BW` methods: `placeOrder`, `setOrderStatus`, `advanceOrder`, `assignRider`,
 
 Because all state goes through `BW`, swapping the simulated backend for a real server is mechanical: reimplement those methods as `fetch` calls and replace the `BroadcastChannel` listener with a WebSocket subscription. Suggested production path: Node/Express or Fastify API, Postgres + PostGIS for geo, WebSockets for live updates, JWT auth per role, and a maps provider (Google/Mapbox) in place of the faux SVG-grid map.
 
-## Try the full flow
-
-1. **Customer** (as Srinivas): open *Gupta Chaat Corner*, add a couple of items, place the order, land on the live tracking screen.
-2. **Merchant** (select *Gupta Chaat Corner*): the order appears under **New** → Accept it → Dispatch a rider.
-3. **Admin → Task Assignment**: any still-unassigned order can be auto-assigned to the nearest rider; advance it through to Delivered.
-4. Watch the Customer tracking screen and Admin analytics update live throughout.
-
-Use **Reset demo data** (portal or Admin) to return to the seed state at any time.
-
-## Demo data
-
-5 vendors, 17 catalog items, 5 riders, 3 customers, and a few historical orders for analytics — all seeded in `store.js`.
