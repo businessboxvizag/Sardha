@@ -87,84 +87,30 @@
 
     const me = BW.Auth.getUser();
     const vendors = BW.vendors();
-    if (!vendors.length) {
-      renderSetup();
+
+    // Find the vendor assigned to this merchant (uid === vendorId)
+    const myVendor = vendors.find((v) => v.id === me.uid || v.userId === me.uid);
+
+    if (!myVendor) {
+      // No store assigned — show a clear message, not a setup form
+      root.innerHTML = "";
+      root.appendChild(topbar("Merchant · " + (me ? me.name : ""), [
+        el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out"),
+      ]));
+      root.appendChild(el("div", { class: "content", style: "text-align:center;padding:60px 24px" }, [
+        el("h2", {}, "Store not set up"),
+        el("p", { class: "muted" }, "Your store account has been created but no store has been assigned yet."),
+        el("p", { class: "muted" }, "Please contact the administrator to set up your store."),
+      ]));
       return;
     }
 
-    // Prefer the vendor whose ID matches the merchant's UID (created on registration)
-    const myVendor = vendors.find((v) => v.id === me.uid || v.userId === me.uid) || vendors[0];
     state.vendorId = myVendor.id;
     await BW.loadVendorProducts(state.vendorId);
-    if (state.vendorId) BW.joinVendorRoom(state.vendorId);
+    BW.joinVendorRoom(state.vendorId);
 
     BW.subscribe(() => render());
     render();
-  }
-
-  /* ====================== SETUP (first-time) ====================== */
-  function renderSetup() {
-    const user = BW.Auth.getUser();
-    root.innerHTML = "";
-    root.appendChild(topbar("Merchant · " + (user ? user.name : ""), []));
-
-    const nameEl = el("input", { placeholder: "e.g. Sharma Kirana, Hotel Udupi Palace…" });
-    const areaEl = el("input", { placeholder: "e.g. MG Road, Koramangala…" });
-
-    const catEl = el("select", {});
-    CATEGORY_OPTIONS.forEach((c) => catEl.appendChild(el("option", { value: c.value }, c.label)));
-
-    const emojiGrid = el("div", { style: "display:none" }); // icon picker removed
-    let chosenEmoji = "";
-
-    const errEl = el("div", { class: "auth-err" });
-    const submitBtn = el("button", { class: "btn primary", style: "width:100%", onClick: async () => {
-      errEl.textContent = "";
-      const name = nameEl.value.trim();
-      const area = areaEl.value.trim();
-      if (!name) { errEl.textContent = "Store name is required."; return; }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Creating your store…";
-      try {
-        const vendor = await BW.upsertVendor({
-          name,
-          category: catEl.value,
-          area: area || "—",
-          img: chosenEmoji,
-        });
-        state.vendorId = vendor.id;
-        await BW.loadVendorProducts(vendor.id);
-        BW.joinVendorRoom(vendor.id);
-        BW.subscribe(() => render());
-        toast("Your store is ready!");
-        render();
-      } catch (err) {
-        errEl.textContent = err.message || "Failed to create store.";
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Create my store";
-      }
-    } }, "Create my store");
-
-    const content = el("div", { style: "max-width:480px;margin:40px auto;padding:0 16px" }, [
-      el("h1", { class: "page-title" }, "Welcome! Set up your store"),
-      el("p",  { class: "page-sub"   }, "You only need to do this once. Fill in the basics — you can change everything later."),
-      el("div", { class: "card", style: "margin-top:24px" }, [
-        el("div", { class: "field" }, [el("label", {}, "Store name"), nameEl]),
-        el("div", { class: "field" }, [el("label", {}, "Type of store"), catEl]),
-        el("div", { class: "field" }, [el("label", {}, "Your area / locality"), areaEl]),
-        el("div", { class: "field" }, [
-          el("label", {}, "Store icon"),
-          el("div", { class: "row", style: "gap:12px;align-items:center;margin-bottom:6px" }, [emojiDisplay]),
-          emojiGrid,
-        ]),
-        el("div", { style: "margin-top:16px" }, [errEl, submitBtn]),
-      ]),
-    ]);
-
-    root.appendChild(el("div", { class: "app" }, [
-      el("div", { class: "content" }, [content]),
-    ]));
   }
 
   function go(route, extra = {}) {
@@ -182,22 +128,16 @@
 
     const pending = BW.orders({ vendorId: state.vendorId, status: S.PLACED }).length;
     const nav = el("div", { class: "sidebar" }, [
-      navItem("orders",    "Orders",       pending),
-      navItem("dispatch",  "Live Dispatch"),
+      navItem("orders",    "Orders",    pending),
       navItem("inventory", "Inventory"),
-      navItem("customers", "Customers"),
-      navItem("qr",        "QR Code"),
     ]);
 
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
 
     // Bottom nav (mobile only)
     root.appendChild(el("div", { class: "bottom-nav" }, [
-      bnItem("orders",    "Or", "Orders",   pending || null),
-      bnItem("dispatch",  "Di", "Dispatch"),
-      bnItem("inventory", "In", "Stock"),
-      bnItem("customers", "Cu", "Customers"),
-      bnItem("qr",        "QR", "QR Code"),
+      bnItem("orders",    "Or", "Orders",    pending || null),
+      bnItem("inventory", "In", "Inventory"),
     ]));
 
     function navItem(route, label, count) {
@@ -661,10 +601,7 @@
 
   function render() {
     switch (state.route) {
-      case "dispatch":  return viewDispatch();
       case "inventory": return viewInventory();
-      case "customers": return viewCustomers();
-      case "qr":        return viewQR();
       default:          return viewOrders();
     }
   }

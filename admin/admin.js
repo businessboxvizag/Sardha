@@ -293,6 +293,15 @@
   }
 
   /* ====================== VENDORS ====================== */
+  const APP_BASE = window.BW_API_BASE
+    ? window.BW_API_BASE.replace(/\/api$/, "").replace(/\/$/, "")
+    : (window.location.origin.includes("localhost") ? "http://localhost:3000" : "https://sardha.vercel.app");
+
+  function storeQrUrl(vendorId) {
+    return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&ecc=M&format=png&data="
+      + encodeURIComponent(APP_BASE + "/scan/?v=" + vendorId);
+  }
+
   function viewVendors() {
     const vendors = BW.vendors();
     const orders  = BW.orders();
@@ -300,66 +309,196 @@
       const vOrders = orders.filter((o) => o.vendorId === v.id);
       const rev = vOrders.filter((o) => o.status !== S.CANCELLED).reduce((s, o) => s + o.total, 0);
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, v.img + " " + v.name)),
+        el("td", {}, [
+          el("div", { style: "display:flex;align-items:center;gap:10px" }, [
+            el("div", { class: "vendor-initial", style: "width:32px;height:32px;font-size:14px;border-radius:8px" }, (v.name||"?")[0].toUpperCase()),
+            el("strong", {}, v.name),
+          ]),
+        ]),
         el("td", { class: "muted" }, v.category),
         el("td", { class: "muted" }, v.area),
-        el("td", {}, "⭐ " + v.rating),
         el("td", {}, BW.products(v.id).length + " items"),
         el("td", {}, String(vOrders.length)),
         el("td", {}, money(rev)),
-        el("td", {}, el("button", { class: "btn ghost sm", onClick: () => editVendor(v) }, "Edit")),
+        el("td", {}, [
+          el("button", { class: "btn ghost sm", style: "margin-right:6px", onClick: () => showStoreQR(v) }, "QR"),
+          el("button", { class: "btn ghost sm", style: "margin-right:6px", onClick: () => editVendorDetails(v) }, "Edit"),
+          el("button", { class: "btn danger sm", onClick: () => deleteStore(v) }, "Delete"),
+        ]),
       ]);
     });
 
     shell("vendors", [
-      el("div", { class: "row between" }, [
-        el("div", {}, [el("h1", { class: "page-title" }, "Vendor Management"), el("p", { class: "page-sub" }, "Onboard and manage local vendors on the platform.")]),
-        el("button", { class: "btn primary", onClick: () => editVendor(null) }, "+ Onboard vendor"),
-      ]),
-      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
-        el("table", {}, [
-          el("thead", {}, el("tr", {}, ["Vendor", "Category", "Area", "Rating", "Catalog", "Orders", "Revenue", ""].map((h) => el("th", {}, h)))),
-          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: "8", class: "muted", style: "text-align:center;padding:24px" }, "No vendors yet."))]),
+      el("div", { class: "row between", style: "margin-bottom:20px;flex-wrap:wrap;gap:12px" }, [
+        el("div", {}, [
+          el("h1", { class: "page-title" }, "Stores"),
+          el("p", { class: "page-sub", style: "margin:0" }, "Create and manage merchant stores. Each store gets a unique QR code."),
         ]),
+        el("button", { class: "btn primary", onClick: createStore }, "+ Create Store"),
       ]),
+      vendors.length === 0
+        ? el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No stores yet. Create one to get started."])
+        : el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+            el("table", {}, [
+              el("thead", {}, el("tr", {}, ["Store", "Category", "Area", "Catalog", "Orders", "Revenue", "Actions"].map((h) => el("th", {}, h)))),
+              el("tbody", {}, rows),
+            ]),
+          ]),
     ]);
   }
 
-  function editVendor(v) {
-    const isNew = !v;
-    const name     = el("input", { value: v ? v.name : "", placeholder: "Vendor name" });
-    const category = el("input", { value: v ? v.category : "", placeholder: "Groceries / Street Food …" });
-    const area     = el("input", { value: v ? v.area : "", placeholder: "Area / locality" });
+  function createStore() {
+    const nameEl  = el("input", { placeholder: "e.g. Ravi Kirana Store" });
+    const catEl   = el("select", {});
+    ["General","Restaurant","Street Food","Bakery","Groceries","Pharmacy","Florist","Electronics","Clothing","Sweets"]
+      .forEach((c) => catEl.appendChild(el("option", { value: c }, c)));
+    const areaEl  = el("input", { placeholder: "e.g. Dwaraka Nagar, Vizag" });
+    const emailEl = el("input", { type: "email", placeholder: "merchant@example.com" });
+    const passEl  = el("input", { type: "text", value: genPass(), placeholder: "Set a password" });
+    const phoneEl = el("input", { type: "tel", placeholder: "+91 98765 43210 (optional)" });
+    const errEl   = el("div", { class: "auth-err" });
+    let _lat = null, _lng = null;
+    const gpsStatus = el("span", { class: "muted small" });
+    const gpsBtn = el("button", { class: "btn ghost sm", type: "button", onClick: () => {
+      if (!navigator.geolocation) { gpsStatus.textContent = "GPS not supported"; return; }
+      gpsBtn.disabled = true; gpsStatus.textContent = "Locating...";
+      navigator.geolocation.getCurrentPosition(
+        (p) => { _lat = p.coords.latitude; _lng = p.coords.longitude; gpsStatus.textContent = `${_lat.toFixed(4)}, ${_lng.toFixed(4)}`; gpsBtn.disabled = false; },
+        ()  => { gpsStatus.textContent = "Unavailable"; gpsBtn.disabled = false; },
+        { enableHighAccuracy: true, timeout: 12000 }
+      );
+    }}, "Use GPS");
+
     const body = el("div", {}, [
-      el("div", { class: "field" }, [el("label", {}, "Name"), name]),
-      el("div", { class: "field" }, [el("label", {}, "Category"), category]),
-      el("div", { class: "field" }, [el("label", {}, "Area"), area]),
+      el("p", { class: "muted small", style: "margin:0 0 16px" }, "This will create the store and a merchant account. Share the credentials with the store owner."),
+      el("div", { class: "field" }, [el("label", {}, "Store name"), nameEl]),
+      el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
+      el("div", { class: "field" }, [el("label", {}, "Area / locality"), areaEl]),
+      el("div", { class: "field" }, [el("label", {}, "Store location (optional)"), el("div", { style: "display:flex;align-items:center;gap:8px" }, [gpsBtn, gpsStatus])]),
+      el("hr", { style: "border:none;border-top:1px solid var(--border);margin:16px 0" }),
+      el("p", { style: "font-size:12px;font-weight:700;color:var(--muted);margin:0 0 10px" }, "MERCHANT LOGIN CREDENTIALS"),
+      el("div", { class: "field" }, [el("label", {}, "Merchant email"), emailEl]),
+      el("div", { class: "field" }, [el("label", {}, "Password"), passEl]),
+      el("div", { class: "field" }, [el("label", {}, "Phone (optional)"), phoneEl]),
+      errEl,
     ]);
+
     const close = UI.modal({
-      title: isNew ? "Onboard vendor" : "Edit vendor",
+      title: "Create Store",
       body,
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
         el("button", { class: "btn primary", onClick: async () => {
-          if (!name.value.trim()) { toast("Name required"); return; }
+          errEl.textContent = "";
+          if (!nameEl.value.trim()) { errEl.textContent = "Store name required."; return; }
+          if (!emailEl.value.trim()) { errEl.textContent = "Merchant email required."; return; }
+          if (passEl.value.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
           try {
-            await BW.upsertVendor({
-              id: v ? v.id : undefined,
-              name: name.value.trim(),
-              category: category.value.trim() || "General",
-              area: area.value.trim() || "—",
-              img: "",
-              rating: v ? v.rating : 5.0,
-              prepMins: v ? v.prepMins : 10,
-              lat: v ? v.lat : 12.95,
-              lng: v ? v.lng : 77.61,
+            const result = await BW.createMerchant({
+              storeName: nameEl.value.trim(),
+              category: catEl.value,
+              area: areaEl.value.trim() || "—",
+              email: emailEl.value.trim().toLowerCase(),
+              password: passEl.value,
+              phone: phoneEl.value.trim() || null,
+              lat: _lat, lng: _lng,
             });
-            toast(isNew ? "Vendor onboarded" : "Vendor updated");
+            // Refresh vendor list
+            const vendors = await fetch(window.BW_API_BASE + "/api/vendors", {
+              headers: { Authorization: "Bearer " + BW.Auth.getToken() }
+            }).then((r) => r.json());
+            BW.vendors = () => vendors; // temporary override until next init
             close();
-          } catch (err) { toast("Error: " + err.message); }
-        } }, "Save"),
+            showCreatedStore(result);
+          } catch (err) { errEl.textContent = err.message || "Failed to create store."; }
+        }}, "Create Store"),
       ],
     });
+  }
+
+  function showCreatedStore(result) {
+    const { vendorId, email, password, storeName } = result;
+    const qrSrc = storeQrUrl(vendorId);
+    const scanUrl = APP_BASE + "/scan/?v=" + vendorId;
+    const credText = `Store: ${storeName}\nEmail: ${email}\nPassword: ${password}`;
+
+    const close = UI.modal({
+      title: "Store Created",
+      body: el("div", { style: "text-align:center" }, [
+        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these credentials and QR code with the merchant."),
+        el("img", { src: qrSrc, width: "200", height: "200", style: "display:block;margin:0 auto 16px;border-radius:10px" }),
+        el("div", { style: "background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:left;font-size:13px;line-height:1.8;margin-bottom:12px" }, [
+          el("div", {}, [el("span", { class: "muted" }, "Store: "), el("strong", {}, storeName)]),
+          el("div", {}, [el("span", { class: "muted" }, "Email: "), el("strong", {}, email)]),
+          el("div", {}, [el("span", { class: "muted" }, "Password: "), el("strong", { style: "font-family:monospace;letter-spacing:1px" }, password)]),
+        ]),
+        el("div", { style: "display:flex;gap:8px;justify-content:center;flex-wrap:wrap" }, [
+          el("button", { class: "btn ghost sm", onClick: () => navigator.clipboard?.writeText(credText).then(() => toast("Credentials copied!")) }, "Copy credentials"),
+          el("a", { class: "btn ghost sm", href: qrSrc, download: storeName.replace(/\s+/g, "_") + "_QR.png" }, "Download QR"),
+        ]),
+        el("p", { class: "muted small", style: "margin-top:14px;word-break:break-all" }, scanUrl),
+      ]),
+      footer: [el("button", { class: "btn primary", onClick: () => { close(); go("vendors"); } }, "Done")],
+    });
+  }
+
+  function showStoreQR(v) {
+    const qrSrc = storeQrUrl(v.id);
+    const scanUrl = APP_BASE + "/scan/?v=" + v.id;
+    UI.modal({
+      title: v.name + " — QR Code",
+      body: el("div", { style: "text-align:center" }, [
+        el("img", { src: qrSrc, width: "220", height: "220", style: "display:block;margin:0 auto 14px;border-radius:10px" }),
+        el("p", { class: "muted small", style: "word-break:break-all;margin:0" }, scanUrl),
+        el("div", { style: "display:flex;gap:8px;justify-content:center;margin-top:12px" }, [
+          el("button", { class: "btn ghost sm", onClick: () => navigator.clipboard?.writeText(scanUrl).then(() => toast("Link copied!")) }, "Copy link"),
+          el("a", { class: "btn ghost sm", href: qrSrc, download: v.name.replace(/\s+/g, "_") + "_QR.png" }, "Download"),
+        ]),
+      ]),
+      footer: [],
+    });
+  }
+
+  function editVendorDetails(v) {
+    const nameEl = el("input", { value: v.name });
+    const catEl  = el("input", { value: v.category });
+    const areaEl = el("input", { value: v.area });
+    const close = UI.modal({
+      title: "Edit Store",
+      body: el("div", {}, [
+        el("div", { class: "field" }, [el("label", {}, "Name"), nameEl]),
+        el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
+        el("div", { class: "field" }, [el("label", {}, "Area"), areaEl]),
+      ]),
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn primary", onClick: async () => {
+          try {
+            await BW.upsertVendor({ id: v.id, name: nameEl.value.trim(), category: catEl.value.trim(), area: areaEl.value.trim(), img: "", rating: v.rating, prepMins: v.prepMins, lat: v.lat, lng: v.lng });
+            toast("Store updated"); close(); go("vendors");
+          } catch (err) { toast("Error: " + err.message); }
+        }}, "Save"),
+      ],
+    });
+  }
+
+  function deleteStore(v) {
+    const close = UI.modal({
+      title: "Delete Store",
+      body: el("p", { style: "color:var(--red)" }, `Delete "${v.name}" and its merchant account? This cannot be undone.`),
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn danger", onClick: async () => {
+          try { await BW.deleteMerchant(v.id); toast("Store deleted"); close(); go("vendors"); }
+          catch (err) { toast("Error: " + err.message); }
+        }}, "Delete"),
+      ],
+    });
+  }
+
+  function genPass() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    return Array.from({ length: 10 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
   }
 
   /* ====================== ANALYTICS ====================== */

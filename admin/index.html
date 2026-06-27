@@ -3,18 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Business Wheels — Admin</title>
+  <title>Sardha — Admin</title>
   <link rel="stylesheet" href="../assets/css/styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#7c3aed" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 </head>
 <body>
   <div id="root"><div class="bw-loading"></div></div>
 
-  <script src="http://businesswheels-production.up.railway.app/socket.io/socket.io.js"></script>
-  <script>window.BW_API_BASE = "http://businesswheels-production.up.railway.app";</script>
+  <script src="https://businesswheels-production.up.railway.app/socket.io/socket.io.js"></script>
+  <script>window.BW_API_BASE = "https://businesswheels-production.up.railway.app";</script>
 
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/auth-ui.js"></script>
   <script src="../assets/js/util.js"></script>
   <script src="admin.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  </script>
 </body>
 </html>

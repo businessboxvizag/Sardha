@@ -42,7 +42,10 @@
 
   function renderLoginScreen(role, resolve) {
     const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Rider" }[role] || role;
-    const canSelfRegister = role === "customer" || role === "merchant";
+    // Only customers can self-register. Merchants/riders are created by admin.
+    const canSelfRegister = role === "customer";
+    // Google Sign-In only for customers (merchants use admin-set credentials)
+    const showGoogle = role === "customer";
     const root = document.getElementById("root");
 
     root.innerHTML = `
@@ -52,7 +55,7 @@
           <h2 class="auth-title">Sardha</h2>
           <p class="auth-sub" id="authSub">${roleLabel} portal</p>
 
-          ${role !== "admin" ? `
+          ${showGoogle ? `
           <button class="btn google-btn" id="googleSignIn">
             ${GOOGLE_SVG}Continue with Google
           </button>
@@ -216,7 +219,9 @@
         } else {
           document.getElementById("stepCreds").style.display = "none";
           document.getElementById("stepEmail").style.display = "";
-          errEl.textContent = "No account found. Contact your administrator.";
+          errEl.textContent = role === "merchant"
+            ? "No merchant account found for this email. Contact the admin to create your store account."
+            : "No account found. Contact your administrator.";
         }
       } catch {
         errEl.textContent = "Could not verify email. Please try again.";

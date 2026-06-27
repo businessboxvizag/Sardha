@@ -336,6 +336,13 @@
       return del("/api/admin/clear-demo");
     },
 
+    createMerchant: (data) => post("/api/admin/merchants", data),
+    deleteMerchant: async (vendorId) => {
+      await del(`/api/admin/merchants/${vendorId}`);
+      _cache.vendors = _cache.vendors.filter((v) => v.id !== vendorId);
+      emit();
+    },
+
     upsertVendor: async (vendor) => {
       const { id, ...rest } = vendor;
       let saved;
