@@ -151,7 +151,7 @@
       });
       return el("tr", {}, [
         el("td", {}, el("strong", {}, r.name)),
-        el("td", { class: "muted small" }, r.vehicle + " · " + r.shift),
+        el("td", { class: "muted small" }, r.vehicle || "—"),
         el("td", {}, "⭐ " + r.rating),
         el("td", {}, r.deliveriesToday + " today"),
         el("td", {}, active ? "#" + active.id.slice(-6).toUpperCase() : el("span", { class: "muted" }, "—")),
@@ -163,7 +163,7 @@
       el("div", { class: "row between", style: "margin-bottom:4px" }, [
         el("div", {}, [
           el("h1", { class: "page-title", style: "margin:0" }, "Fleet Management"),
-          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "Location-tracked, salaried Saradhis. Set shift status and monitor load."),
+          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "On-demand Saradhis. Monitor live location and assign orders."),
         ]),
         el("button", { class: "btn primary", onClick: createRider }, "+ Add Saradhi"),
       ]),
@@ -181,7 +181,7 @@
         ]),
         el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
           el("table", {}, [
-            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle/Shift", "Rating", "Load", "Active", "Status"].map((h) => el("th", {}, h)))),
+            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Active", "Status"].map((h) => el("th", {}, h)))),
             el("tbody", {}, rows),
           ]),
         ]),
@@ -489,8 +489,6 @@
     const passEl    = el("input", { type: "text", value: genPass(), placeholder: "Set a password" });
     const vehicleEl = el("select", {});
     ["Bike", "Bicycle", "Scooter", "Van"].forEach((v) => vehicleEl.appendChild(el("option", { value: v }, v)));
-    const shiftEl   = el("select", {});
-    ["Morning", "Afternoon", "Evening", "Night"].forEach((s) => shiftEl.appendChild(el("option", { value: s }, s)));
     const errEl     = el("div", { class: "auth-err" });
 
     const body = el("div", {}, [
@@ -504,10 +502,7 @@
           el("button", { class: "btn ghost sm", type: "button", onClick: () => { passEl.value = genPass(); } }, "New"),
         ]),
       ]),
-      el("div", { class: "grid cols-2", style: "gap:12px" }, [
-        el("div", { class: "field" }, [el("label", {}, "Vehicle"), vehicleEl]),
-        el("div", { class: "field" }, [el("label", {}, "Shift"), shiftEl]),
-      ]),
+      el("div", { class: "field" }, [el("label", {}, "Vehicle"), vehicleEl]),
       errEl,
     ]);
 
@@ -527,7 +522,6 @@
               email: emailEl.value.trim().toLowerCase(),
               password: passEl.value,
               vehicle: vehicleEl.value,
-              shift: shiftEl.value,
             });
             close();
             showCreatedRider(result);

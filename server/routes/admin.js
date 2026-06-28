@@ -160,7 +160,7 @@ router.delete("/merchants/:vendorId", requireAuth, requireRole("admin"), async (
  * Admin creates a rider (Saradhi) login account + rider doc.    */
 router.post("/riders", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const { name, email, password, vehicle, shift } = req.body;
+    const { name, email, password, vehicle } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email and password are required" });
     }
@@ -193,7 +193,6 @@ router.post("/riders", requireAuth, requireRole("admin"), async (req, res) => {
       name,
       email,
       vehicle: vehicle || "Bike",
-      shift: shift || "Morning",
       status: "offline",
       rating: 5.0,
       deliveriesToday: 0,
