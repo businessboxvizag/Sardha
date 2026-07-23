@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Secrets — NEVER commit these
+.env
+server/.env
+firebase-service-account.json
+server/firebase-service-account.json
+*.pem
+*.key
+
+# Logs & OS junk
+*.log
+.DS_Store
+Thumbs.db
+
+# Build / cache
+.firebase/
+dist/

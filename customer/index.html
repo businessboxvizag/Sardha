@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saardha — Customer</title>
+  <link rel="icon" type="image/png" href="../assets/img/icon.png" />
+  <link rel="stylesheet" href="../assets/css/styles.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#f07830" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="root"><div class="bw-loading"></div></div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+  <script src="https://sardha.onrender.com/socket.io/socket.io.js"></script>
+  <script>window.BW_API_BASE = ["localhost","127.0.0.1"].includes(location.hostname) ? "http://localhost:3000" : "https://sardha.onrender.com";</script>
+
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/auth-ui.js"></script>
+  <script src="../assets/js/util.js"></script>
+  <script src="customer.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }

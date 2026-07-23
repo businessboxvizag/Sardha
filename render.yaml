@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sardha-api
+    env: node
+    region: singapore          # closest to India
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true    # Render auto-generates a secure value
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false            # Paste the full JSON in Render dashboard
+      - key: CORS_ORIGINS
+        sync: false            # e.g. https://sardha.vercel.app

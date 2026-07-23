@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Saardha</title>
+  <meta name="description" content="On-demand local delivery" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#f5a623" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Saardha" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f13;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 20px;
+      padding: 40px 28px;
+      max-width: 360px;
+      width: 100%;
+      text-align: center;
+    }
+    .app-logo { font-size: 40px; margin-bottom: 4px; }
+    .app-name { font-size: 20px; font-weight: 700; color: #f5a623; margin-bottom: 2px; }
+    .app-tagline { font-size: 12px; color: #666; margin-bottom: 28px; }
+    .divider { border: none; border-top: 1px solid #2a2a3a; margin: 24px 0; }
+    .vendor-emoji { font-size: 60px; margin-bottom: 14px; }
+    .vendor-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .vendor-meta { font-size: 13px; color: #888; margin-bottom: 12px; }
+    .ready-badge {
+      display: inline-block;
+      background: rgba(245,166,35,0.12);
+      color: #f5a623;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 14px;
+      border-radius: 20px;
+      margin-bottom: 28px;
+    }
+    .added-banner {
+      background: rgba(76,175,80,0.1);
+      border: 1px solid rgba(76,175,80,0.25);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #4caf50;
+    }
+    .added-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .already-banner {
+      background: rgba(245,166,35,0.08);
+      border: 1px solid rgba(245,166,35,0.2);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #f5a623;
+    }
+    .already-banner strong { display: block; font-size: 15px; margin-bottom: 3px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 10px;
+      text-decoration: none;
+      text-align: center;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #f5a623; color: #0f0f13; }
+    .btn-ghost { background: #252535; color: #f0f0f0; }
+    .stores-count { font-size: 12px; color: #555; margin-top: 14px; }
+    .stores-count span { color: #f5a623; font-weight: 600; }
+    .feature-list { font-size: 12px; color: #555; margin-top: 16px; line-height: 2; }
+    .loading { color: #666; font-size: 14px; }
+    .error { color: #f55; font-size: 14px; margin-bottom: 16px; }
+    .countdown { font-size: 12px; color: #555; margin-top: 12px; }
+    .ios-hint {
+      display: none;
+      margin-top: 14px;
+      background: #252535;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #aaa;
+      text-align: left;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="loading">Loading…</div>
+  </div>
+
+  <script>
+    const API_BASE    = "https://sardha.onrender.com";
+    const APK_URL     = "https://sardha.onrender.com/files/sardha.apk";
+    const STORAGE_KEY = "bw_unlocked_vendors";
+
+    /* ── Device detection ── */
+    function isAndroid() {
+      return /android/i.test(navigator.userAgent);
+    }
+    function isIOS() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    }
+    function isInstalled() {
+      return window.navigator.standalone === true
+          || window.matchMedia("(display-mode: standalone)").matches;
+    }
+
+    /* ── PWA install prompt (Android/Chrome) ── */
+    let deferredPrompt = null;
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+
+    /* ── localStorage helpers ── */
+    function getUnlocked() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+      catch { return []; }
+    }
+    function addVendor(id) {
+      const list = getUnlocked();
+      if (list.includes(id)) return false;
+      list.push(id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      return true;
+    }
+
+    async function fetchVendor(id) {
+      try {
+        const res = await fetch(API_BASE + "/api/public/vendors/" + id);
+        if (res.ok) return await res.json();
+      } catch {}
+      return null;
+    }
+
+    function startCountdown(secs, cb) {
+      let rem = secs;
+      const el = document.getElementById("countdown");
+      if (!el) return;
+      el.textContent = "Redirecting in " + rem + "s…";
+      const t = setInterval(() => {
+        rem--;
+        if (el) el.textContent = "Redirecting in " + rem + "s…";
+        if (rem <= 0) { clearInterval(t); cb(); }
+      }, 1000);
+    }
+
+    /* ── Android APK install UI ── */
+    function showAndroidInstall(vendor) {
+      const card = document.getElementById("card");
+      card.innerHTML = `
+        <div class="app-logo">🚚</div>
+        <div class="app-name">Saardha</div>
+        <div class="app-tagline">On-demand local delivery</div>
+        <hr class="divider" />
+        <div class="vendor-emoji">${vendor ? vendor.img : "🏪"}</div>
+        <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
+        <div class="vendor-meta">${vendor ? vendor.category + " · " + vendor.area : "Local delivery"}</div>
+        <div class="ready-badge">⚡ Ready to deliver</div>
+        <a class="btn btn-primary" href="${APK_URL}" download="sardha.apk" id="dlBtn">
+          📲 Download Saardha App
+        </a>
+        <div class="ios-hint" id="installHint" style="display:block;margin-top:14px">
+          <strong>How to install:</strong><br>
+          1. Tap the button above to download<br>
+          2. Open the downloaded <strong>sardha.apk</strong><br>
+          3. Tap <strong>Install</strong> (allow unknown sources if asked)
+        </div>
+      `;
+    }
+
+    /* ── iOS PWA install UI ── */
+    function showIOSInstall(vendor) {
+      const card = document.getElementById("card");
+      card.innerHTML = `
+        <div class="app-logo">🚚</div>
+        <div class="app-name">Saardha</div>
+        <div class="app-tagline">On-demand local delivery</div>
+        <hr class="divider" />
+        <div class="vendor-emoji">${vendor ? vendor.img : "🏪"}</div>
+        <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
+        <div class="ready-badge">⚡ Ready to deliver</div>
+        <a class="btn btn-primary" href="/customer/">Open App →</a>
+        <div class="ios-hint" style="display:block;margin-top:14px">
+          📲 To install on iPhone:<br>
+          Tap the <strong>Share</strong> button (□↑) in Safari,
+          then choose <strong>"Add to Home Screen"</strong>
+        </div>
+      `;
+    }
+
+    async function init() {
+      const card = document.getElementById("card");
+      const params = new URLSearchParams(location.search);
+      const vendorId = params.get("v");
+
+      /* ── No vendor param — generic splash ── */
+      if (!vendorId) {
+        if (isAndroid() && !isInstalled()) {
+          showAndroidInstall(null);
+        } else if (isIOS() && !isInstalled()) {
+          showIOSInstall(null);
+        } else {
+          card.innerHTML = `
+            <div class="app-logo">🚚</div>
+            <div class="app-name">Saardha</div>
+            <div class="app-tagline">On-demand local delivery</div>
+            <p style="color:#666;font-size:14px;margin-top:8px">
+              Scan a store's QR code to get started.
+            </p>
+          `;
+        }
+        return;
+      }
+
+      /* ── Fetch vendor info ── */
+      const vendor = await fetchVendor(vendorId);
+
+      if (!vendor) {
+        card.innerHTML = `
+          <div class="app-logo">🚚</div>
+          <div class="app-name">Saardha</div>
+          <div class="error">Store not found. Please try scanning again.</div>
+          <a class="btn btn-primary" href="/customer/">Open App</a>
+        `;
+        return;
+      }
+
+      /* ── Already has app installed → just add store and redirect ── */
+      if (isInstalled()) {
+        const isNew = addVendor(vendorId);
+        const total = getUnlocked().length;
+        const banner = isNew
+          ? `<div class="added-banner"><strong>✅ ${vendor.name} added!</strong>You can now order from ${vendor.name}</div>`
+          : `<div class="already-banner"><strong>👍 Already in your app</strong>${vendor.name} is already available</div>`;
+        card.innerHTML = `
+          <div class="app-logo">🚚</div>
+          <div class="app-name">Saardha</div>
+          <hr class="divider" />
+          <div class="vendor-emoji">${vendor.img}</div>
+          <div class="vendor-name">${vendor.name}</div>
+          <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
+          ${banner}
+          <a class="btn btn-primary" href="/customer/">Shop Now →</a>
+          <div class="stores-count">You have <span>${total}</span> store${total !== 1 ? "s" : ""} unlocked</div>
+          <div class="countdown" id="countdown"></div>
+        `;
+        startCountdown(3, () => { window.location.href = "/customer/"; });
+        return;
+      }
+
+      /* ── New user — show install flow based on device ── */
+      addVendor(vendorId); // save store so it's ready after install
+
+      if (isAndroid()) {
+        showAndroidInstall(vendor);
+      } else if (isIOS()) {
+        showIOSInstall(vendor);
+      } else {
+        /* Desktop — show get-started page */
+        card.innerHTML = `
+          <div class="app-logo">🚚</div>
+          <div class="app-name">Saardha</div>
+          <div class="app-tagline">On-demand local delivery</div>
+          <hr class="divider" />
+          <div class="vendor-emoji">${vendor.img}</div>
+          <div class="vendor-name">${vendor.name}</div>
+          <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
+          <div class="ready-badge">⚡ Ready to deliver</div>
+          <a class="btn btn-primary" href="/customer/">Open on Desktop →</a>
+          <p style="color:#555;font-size:12px;margin-top:14px">Scan this QR from your phone to install the app</p>
+        `;
+      }
+    }
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
+    init();
+  </script>
+</body>
+</html>

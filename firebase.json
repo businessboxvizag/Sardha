@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "server/**",
+      "*.json",
+      "*.apk",
+      "*.exe"
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
