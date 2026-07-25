@@ -131,6 +131,15 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       return res.status(400).json({ error: "This store is currently closed" });
     }
 
+    // Don't accept an order we can't deliver — require at least one available Saradhi (#10).
+    // Online orders are pre-checked before payment, so we never reject an already-paid order here.
+    if (pm !== "ONLINE") {
+      const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();
+      if (availSnap.empty) {
+        return res.status(409).json({ error: "No Saradhi is available right now. Please try again in a few minutes." });
+      }
+    }
+
     // SERVER-SIDE PRICING (#3) — never trust prices from the client
     // Items must contain { productId, qty } only; price is read from Firestore
     const resolvedItems = [];
@@ -156,6 +165,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
 
     const settingsDoc = await db.collection("settings").doc("global").get();
     const deliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
+    const gst = Math.round(subtotal * 0.18); // 18% GST on items
 
     // Online payment: authenticate the Razorpay callback BEFORE creating the order.
     let paymentStatus = "PENDING";
@@ -189,8 +199,9 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       status: "PLACED",
       items: resolvedItems,
       subtotal,
+      gst,
       deliveryFee,
-      total: subtotal + deliveryFee,
+      total: subtotal + gst + deliveryFee,
       paymentMethod: pm,
       paymentStatus, // COD -> PENDING then COLLECTED on delivery; ONLINE -> PAID here
       razorpayOrderId: pm === "ONLINE" ? razorpay_order_id : null,
@@ -205,63 +216,8 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
 
     await ref.set(order);
 
-    // Auto-assign nearest available Saradhi — uses Firestore transaction to prevent double-booking (#12)
-    try {
-      const toRad = (d) => d * Math.PI / 180;
-      const haversine = (la1, lo1, la2, lo2) => {
-        if (!la1 || !lo1 || !la2 || !lo2) return Infinity;
-        const R = 6371, dLa = toRad(la2 - la1), dLo = toRad(lo2 - lo1);
-        const a = Math.sin(dLa/2)**2 + Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      };
-
-      const ridersSnap = await db.collection("riders").where("status", "==", "available").get();
-      if (!ridersSnap.empty) {
-        const ranked = ridersSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .map((r) => ({ ...r, dist: haversine(r.lat, r.lng, vendor.lat, vendor.lng) }))
-          .sort((a, b) => a.dist - b.dist);
-
-        // Transaction: atomically claim the rider to avoid race conditions
-        let assignedRider = null;
-        for (const candidate of ranked) {
-          try {
-            await db.runTransaction(async (tx) => {
-              const riderRef = db.collection("riders").doc(candidate.id);
-              const riderSnap = await tx.get(riderRef);
-              if (!riderSnap.exists || riderSnap.data().status !== "available") {
-                throw new Error("rider_unavailable");
-              }
-              const assignedAt = new Date().toISOString();
-              tx.update(ref, {
-                riderId: candidate.id,
-                status: "ASSIGNED",
-                updatedAt: assignedAt,
-                history: [...(order.history || []), { status: "ASSIGNED", at: assignedAt, note: "Auto-assigned to " + candidate.name }],
-              });
-              tx.update(riderRef, { status: "on_delivery" });
-              assignedRider = candidate;
-            });
-            break; // transaction succeeded — stop trying
-          } catch (txErr) {
-            if (txErr.message !== "rider_unavailable") throw txErr;
-            // rider was taken — try next candidate
-          }
-        }
-
-        if (assignedRider) {
-          order.riderId = assignedRider.id;
-          order.status  = "ASSIGNED";
-          const io = req.app.get("io");
-          if (io) {
-            io.to("admin").emit("rider:updated", { ...assignedRider, status: "on_delivery" });
-            io.to("rider:" + assignedRider.id).emit("order:assigned", order);
-          }
-        }
-      }
-    } catch (assignErr) {
-      console.warn("Auto-assign failed (non-fatal):", assignErr.message);
-    }
+    // Order stays PLACED in the merchant's New queue until they accept it,
+    // at which point they dispatch the nearest available Saradhi.
 
     // Emit via Socket.io (io attached to router by index.js)
     emitOrderUpdate(req.app.get("io"), order);

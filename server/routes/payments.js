@@ -34,7 +34,8 @@ async function computeTotal(vendorId, items) {
   }
   const settingsDoc = await db.collection("settings").doc("global").get();
   const deliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
-  return { subtotal, deliveryFee, total: subtotal + deliveryFee };
+  const gst = Math.round(subtotal * 0.18); // 18% GST on items
+  return { subtotal, gst, deliveryFee, total: subtotal + gst + deliveryFee };
 }
 
 // POST /api/payments/create-order  { vendorId, items }
@@ -46,6 +47,11 @@ router.post("/create-order", requireAuth, requireRole("customer"), async (req, r
     }
     const { vendorId, items } = req.body;
     const { total } = await computeTotal(vendorId, items);
+    // Don't charge the customer if no Saradhi can deliver (#10)
+    const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();
+    if (availSnap.empty) {
+      return res.status(409).json({ error: "No Saradhi is available right now. Please try again in a few minutes." });
+    }
     const rzpOrder = await razorpay.instance.orders.create({
       amount: total * 100,          // amount in paise
       currency: "INR",

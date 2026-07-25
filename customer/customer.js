@@ -340,15 +340,19 @@
         ]));
       });
       const sub = cartTotal();
-      const fee = BW.deliveryFee ? BW.deliveryFee() : 25;
+      const gst = Math.round(sub * 0.18);
+      const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, "Subtotal"), el("span", {}, money(sub)),
+      ]));
+      linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
+        el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, "Delivery fee"), el("span", {}, money(fee)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
-        el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(sub + fee)),
+        el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(sub + gst + fee)),
       ]));
 
       // Payment method selector
@@ -384,30 +388,39 @@
     });
   }
 
+  let _placing = false;
   async function placeOrder() {
+    if (_placing) return; // guard against double-tap creating two orders
     const vendorId = state.cartVendor;
     const items = cartLines();
     if (state.paymentMethod === "ONLINE") return payOnlineThenPlace(vendorId, items);
+    _placing = true;
+    toast("Placing your order…");
     try {
       const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD" });
       state.cart = {};
       state.cartVendor = null;
       showOrderConfirmation(order);
     } catch (err) {
-      toast("Failed to place order: " + err.message);
+      toast(err.message || "Failed to place order");
+    } finally {
+      _placing = false;
     }
   }
 
   async function payOnlineThenPlace(vendorId, items) {
+    if (_placing) return;
     if (typeof Razorpay === "undefined") {
       toast("Online payment unavailable — please choose Cash on delivery");
       return;
     }
+    _placing = true;
     let pay;
     try {
       pay = await BW.createPaymentOrder({ vendorId, items });
     } catch (err) {
-      toast("Could not start payment: " + err.message);
+      toast(err.message || "Could not start payment");
+      _placing = false;
       return;
     }
     const cust = BW.currentCustomer();
@@ -419,8 +432,10 @@
       name: "Saardha",
       description: "Order payment",
       prefill: cust ? { name: cust.name || "", contact: cust.phone || "", email: cust.email || "" } : {},
-      theme: { color: "#e8590c" },
+      theme: { color: "#e62a1f" },
+      modal: { ondismiss: () => { _placing = false; } },
       handler: async (resp) => {
+        _placing = false;
         try {
           const order = await BW.placeOrder({
             vendorId, items, paymentMethod: "ONLINE",
@@ -436,8 +451,10 @@
         }
       },
     });
-    rzp.on("payment.failed", (r) =>
-      toast("Payment failed: " + ((r.error && r.error.description) || "please try again")));
+    rzp.on("payment.failed", (r) => {
+      _placing = false;
+      toast("Payment failed: " + ((r.error && r.error.description) || "please try again"));
+    });
     rzp.open();
   }
 
