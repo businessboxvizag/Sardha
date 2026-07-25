@@ -1,5 +1,5 @@
 const express = require("express");
-const { db } = require("../config/firebase");
+const { db, admin } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
@@ -130,7 +130,7 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       }
     }
 
-    const { name, price, unit, qty } = req.body;
+    const { name, price, unit, qty, photoUrl } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
 
     const ref = db.collection("products").doc();
@@ -141,6 +141,7 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       price: price !== undefined ? Number(price) : 0,
       unit: unit || "item",
       ...(qty !== undefined ? { qty: Number(qty) } : {}),
+      ...(photoUrl ? { photoUrl } : {}),
       available: true,
       createdAt: new Date().toISOString(),
     };
@@ -170,7 +171,7 @@ router.put("/:vid/products/:pid", requireAuth, requireRole("merchant", "admin"),
       return res.status(403).json({ error: "Product does not belong to this vendor" });
     }
 
-    const allowed = ["name", "price", "unit", "qty", "available"];
+    const allowed = ["name", "price", "unit", "qty", "available", "photoUrl"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.price !== undefined) updates.price = Number(updates.price);

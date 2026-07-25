@@ -36,17 +36,17 @@
 
   /* ââ Auth helpers âââââââââââââââââââââââââââââââââââââââââââ */
   const Auth = {
-    getToken: () => sessionStorage.getItem("bw_token"),
-    getUser:  () => { try { return JSON.parse(sessionStorage.getItem("bw_user")); } catch { return null; } },
+    getToken: () => localStorage.getItem("bw_token"),
+    getUser:  () => { try { return JSON.parse(localStorage.getItem("bw_user")); } catch { return null; } },
     setSession: (token, user) => {
-      sessionStorage.setItem("bw_token", token);
-      sessionStorage.setItem("bw_user", JSON.stringify(user));
+      localStorage.setItem("bw_token", token);
+      localStorage.setItem("bw_user", JSON.stringify(user));
     },
     clearSession: () => {
-      sessionStorage.removeItem("bw_token");
-      sessionStorage.removeItem("bw_user");
+      localStorage.removeItem("bw_token");
+      localStorage.removeItem("bw_user");
     },
-    isLoggedIn: () => !!sessionStorage.getItem("bw_token"),
+    isLoggedIn: () => !!localStorage.getItem("bw_token"),
   };
 
   /* ââ HTTP helpers âââââââââââââââââââââââââââââââââââââââââââ */
@@ -61,6 +61,12 @@
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data.error === "session_superseded") {
+      Auth.clearSession();
+      alert("You've been signed out because your account was opened on another device.");
+      window.location.reload();
+      throw new Error("session_superseded");
+    }
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
@@ -76,7 +82,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
-    logins: [], allUsers: [],
+    logins: [], allUsers: [], shops: [],
   };
 
   /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
@@ -134,6 +140,7 @@
         get("/api/orders").then((o) => { _cache.orders = o; }),
         get("/api/customers/me").then((c) => { _cache.myCustomer = c; }),
         get("/api/customers/me/favorites").then((f) => { _cache.favorites = f; }),
+        get("/api/customers/me/shops").then((s) => { _cache.shops = s || []; }).catch(() => {}),
       );
       // Load all products for all vendors
       for (const v of _cache.vendors) {
@@ -236,6 +243,13 @@
     },
     order:         (id) => _cache.orders.find((o) => o.id === id) || null,
     favorites:     ()   => [..._cache.favorites],
+    shops:         ()   => [...(_cache.shops || [])],
+    addShop:       async (vendorId) => {
+      const list = await post("/api/customers/me/shops", { vendorId });
+      _cache.shops = list;
+      emit();
+      return list;
+    },
     analytics:     ()   => _cache.analytics,
     logins:        ()   => [..._cache.logins],
     allUsers:      ()   => [..._cache.allUsers],
@@ -257,6 +271,8 @@
       post("/api/payments/create-order", { vendorId, items }),
 
     config: () => _config,
+
+    askAssistant: (message, history) => post("/api/assistant", { message, history }),
 
     rateOrder: async (orderId, data) => {
       const order = await post(`/api/orders/${orderId}/rating`, data);
@@ -358,6 +374,7 @@
       emit();
       return saved;
     },
+
 
     deleteProduct: async (vendorId, productId) => {
       await del(`/api/vendors/${vendorId}/products/${productId}`);

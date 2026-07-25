@@ -471,6 +471,35 @@
     ]);
   }
 
+  function resizeImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w >= h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", quality || 0.7));
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  async function uploadToCloudinary(dataUrl) {
+    const cfg = (BW.config && BW.config()) || {};
+    const cloud = cfg.cloudinaryCloud, preset = cfg.cloudinaryPreset;
+    if (!cloud || !preset) throw new Error("Image uploads aren't set up yet");
+    const fd = new FormData();
+    fd.append("file", dataUrl);
+    fd.append("upload_preset", preset);
+    const r = await fetch("https://api.cloudinary.com/v1_1/" + cloud + "/image/upload", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!d.secure_url) throw new Error((d.error && d.error.message) || "Upload failed");
+    return d.secure_url;
+  }
+
   function editProduct(p) {
     const vendor  = BW.vendor(state.vendorId);
     const food    = isFoodVendor(vendor);
@@ -548,6 +577,25 @@
       }
     }
 
+    let photoData = null;
+    const photoPreview = el("div", { class: "prod-photo-prev" }, (p && p.photoUrl) ? el("img", { src: p.photoUrl, alt: "" }) : document.createTextNode("📷"));
+    const fileEl = el("input", { type: "file", accept: "image/*", style: "display:none" });
+    fileEl.addEventListener("change", async () => {
+      const f = fileEl.files && fileEl.files[0]; if (!f) return;
+      try {
+        photoData = await resizeImage(f, 720, 0.72);
+        photoPreview.innerHTML = ""; photoPreview.appendChild(el("img", { src: photoData, alt: "" }));
+      } catch (e) { toast("Couldn't read that image"); }
+    });
+    fields.push(el("div", { class: "field" }, [
+      el("label", {}, "Photo (optional)"),
+      el("div", { class: "row", style: "gap:12px;align-items:center" }, [
+        photoPreview,
+        el("button", { class: "btn ghost sm", type: "button", onClick: () => fileEl.click() }, "Upload photo"),
+        fileEl,
+      ]),
+    ]));
+
     const close = UI.modal({
       title: isNew ? "Add item" : "Edit item",
       body: el("div", {}, fields),
@@ -570,6 +618,12 @@
               if (stockEl.value !== "") payload.qty = Number(stockEl.value);
             } else if (food && qtyEl && qtyEl.value !== "") {
               payload.qty = Number(qtyEl.value);
+            }
+            if (photoData) {
+              try { payload.photoUrl = await uploadToCloudinary(photoData); }
+              catch (e) { toast("Photo upload failed: " + (e.message || "")); }
+            } else if (p && p.photoUrl) {
+              payload.photoUrl = p.photoUrl;
             }
             await BW.upsertProduct(payload);
             toast(isNew ? "Item added" : "Item updated");

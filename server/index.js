@@ -40,7 +40,7 @@ const orderLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 1
 // General API calls
 const apiLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 120 });
 
-app.use(express.json());
+app.use(express.json({ limit: "512kb" }));
 app.use(helmet()); // Security headers: CSP, HSTS, X-Content-Type-Options, etc. (#23)
 
 /* ── Socket.io ───────────────────────────────────────────────── */
@@ -62,6 +62,7 @@ app.use("/api/auth",      authLimiter, require("./routes/reset"));
 app.use("/api/vendors",   apiLimiter,  require("./routes/vendors"));
 app.use("/api/orders",    orderLimiter, require("./routes/orders"));
 app.use("/api/payments",  require("./routes/payments"));
+app.use("/api/assistant", require("./routes/assistant"));
 app.use("/api/riders",    require("./routes/riders"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/analytics", require("./routes/analytics"));
@@ -70,7 +71,12 @@ app.use("/api/settings",  require("./routes/settings"));
 
 /* ── Expose Mapbox token safely ──────────────────────────────── */
 app.get("/api/config", (req, res) => {
-  res.json({ mapboxToken: process.env.MAPBOX_TOKEN || "", razorpayKeyId: process.env.RAZORPAY_KEY_ID || "" });
+  res.json({
+    mapboxToken: process.env.MAPBOX_TOKEN || "",
+    razorpayKeyId: process.env.RAZORPAY_KEY_ID || "",
+    cloudinaryCloud: process.env.CLOUDINARY_CLOUD_NAME || "",
+    cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET || "",
+  });
 });
 
 /* ── Health check ────────────────────────────────────────────── */

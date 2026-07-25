@@ -1,5 +1,5 @@
 const express = require("express");
-const { db } = require("../config/firebase");
+const { db, admin } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
@@ -104,6 +104,34 @@ router.post("/me/favorites/toggle", requireAuth, requireRole("customer"), async 
     res.json(vendorIds);
   } catch (err) {
     res.status(500).json({ error: "Failed to toggle favorite" });
+  }
+});
+
+/* ── GET /api/customers/me/shops ── the customer's scanned stores (account-backed) ── */
+router.get("/me/shops", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.json([]);
+    res.json(snap.docs[0].data().shops || []);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch stores" });
+  }
+});
+
+/* ── POST /api/customers/me/shops  { vendorId } ── add a scanned store to the account ── */
+router.post("/me/shops", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const { vendorId } = req.body;
+    if (!vendorId) return res.status(400).json({ error: "vendorId required" });
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: "Profile not found" });
+    const ref = snap.docs[0].ref;
+    await ref.update({ shops: admin.firestore.FieldValue.arrayUnion(vendorId) });
+    const updated = await ref.get();
+    res.json(updated.data().shops || []);
+  } catch (err) {
+    console.error("POST /customers/me/shops:", err);
+    res.status(500).json({ error: "Failed to add store" });
   }
 });
 

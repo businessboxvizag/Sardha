@@ -22,6 +22,8 @@
     const user = await BWAuth.requireLogin("customer");
     await BW.init("customer");
 
+    // Bring any device-local stores onto the account so they sync across devices (#1)
+    migrateLocalShops();
     // A merchant QR / scan page can deep-link a store via ?v=<vendorId> — add it
     handleAddStoreParam();
 
@@ -34,6 +36,9 @@
     });
 
     render();
+
+    // First-time users get an animated how-to guide (once)
+    try { if (!localStorage.getItem("saardha_onboarded")) setTimeout(showOnboarding, 500); } catch (e) {}
   }
 
   /* ----- cart helpers ----- */
@@ -80,25 +85,29 @@
     render();
   }
 
+  /* ----- nav icons ----- */
+  const ICONS = {
+    store:   '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0"/><path d="M9 20v-5h6v5"/></svg>',
+    orders:  '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>',
+    cart:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.5 12h11l2-8H6"/></svg>',
+    scan:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M4 12h16"/></svg>',
+    profile: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+  };
+
   /* ----- shell ----- */
   function shell(active, body) {
     root.innerHTML = "";
     const cust = BW.currentCustomer();
     const user = BW.Auth.getUser();
 
-    const cartBtn = el("button", { class: "btn primary sm", onClick: openCart }, [
-      document.createTextNode("Cart"),
-      cartCount() ? el("span", { class: "badge", style: "background:#1a1205" }, String(cartCount())) : document.createTextNode(""),
-    ]);
-    const logoutBtn = el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out");
-
-    root.appendChild(topbar("Customer · " + (user ? user.name : ""), [cartBtn, logoutBtn]));
+    root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "Saardha", []));
 
     const nav = el("div", { class: "sidebar" }, [
-      navItem("stores",    "St", "My Stores"),
-      navItem("history",   "Or", "My Orders"),
-      navItem("favorites", "Fv", "Favorites"),
-      navItem("scan",      "QR", "Scan QR"),
+      navItem("stores",   ICONS.store,   "My Stores"),
+      navItem("history",  ICONS.orders,  "My Orders"),
+      navItem("scan",     ICONS.scan,    "Scan QR"),
+      navItem("cart",     ICONS.cart,    "Cart", openCart),
+      navItem("profile",  ICONS.profile, "Profile"),
     ]);
 
     const content = el("div", { class: "content" }, body);
@@ -106,26 +115,44 @@
 
     // Bottom nav (mobile only — hidden on desktop via CSS)
     root.appendChild(el("div", { class: "bottom-nav" }, [
-      bnItem("stores",    "St", "Stores"),
-      bnItem("history",   "Or", "Orders"),
-      bnItem("favorites", "Fv", "Favs"),
-      bnItem("scan",      "QR", "Scan"),
+      bnItem("stores",   ICONS.store,   "Stores"),
+      bnItem("history",  ICONS.orders,  "Orders"),
+      bnItem("cart",     ICONS.cart,    "Cart", openCart, cartCount() || null),
+      bnItem("scan",     ICONS.scan,    "Scan"),
+      bnItem("profile",  ICONS.profile, "Profile"),
     ]));
 
-    function navItem(route, ico, label) {
-      return el("div", {
-        class: "nav-item" + (active === route ? " active" : ""),
-        onClick: () => go(route),
-      }, [el("span", { class: "ico nav-ico-text" }, ico), el("span", {}, label)]);
+    // Floating cart bar — slides up whenever the cart has items
+    if (cartCount() > 0) {
+      const sub = cartTotal();
+      const tot = sub + Math.round(sub * 0.18) + (BW.deliveryFee ? BW.deliveryFee() : 15);
+      root.appendChild(el("div", { class: "cart-bar", onClick: openCart }, [
+        el("span", {}, cartCount() + (cartCount() === 1 ? " item" : " items") + " · " + money(tot)),
+        el("span", {}, "View cart →"),
+      ]));
     }
 
-    function bnItem(route, ico, label, badge) {
+    // Help button — reopens the how-to guide any time
+    root.appendChild(el("div", { class: "help-fab", title: "Help", "aria-label": "Help", onClick: showAssistant }, "?"));
+
+    function navItem(route, ico, label, onClick) {
+      const icoEl = el("span", { class: "ico nav-ico" });
+      icoEl.innerHTML = ico;
+      return el("div", {
+        class: "nav-item" + (active === route ? " active" : ""),
+        onClick: onClick || (() => go(route)),
+      }, [icoEl, el("span", {}, label)]);
+    }
+
+    function bnItem(route, ico, label, onClick, badge) {
+      const icoEl = el("span", { class: "bn-ico" });
+      icoEl.innerHTML = ico;
       const wrap = el("div", { class: "bottom-nav-item-wrap" }, [
         el("button", {
           class: "bottom-nav-item" + (active === route ? " active" : ""),
-          onClick: () => go(route),
+          onClick: onClick || (() => go(route)),
         }, [
-          el("span", { class: "bn-ico" }, ico),
+          icoEl,
           document.createTextNode(label),
         ]),
       ]);
@@ -144,8 +171,8 @@
       if (BW.vendor(vId)) {
         const unlocked = getUnlockedVendors();
         if (!unlocked.includes(vId)) {
-          unlocked.push(vId);
-          localStorage.setItem("bw_unlocked_vendors", JSON.stringify(unlocked));
+          if (BW.addShop) BW.addShop(vId).catch(function () {});
+          addStoreLocal(vId);
           toast("✓ " + BW.vendor(vId).name + " added to your stores");
         }
         state.route = "stores";
@@ -158,12 +185,31 @@
   }
 
   function getUnlockedVendors() {
+    // Account-backed stores (sync across devices) merged with any legacy device-local list
+    var acct = (BW.shops ? BW.shops() : []) || [];
+    var local = [];
+    try { local = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]"); } catch (e) {}
+    if (!Array.isArray(local)) local = [];
+    var seen = {}, out = [];
+    acct.concat(local).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } });
+    return out;
+  }
+
+  function addStoreLocal(id) {
     try {
-      const raw = localStorage.getItem("bw_unlocked_vendors");
-      if (!raw) return [];
-      const list = JSON.parse(raw);
-      return Array.isArray(list) ? list : [];
-    } catch { return []; }
+      var l = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
+      if (!Array.isArray(l)) l = [];
+      if (l.indexOf(id) < 0) { l.push(id); localStorage.setItem("bw_unlocked_vendors", JSON.stringify(l)); }
+    } catch (e) {}
+  }
+
+  function migrateLocalShops() {
+    try {
+      var local = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
+      if (!Array.isArray(local) || !local.length || !BW.addShop) return;
+      var acct = (BW.shops ? BW.shops() : []) || [];
+      local.forEach(function (id) { if (acct.indexOf(id) < 0) BW.addShop(id).catch(function () {}); });
+    } catch (e) {}
   }
 
   /* ====================== MY STORES ====================== */
@@ -229,85 +275,101 @@
     }
   }
 
-  function vendorCard(v, favs) {
-    const isFav = favs.includes(v.id);
-    const card = el("div", { class: "store-card", onClick: () => openVendor(v.id) }, [
-      el("div", { class: "store-card-banner" }, v.img || (v.name || "?")[0].toUpperCase()),
-      el("div", { class: "store-card-body" }, [
-        el("div", { class: "row between" }, [
-          el("div", { class: "store-card-name" }, v.name),
-          el("button", {
-            class: "btn ghost sm", style: "padding:4px 8px;font-size:11px",
-            onClick: async (e) => {
-              e.stopPropagation();
-              await BW.toggleFavorite(v.id);
-              render();
-            },
-          }, isFav ? "♥ Saved" : "♡ Save"),
-        ]),
-        el("div", { class: "store-card-meta" }, v.category + " · " + v.area),
-        el("div", { class: "store-card-tags" }, [
-          el("span", { class: "tag" }, "⭐ " + v.rating),
-          el("span", { class: "tag" }, "~" + v.prepMins + "m"),
+  function vendorCard(v) {
+    return el("div", { class: "vcard", onClick: () => openVendor(v.id) }, [
+      el("div", { class: "vcard-img" }, v.img || (v.name || "?")[0].toUpperCase()),
+      el("div", { class: "vcard-body" }, [
+        el("div", { class: "vcard-name" }, v.name),
+        el("div", { class: "vcard-meta" }, v.category + " · " + v.area),
+        el("div", { class: "vcard-tags" }, [
+          el("span", { class: "vcard-rating" }, "★ " + v.rating),
+          el("span", { class: "vcard-time" }, "~" + v.prepMins + " min"),
         ]),
       ]),
     ]);
-    return card;
   }
 
   /* ====================== VENDOR ====================== */
   async function openVendor(vendorId) {
-    // Load products for this vendor if not already cached
-    if (!BW.products(vendorId).length) {
-      await BW.loadVendorProducts(vendorId);
+    const need = !BW.products(vendorId).length;
+    go("vendor", { vendorId, vendorLoading: need });   // show instantly (skeleton while loading)
+    if (need) {
+      try { await BW.loadVendorProducts(vendorId); } catch (e) {}
+      if (state.route === "vendor" && state.vendorId === vendorId) { state.vendorLoading = false; viewVendor(); }
     }
-    go("vendor", { vendorId });
+  }
+
+  const TILE_COLORS = [["#FCEBEB","#A32D2D"],["#FAEEDA","#854F0B"],["#EAF3DE","#3B6D11"],["#E6F1FB","#0C447C"],["#EEEDFE","#3C3489"],["#FBEAF0","#993556"]];
+
+  function itemCtrl(p) {
+    const qty = state.cart[p.id] || 0;
+    if (!qty) return el("button", { class: "add-btn", onClick: (e) => { e.stopPropagation(); addToCart(p); refreshItem(p.id); } }, "ADD");
+    return el("div", { class: "add-stepper" }, [
+      el("button", { onClick: (e) => { e.stopPropagation(); setQty(p.id, qty - 1); refreshItem(p.id); } }, "−"),
+      el("span", {}, String(qty)),
+      el("button", { onClick: (e) => { e.stopPropagation(); addToCart(p); refreshItem(p.id); } }, "+"),
+    ]);
+  }
+
+  function refreshItem(id) {
+    const box = document.getElementById("it-" + id);
+    const p = BW.products(state.vendorId).find((x) => x.id === id);
+    if (box && p) { box.innerHTML = ""; box.appendChild(itemCtrl(p)); box.style.animation = "srPop .25s ease"; }
+    refreshCartBar();
+  }
+
+  function refreshCartBar() {
+    const ex = document.querySelector(".cart-bar");
+    if (ex) ex.remove();
+    if (cartCount() > 0) {
+      const sub = cartTotal();
+      const tot = sub + Math.round(sub * 0.18) + (BW.deliveryFee ? BW.deliveryFee() : 15);
+      const bar = el("div", { class: "cart-bar", onClick: openCart }, [
+        el("span", {}, cartCount() + (cartCount() === 1 ? " item" : " items") + " · " + money(tot)),
+        el("span", {}, "View cart →"),
+      ]);
+      document.getElementById("root").appendChild(bar);
+    }
   }
 
   function viewVendor() {
     const v = BW.vendor(state.vendorId);
     if (!v) { go("stores"); return; }
     const products = BW.products(v.id);
-    const favs = BW.favorites();
+    const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
 
-    const list = el("div", {});
-    products.forEach((p) => {
-      const qty = state.cart[p.id] || 0;
-      const qtyCtrl = qty > 0
-        ? el("div", { class: "qty" }, [
-            el("button", { onClick: (e) => { e.stopPropagation(); setQty(p.id, qty - 1); viewVendor(); } }, "−"),
-            el("span", { style: "font-weight:700;min-width:18px;text-align:center" }, String(qty)),
-            el("button", { onClick: (e) => { e.stopPropagation(); addToCart(p); viewVendor(); } }, "+"),
-          ])
-        : el("button", { class: "btn primary sm", onClick: (e) => { e.stopPropagation(); addToCart(p); viewVendor(); } }, "+ Add");
-      list.appendChild(el("div", { class: "product-item" }, [
-        el("div", { class: "product-info" }, [
-          el("div", { class: "product-name" }, p.name),
-          el("div", { class: "product-price" }, money(p.price) + " / " + p.unit),
+    const listEl = state.vendorLoading ? skeletonItems(6) : el("div", { style: "padding:0 2px" });
+    if (!state.vendorLoading) products.forEach((p, i) => {
+      const cols = TILE_COLORS[i % TILE_COLORS.length];
+      const ctrlBox = el("div", { id: "it-" + p.id, class: "item-ctrl" }, [itemCtrl(p)]);
+      listEl.appendChild(el("div", { class: "item-row" }, [
+        el("span", { class: "veg-dot" }, el("span", {})),
+        el("div", { class: "item-info" }, [
+          el("div", { class: "item-name" }, p.name),
+          el("div", { class: "item-price" }, money(p.price)),
+          el("div", { class: "item-unit" }, "per " + p.unit),
         ]),
-        qtyCtrl,
+        el("div", { class: "item-thumb-wrap" }, [
+          p.photoUrl
+            ? el("div", { class: "item-thumb", style: "padding:0;overflow:hidden" }, el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;height:100%;object-fit:cover" }))
+            : el("div", { class: "item-thumb", style: "background:" + cols[0] + ";color:" + cols[1] }, v.img || "🍽"),
+          ctrlBox,
+        ]),
       ]));
     });
 
     const body = [
-      el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "← Back"),
-      el("div", { class: "row between", style: "margin:14px 0 4px" }, [
-        el("div", { class: "row", style: "gap:14px" }, [
-          el("div", { class: "vendor-initial vendor-initial--lg", style: "font-size:28px;background:var(--surface-2);color:var(--text)" }, v.img || (v.name || "?")[0].toUpperCase()),
-          el("div", {}, [
-            el("h1", { class: "page-title", style: "margin:0" }, v.name),
-            el("div", { class: "muted small" }, v.category + " · " + v.area + " · ⭐ " + v.rating),
-          ]),
+      el("div", { class: "store-hero" }, [
+        el("button", { class: "store-back", onClick: () => go("stores"), "aria-label": "Back" }, "‹"),
+        el("div", { class: "store-hero-logo" }, v.img || (v.name || "?")[0].toUpperCase()),
+        el("div", { class: "store-hero-info" }, [
+          el("div", { class: "store-hero-name" }, v.name),
+          el("div", { class: "store-hero-meta" }, v.category + " · " + v.area),
         ]),
-        el("button", {
-          class: "btn ghost sm",
-          onClick: async () => { await BW.toggleFavorite(v.id); render(); },
-        }, favs.includes(v.id) ? "♥ Saved" : "♡ Save"),
+        el("div", { class: "store-hero-rating" }, "★ " + v.rating),
       ]),
-      el("div", { class: "card", style: "margin-top:16px" }, [
-        el("h3", { style: "margin-top:0" }, "Menu"),
-        list,
-      ]),
+      el("div", { class: "store-time-strip" }, "🛵 " + v.prepMins + "–" + (v.prepMins + 15) + " min  ·  Delivery " + money(fee)),
+      listEl,
     ];
     shell("stores", body);
   }
@@ -395,13 +457,15 @@
     const items = cartLines();
     if (state.paymentMethod === "ONLINE") return payOnlineThenPlace(vendorId, items);
     _placing = true;
-    toast("Placing your order…");
+    showPlacing();
     try {
       const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD" });
       state.cart = {};
       state.cartVendor = null;
+      hidePlacing();
       showOrderConfirmation(order);
     } catch (err) {
+      hidePlacing();
       toast(err.message || "Failed to place order");
     } finally {
       _placing = false;
@@ -436,6 +500,7 @@
       modal: { ondismiss: () => { _placing = false; } },
       handler: async (resp) => {
         _placing = false;
+        showPlacing();
         try {
           const order = await BW.placeOrder({
             vendorId, items, paymentMethod: "ONLINE",
@@ -445,8 +510,10 @@
           });
           state.cart = {};
           state.cartVendor = null;
+          hidePlacing();
           showOrderConfirmation(order);
         } catch (err) {
+          hidePlacing();
           toast("Payment received but order failed — contact support: " + err.message);
         }
       },
@@ -710,11 +777,8 @@
 
     function addVendorById(vendorId) {
       if (!vendorId) return;
-      const unlocked = getUnlockedVendors();
-      if (!unlocked.includes(vendorId)) {
-        unlocked.push(vendorId);
-        localStorage.setItem("bw_unlocked_vendors", JSON.stringify(unlocked));
-      }
+      if (BW.addShop) BW.addShop(vendorId).catch(function () {});
+      addStoreLocal(vendorId);
     }
 
     function processUrl(urlStr) {
@@ -794,7 +858,7 @@
       el("p", { class: "page-sub" }, "Point your camera at a merchant's QR code to add their store."),
 
       el("div", { class: "scan-camera-box" }, [
-        el("video", { id: "scanVideo", autoplay: true, playsinline: true, style: "width:100%;border-radius:10px;background:#000;max-height:280px;object-fit:cover" }, []),
+        el("video", { id: "scanVideo", autoplay: true, playsinline: true, style: "width:100%;border-radius:10px;background:#2c1a0e;max-height:280px;object-fit:cover" }, []),
         el("div", { id: "scanResult", class: "auth-err", style: "margin-top:8px;text-align:left" }, []),
       ]),
 
@@ -844,13 +908,158 @@
     window._scanCleanup = stopCamera;
   }
 
+  /* ====================== UI DELIGHT ====================== */
+  function skeletonItems(n) {
+    const wrap = el("div", { style: "padding:0 2px" });
+    for (let i = 0; i < (n || 5); i++) {
+      wrap.appendChild(el("div", { class: "skel-row" }, [
+        el("span", { class: "skel", style: "width:15px;height:15px;flex-shrink:0" }),
+        el("div", { style: "flex:1" }, [
+          el("div", { class: "skel", style: "height:14px;width:55%;margin-bottom:8px" }),
+          el("div", { class: "skel", style: "height:11px;width:30%" }),
+        ]),
+        el("div", { class: "skel", style: "width:96px;height:82px;border-radius:14px;flex-shrink:0" }),
+      ]));
+    }
+    return wrap;
+  }
+
+  function showPlacing() {
+    hidePlacing();
+    document.body.appendChild(el("div", { class: "placing-overlay", id: "placingOverlay" }, [
+      el("div", { class: "placing-spinner" }),
+      el("div", { class: "pl-txt" }, "Placing your order…"),
+    ]));
+  }
+  function hidePlacing() { const o = document.getElementById("placingOverlay"); if (o) o.remove(); }
+
+  const OB_STEPS = [
+    { e: "🔍", t: "Scan a shop", s: "Point your camera at a shop's Saardha QR code to add it to your app." },
+    { e: "🛒", t: "Build your cart", s: "Open a shop and tap ADD on the items you want." },
+    { e: "💳", t: "Place your order", s: "Pay by cash on delivery or online — whatever you prefer." },
+    { e: "🛵", t: "Track it live", s: "Watch your Saradhi bring your order to your door in real time." },
+  ];
+  function showOnboarding() {
+    let i = 0;
+    const overlay = el("div", { class: "ob-overlay" });
+    const card = el("div", { class: "ob-card" });
+    overlay.appendChild(card);
+    const done = () => { overlay.remove(); try { localStorage.setItem("saardha_onboarded", "1"); } catch (e) {} };
+    function paint() {
+      const st = OB_STEPS[i];
+      card.innerHTML = "";
+      card.appendChild(el("div", { class: "ob-emoji" }, st.e));
+      card.appendChild(el("div", { class: "ob-title" }, st.t));
+      card.appendChild(el("div", { class: "ob-sub" }, st.s));
+      const dots = el("div", { class: "ob-dots" });
+      OB_STEPS.forEach((_, j) => dots.appendChild(el("div", { class: "ob-dot" + (j === i ? " on" : "") })));
+      card.appendChild(dots);
+      card.appendChild(el("button", { class: "btn primary", style: "width:100%", onClick: () => {
+        if (i < OB_STEPS.length - 1) { i++; paint(); } else { done(); }
+      } }, i < OB_STEPS.length - 1 ? "Next" : "Get started"));
+      if (i < OB_STEPS.length - 1) {
+        card.appendChild(el("div", { class: "muted small", style: "margin-top:12px;cursor:pointer", onClick: done }, "Skip"));
+      }
+    }
+    paint();
+    document.body.appendChild(overlay);
+  }
+
+  /* ====================== AI HELP ====================== */
+  function showAssistant() {
+    const overlay = el("div", { class: "ai-overlay" });
+    const sheet = el("div", { class: "ai-sheet" });
+    overlay.appendChild(sheet);
+    const close = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+
+    const msgs = el("div", { class: "ai-msgs" });
+    const history = [];
+
+    function addMsg(text, who) {
+      history.push({ role: who === "bot" ? "assistant" : "user", text: text });
+      const m = el("div", { class: "ai-msg " + (who === "bot" ? "bot" : "me") }, text);
+      msgs.appendChild(m);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    function typing() {
+      const t = el("div", { class: "ai-msg bot ai-typing" }, [el("span", {}), el("span", {}), el("span", {})]);
+      msgs.appendChild(t); msgs.scrollTop = msgs.scrollHeight; return t;
+    }
+    async function send(text) {
+      if (!text || !text.trim()) return;
+      addMsg(text, "me");
+      const t = typing();
+      try {
+        const r = await BW.askAssistant(text, history.slice(0, -1));
+        t.remove();
+        addMsg((r && r.reply) || "Sorry, please try again.", "bot");
+      } catch (e) {
+        t.remove();
+        addMsg("I'm having trouble right now — please try again in a moment.", "bot");
+      }
+    }
+
+    const input = el("input", { class: "ai-input-field", placeholder: "Ask about ordering, payment, tracking…" });
+    const sendIt = () => { const v = input.value; input.value = ""; send(v); };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") sendIt(); });
+
+    sheet.appendChild(el("div", { class: "ai-header" }, [
+      el("div", { class: "row", style: "gap:10px;align-items:center" }, [
+        el("img", { src: "../assets/img/icon.png", alt: "", style: "width:26px;height:26px;object-fit:contain" }),
+        el("div", { style: "font-weight:800" }, "Saardha Help"),
+      ]),
+      el("button", { class: "ai-close", "aria-label": "Close", onClick: close }, "×"),
+    ]));
+    sheet.appendChild(msgs);
+    sheet.appendChild(el("div", { class: "ai-chips" }, [
+      el("button", { onClick: () => send("How do I place an order?") }, "How to order"),
+      el("button", { onClick: () => send("What are the delivery charges?") }, "Charges"),
+      el("button", { onClick: () => send("How do I track my order?") }, "Track order"),
+      el("button", { onClick: () => { close(); showOnboarding(); } }, "Show the guide"),
+    ]));
+    sheet.appendChild(el("div", { class: "ai-input" }, [input, el("button", { class: "ai-send", "aria-label": "Send", onClick: sendIt }, "→")]));
+
+    document.body.appendChild(overlay);
+    addMsg("Hi! I'm your Saardha helper. Ask me anything, or tap a suggestion below.", "bot");
+  }
+
+  /* ====================== PROFILE ====================== */
+  function viewProfile() {
+    const cust = BW.currentCustomer();
+    const user = BW.Auth.getUser();
+    const name = (cust && cust.name) || (user && user.name) || "Customer";
+    const initials = name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+    const rowKV = (k, v) => el("div", { class: "row between", style: "padding:9px 0;border-bottom:0.5px solid var(--border)" }, [
+      el("span", { class: "muted" }, k), el("span", { style: "font-weight:500;text-align:right" }, v),
+    ]);
+    shell("profile", [
+      el("h1", { class: "page-title" }, "Profile"),
+      el("div", { class: "card", style: "display:flex;align-items:center;gap:14px" }, [
+        el("div", { style: "width:56px;height:56px;border-radius:50%;background:var(--brand-lt);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;flex-shrink:0" }, initials || "U"),
+        el("div", { style: "min-width:0" }, [
+          el("div", { style: "font-weight:700;font-size:17px" }, name),
+          el("div", { class: "muted small" }, (user && user.email) || ""),
+        ]),
+      ]),
+      el("div", { class: "card", style: "margin-top:12px" }, [
+        rowKV("Phone", (cust && cust.phone) || "—"),
+        rowKV("Delivery address", (cust && cust.address) || "Not set yet"),
+        el("div", { class: "row between", style: "padding:9px 0" }, [
+          el("span", { class: "muted" }, "Stores added"), el("span", { style: "font-weight:500" }, String(getUnlockedVendors().length)),
+        ]),
+      ]),
+      el("button", { class: "btn danger", style: "width:100%;margin-top:18px", onClick: () => BW.logout() }, "Log out"),
+    ]);
+  }
+
   /* ====================== ROUTER ====================== */
   function render() {
     switch (state.route) {
       case "vendor":    return viewVendor();
       case "track":     return viewTrack();
       case "history":   return viewHistory();
-      case "favorites": return viewFavorites();
+      case "profile":   return viewProfile();
       case "scan":      return viewScan();
       default:          return viewStores();
     }

@@ -7,12 +7,22 @@ const { requireAuth } = require("../middleware/auth");
 const router = express.Router();
 
 /* ── helpers ────────────────────────────────────────────────── */
-function signToken(user) {
+const crypto = require("crypto");
+
+function signToken(user, sid) {
   return jwt.sign(
-    { uid: user.uid, email: user.email, role: user.role, name: user.name },
+    { uid: user.uid, email: user.email, role: user.role, name: user.name, sid },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
+}
+
+/* Rotate the user's active session id — this invalidates any other device
+ * still holding an older token (single-device sign-in, #2). */
+async function startSession(uid) {
+  const sid = crypto.randomBytes(16).toString("hex");
+  await db.collection("users").doc(uid).update({ sessionId: sid }).catch(() => {});
+  return sid;
 }
 
 /** Non-blocking login audit — failure is silently ignored */
@@ -94,7 +104,8 @@ router.post("/register", async (req, res) => {
 
     logLogin(uid, email, role, clientIp(req), "email_register");
 
-    const token = signToken({ uid, email, role, name });
+    const sid = await startSession(uid);
+    const token = signToken({ uid, email, role, name }, sid);
     res.status(201).json({ token, user: { uid, email, role, name } });
   } catch (err) {
     console.error("register:", err);
@@ -153,7 +164,8 @@ router.post("/login", async (req, res) => {
 
     logLogin(user.uid, user.email, user.role, clientIp(req), "email");
 
-    const token = signToken(user);
+    const sid = await startSession(user.uid);
+    const token = signToken(user, sid);
     res.json({ token, user: { uid: user.uid, email: user.email, role: user.role, name: user.name } });
   } catch (err) {
     console.error("login:", err);
@@ -206,7 +218,8 @@ router.post("/google", async (req, res) => {
     const user = userSnap.data();
     logLogin(user.uid, user.email, user.role, clientIp(req), "google");
 
-    const token = signToken(user);
+    const sid = await startSession(user.uid);
+    const token = signToken(user, sid);
     res.json({ token, user: { uid: user.uid, email: user.email, role: user.role, name: user.name } });
   } catch (err) {
     console.error("google auth:", err);
