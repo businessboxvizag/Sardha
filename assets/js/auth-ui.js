@@ -38,431 +38,251 @@
     return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
+  /* ── Google Sign-In (popup with mobile redirect fallback) ────── */
+  async function doGoogleSignIn(role, resolve, btn, errEl) {
+    errEl.textContent = "";
+    const fbAuth = getFirebaseAuth();
+    if (!fbAuth) { errEl.textContent = "Google Sign-In unavailable. Use email instead."; return; }
+    btn.disabled = true; btn.innerHTML = `${GOOGLE_SVG}Signing in...`;
+    const reset = () => { btn.disabled = false; btn.innerHTML = `${GOOGLE_SVG}Continue with Google`; };
+    const REDIRECT_CODES = ["auth/popup-blocked","auth/operation-not-supported-in-this-environment","auth/cancelled-popup-request","auth/web-storage-unsupported"];
+    try {
+      const result = await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      const idToken = await result.user.getIdToken();
+      const data = await BW.loginWithGoogle(idToken, role);
+      if (data.user.role !== role) { errEl.textContent = `This Google account is registered as '${data.user.role}'. Use the ${data.user.role} portal.`; reset(); return; }
+      BW.Auth.setSession(data.token, data.user);
+      resolve(data.user);
+    } catch (err) {
+      if (err && REDIRECT_CODES.includes(err.code)) {
+        try { await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider()); return; }
+        catch (e2) { errEl.textContent = (e2 && (e2.code ? e2.code + ": " + e2.message : e2.message)) || "Google sign-in failed."; reset(); return; }
+      }
+      if (err && err.code === "auth/popup-closed-by-user") errEl.textContent = "Sign-in cancelled.";
+      else if (err && err.code === "auth/unauthorized-domain") errEl.textContent = "This domain isn't authorised in Firebase (Authentication → Settings → Authorized domains).";
+      else errEl.textContent = (err && (err.code ? err.code + ": " + err.message : err.message)) || "Google sign-in failed.";
+      reset();
+    }
+  }
+
   function renderLoginScreen(role, resolve) {
     const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Saradhi" }[role] || role;
-    // Only customers can self-register. Merchants/riders are created by admin.
-    const canSelfRegister = role === "customer";
-    // Google Sign-In only for customers (merchants use admin-set credentials)
+    const canSelfRegister = role === "customer";   // only customers self-register
     const showGoogle = role === "customer";
     const root = document.getElementById("root");
 
+    const EYE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const EYE_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    const pwField = (id, ph, ac) =>
+      `<div class="field"><label>Password</label>
+        <div class="pw-wrap" style="position:relative">
+          <input id="${id}" class="pw-input" type="password" placeholder="${ph}" autocomplete="${ac}" style="padding-right:44px;width:100%" />
+          <button type="button" class="pw-eye" data-for="${id}" aria-label="Show password"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;display:flex;align-items:center">${EYE}</button>
+        </div></div>`;
+
     root.innerHTML = `
-      <div class="auth-wrap">
-        <div class="auth-card">
-          <img src="../assets/img/logo.png" alt="Saardha" class="auth-logo-img" />
-          <p class="auth-sub" id="authSub">${esc(roleLabel)} portal</p>
+      <div class="auth-wrap"><div class="auth-card">
+        <img src="../assets/img/logo.png" alt="Saardha" class="auth-logo-img" />
+        <p class="auth-sub" id="authSub">${canSelfRegister ? "Order from local shops, in minutes" : esc(roleLabel) + " portal"}</p>
 
-          ${showGoogle ? `
-          <button class="btn google-btn" id="googleSignIn">
-            ${GOOGLE_SVG}Continue with Google
-          </button>
-          <div class="auth-divider"><span>or sign in with email</span></div>` : ""}
+        ${canSelfRegister ? `
+        <div class="auth-tabs">
+          <button type="button" id="tabLogin" class="auth-tab on">Log in</button>
+          <button type="button" id="tabSignup" class="auth-tab">Sign up</button>
+        </div>` : ""}
 
-          <div id="stepEmail">
-            <div class="field">
-              <label>Email address</label>
-              <input id="authEmail" type="email" placeholder="you@example.com" autocomplete="email" />
-            </div>
-            <div class="auth-err" id="authErr1"></div>
-            <button class="btn primary" id="authContinue" style="width:100%">Continue</button>
-          </div>
+        ${showGoogle ? `
+        <button class="btn google-btn" id="googleSignIn">${GOOGLE_SVG}Continue with Google</button>
+        <div class="auth-divider"><span>or use email</span></div>` : ""}
 
-          <div id="stepCreds" style="display:none">
-            <p class="auth-greet" id="authGreet"></p>
-
-            <div class="field" id="nameField" style="display:none">
-              <label>Full name</label>
-              <input id="authName" type="text" placeholder="Your name" autocomplete="name" />
-            </div>
-
-            ${role === "merchant" ? `
-            <div id="merchantLocField" style="display:none">
-              <div class="field">
-                <label>Store location <span class="muted small">(optional)</span></label>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <button type="button" class="btn ghost sm" id="gpsLocBtn">Use my location</button>
-                  <span id="gpsStatus" class="muted small"></span>
-                </div>
-              </div>
-            </div>` : ""}
-
-            <div class="field">
-              <label id="pwdLabel">Password</label>
-              <input id="authPassword" type="password" placeholder="Enter password" autocomplete="current-password" />
-            </div>
-
-            <div class="auth-err" id="authErr2"></div>
-            <button class="btn primary" id="authSubmit" style="width:100%">Sign in</button>
-            <button type="button" class="btn ghost" id="authBack" style="width:100%;margin-top:8px">Back</button>
-          </div>
+        <div id="loginPane">
+          <div class="field"><label>Email address</label>
+            <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email" /></div>
+          ${pwField("loginPwd", "Enter password", "current-password")}
+          <div class="auth-err" id="loginErr"></div>
+          <button class="btn primary" id="loginBtn" style="width:100%">Log in</button>
+          <a href="#" id="forgotLink" style="font-size:.8rem;color:var(--brand);display:block;margin-top:10px;text-align:right">Forgot password?</a>
         </div>
-      </div>
-    `;
 
-    let isNewUser = false;
-    let capturedEmail = "";
-    let _merchantLat = null;
-    let _merchantLng = null;
+        ${canSelfRegister ? `
+        <div id="signupPane" style="display:none">
+          <div class="field"><label>Full name</label>
+            <input id="suName" type="text" placeholder="Your name" autocomplete="name" /></div>
+          <div class="field"><label>Email address</label>
+            <input id="suEmail" type="email" placeholder="you@example.com" autocomplete="email" /></div>
+          <div style="display:flex;gap:8px;align-items:center;margin:-4px 0 10px">
+            <button type="button" class="btn ghost sm" id="sendEmailOtp">Send code</button>
+            <span class="muted small" id="emailOtpStatus"></span>
+          </div>
+          <div class="field" id="emailOtpField" style="display:none">
+            <input id="emailOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit email code" />
+            <button type="button" class="btn ghost sm" id="verifyEmailOtp" style="margin-top:6px;width:100%">Verify email</button>
+          </div>
+          <div class="field"><label>Phone number <span class="muted small">(optional)</span></label>
+            <input id="suPhone" type="tel" placeholder="+91 98765 43210" autocomplete="tel" /></div>
+          <div style="display:flex;gap:8px;align-items:center;margin:-4px 0 10px">
+            <button type="button" class="btn ghost sm" id="sendPhoneOtp">Verify phone</button>
+            <span class="muted small" id="phoneOtpStatus"></span>
+          </div>
+          <div class="field" id="phoneOtpField" style="display:none">
+            <input id="phoneOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit phone OTP" />
+            <button type="button" class="btn ghost sm" id="verifyPhoneOtp" style="margin-top:6px;width:100%">Confirm OTP</button>
+          </div>
+          <div class="field"><label>Date of birth <span class="muted small">(optional)</span></label>
+            <input id="suDob" type="date" /></div>
+          ${pwField("suPwd", "Choose a password (min 6)", "new-password")}
+          <div id="recaptcha-container"></div>
+          <div class="auth-err" id="suErr"></div>
+          <button class="btn primary" id="signupBtn" style="width:100%">Create account</button>
+        </div>` : ""}
+      </div></div>`;
 
-    // ── Signup OTP state ──
-    let otpRequired = false;          // set true when server config requires it (customers only)
-    let emailVerifyToken = null;      // proof the email code was verified
-    let phoneToken = null;            // Firebase phone idToken (proof the phone was verified)
-    let _phoneConfirmation = null;    // Firebase confirmationResult
-    let _recaptcha = null;
-
-    function formatE164(raw) {
-      let v = String(raw || "").replace(/[^\d+]/g, "");
-      if (!v) return "";
-      if (v[0] === "+") return v;
-      if (v.length === 10) return "+91" + v;   // default India
-      return "+" + v;
-    }
-    // Fetch server config (login runs before BW.init, so read it directly)
-    async function fetchRequireOtp() {
-      try {
-        const r = await fetch((window.BW_API_BASE || "http://localhost:3000") + "/api/config");
-        const c = await r.json();
-        return !!(c && c.requireSignupOtp);
-      } catch { return false; }
-    }
-
-    /* ── Google Sign-In ── */
-    const googleBtn = document.getElementById("googleSignIn");
-    if (googleBtn) {
-      googleBtn.addEventListener("click", async () => {
-        const errEl = document.getElementById("authErr1");
-        errEl.textContent = "";
-        const fbAuth = getFirebaseAuth();
-        if (!fbAuth) {
-          errEl.textContent = "Google Sign-In unavailable. Use email and password.";
-          return;
-        }
-        googleBtn.disabled = true;
-        googleBtn.innerHTML = `${GOOGLE_SVG}Signing in...`;
-        const resetBtn = () => { googleBtn.disabled = false; googleBtn.innerHTML = `${GOOGLE_SVG}Continue with Google`; };
-        // Codes where a popup can't work (common on mobile / PWAs) → use redirect instead.
-        const REDIRECT_CODES = [
-          "auth/popup-blocked",
-          "auth/operation-not-supported-in-this-environment",
-          "auth/cancelled-popup-request",
-          "auth/web-storage-unsupported",
-        ];
-        try {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          const result = await fbAuth.signInWithPopup(provider);
-          const idToken = await result.user.getIdToken();
-          const data = await BW.loginWithGoogle(idToken, role);
-
-          if (data.user.role !== role) {
-            errEl.textContent = `This Google account is registered as '${data.user.role}'. Please use the ${data.user.role} portal.`;
-            resetBtn();
-            return;
-          }
-          BW.Auth.setSession(data.token, data.user);
-          resolve(data.user);
-        } catch (err) {
-          if (err && REDIRECT_CODES.includes(err.code)) {
-            // Fall back to full-page redirect (handled by getRedirectResult on reload)
-            try {
-              await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
-              return; // page will navigate away
-            } catch (e2) {
-              errEl.textContent = (e2 && (e2.code ? e2.code + ": " + e2.message : e2.message)) || "Google sign-in failed.";
-              resetBtn();
-              return;
-            }
-          }
-          if (err && err.code === "auth/popup-closed-by-user") {
-            errEl.textContent = "Sign-in cancelled.";
-          } else if (err && err.code === "auth/unauthorized-domain") {
-            errEl.textContent = "This site's domain isn't authorised in Firebase. Add it under Authentication → Settings → Authorized domains.";
-          } else {
-            // Show the real code so config issues are diagnosable
-            errEl.textContent = (err && (err.code ? err.code + ": " + err.message : err.message)) || "Google sign-in failed.";
-          }
-          resetBtn();
-        }
+    // Password eye toggles
+    root.querySelectorAll(".pw-eye").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const inp = document.getElementById(btn.dataset.for);
+        if (!inp) return;
+        const show = inp.type === "password";
+        inp.type = show ? "text" : "password";
+        btn.innerHTML = show ? EYE_OFF : EYE;
+        btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
       });
-    }
-
-    /* ── GPS button (merchant registration) ── */
-    const gpsBtn = document.getElementById("gpsLocBtn");
-    if (gpsBtn) {
-      gpsBtn.addEventListener("click", () => {
-        const statusEl = document.getElementById("gpsStatus");
-        if (!navigator.geolocation) { statusEl.textContent = "GPS not supported"; return; }
-        gpsBtn.disabled = true;
-        statusEl.textContent = "Acquiring location...";
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            _merchantLat = pos.coords.latitude;
-            _merchantLng = pos.coords.longitude;
-            statusEl.textContent = `Located (${_merchantLat.toFixed(4)}, ${_merchantLng.toFixed(4)})`;
-            gpsBtn.textContent = "Update location";
-            gpsBtn.disabled = false;
-          },
-          (err) => {
-            statusEl.textContent = err.code === 1 ? "Permission denied" : "GPS unavailable";
-            gpsBtn.disabled = false;
-          },
-          { enableHighAccuracy: true, timeout: 12000 }
-        );
-      });
-    }
-
-    /* ── Step 1: Continue (check email exists) ── */
-    const continueBtn = document.getElementById("authContinue");
-    const emailInput  = document.getElementById("authEmail");
-
-    async function handleContinue() {
-      const email = emailInput.value.trim();
-      const errEl = document.getElementById("authErr1");
-      errEl.textContent = "";
-      if (!email || !/\S+@\S+\.\S+/.test(email)) {
-        errEl.textContent = "Enter a valid email address.";
-        return;
-      }
-
-      continueBtn.disabled = true;
-      continueBtn.textContent = "Checking...";
-
-      try {
-        const result = await BW.checkEmail(email, role);
-        capturedEmail = email;
-
-        document.getElementById("stepEmail").style.display = "none";
-        document.getElementById("stepCreds").style.display = "";
-
-        if (result.exists) {
-          isNewUser = false;
-          if (result.authProvider === "google") {
-            document.getElementById("authGreet").textContent = "";
-            document.getElementById("authErr2").textContent =
-              "This account uses Google Sign-In. Please use the Google button above.";
-            document.getElementById("authSubmit").style.display = "none";
-            document.getElementById("authPassword").closest(".field").style.display = "none";
-          } else {
-            document.getElementById("authGreet").textContent = result.name
-              ? `Welcome back, ${result.name.split(" ")[0]}`
-              : "Welcome back";
-            document.getElementById("authSub").textContent = `${roleLabel} sign in`;
-          }
-        } else if (canSelfRegister) {
-          isNewUser = true;
-          document.getElementById("authGreet").textContent = "Create your account";
-          document.getElementById("nameField").style.display = "";
-          document.getElementById("authSubmit").textContent = "Create account";
-          document.getElementById("authSub").textContent = `New ${roleLabel} account`;
-          document.getElementById("pwdLabel").textContent = "Choose a password";
-          document.getElementById("authPassword").setAttribute("autocomplete", "new-password");
-          const locField = document.getElementById("merchantLocField");
-          if (locField) locField.style.display = "";
-          // Show the phone/DOB + OTP verification block only when the server requires it
-          otpRequired = (role === "customer") && await fetchRequireOtp();
-          if (otpRequired) mountSignupOtp();
-        } else {
-          document.getElementById("stepCreds").style.display = "none";
-          document.getElementById("stepEmail").style.display = "";
-          errEl.textContent = role === "merchant"
-            ? "No merchant account found for this email. Contact the admin to create your store account."
-            : "No account found. Contact your administrator.";
-        }
-      } catch (err) {
-        const msg = err && err.message;
-        errEl.textContent = (!msg || msg === "Failed to fetch")
-          ? "Cannot reach server. Please try again in a moment."
-          : msg;
-      } finally {
-        continueBtn.disabled = false;
-        continueBtn.textContent = "Continue";
-      }
-    }
-
-    continueBtn.addEventListener("click", handleContinue);
-    emailInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleContinue(); });
-
-    /* ── Back button ── */
-    document.getElementById("authBack").addEventListener("click", () => {
-      document.getElementById("stepCreds").style.display = "none";
-      document.getElementById("stepEmail").style.display = "";
-      document.getElementById("authErr2").textContent = "";
-      const submitBtn = document.getElementById("authSubmit");
-      submitBtn.style.display = "";
-      submitBtn.textContent = "Sign in";
-      document.getElementById("authPassword").closest(".field").style.display = "";
-      document.getElementById("nameField").style.display = "none";
-      const locField = document.getElementById("merchantLocField");
-      if (locField) locField.style.display = "none";
-      const otpBlock = document.getElementById("otpBlock");
-      if (otpBlock) otpBlock.remove();
-      otpRequired = false; emailVerifyToken = null; phoneToken = null; _phoneConfirmation = null;
-      try { if (_recaptcha) { _recaptcha.clear(); _recaptcha = null; } } catch (e) {}
-      isNewUser = false;
     });
 
-    /* ── Signup OTP block (email + phone verification) ── */
-    function mountSignupOtp() {
-      const creds = document.getElementById("stepCreds");
-      const block = document.createElement("div");
-      block.id = "otpBlock";
-      block.innerHTML = `
-        <div class="field">
-          <label>Phone number</label>
-          <input id="suPhone" type="tel" placeholder="+91 98765 43210" autocomplete="tel" />
-        </div>
-        <div class="field">
-          <label>Date of birth <span class="muted small">(optional)</span></label>
-          <input id="suDob" type="date" />
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <button type="button" class="btn ghost sm" id="sendEmailOtp">Send email code</button>
-          <span class="muted small" id="emailOtpStatus"></span>
-        </div>
-        <div class="field" id="emailOtpField" style="display:none">
-          <input id="emailOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit email code" />
-          <button type="button" class="btn ghost sm" id="verifyEmailOtp" style="margin-top:6px;width:100%">Verify email</button>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <button type="button" class="btn ghost sm" id="sendPhoneOtp">Send phone OTP</button>
-          <span class="muted small" id="phoneOtpStatus"></span>
-        </div>
-        <div class="field" id="phoneOtpField" style="display:none">
-          <input id="phoneOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit phone OTP" />
-          <button type="button" class="btn ghost sm" id="verifyPhoneOtp" style="margin-top:6px;width:100%">Verify phone</button>
-        </div>
-        <div id="recaptcha-container"></div>
-      `;
-      creds.insertBefore(block, document.getElementById("authSubmit"));
+    // Login / Sign up tabs
+    const loginPane = document.getElementById("loginPane");
+    const signupPane = document.getElementById("signupPane");
+    const tabLogin = document.getElementById("tabLogin");
+    const tabSignup = document.getElementById("tabSignup");
+    function showTab(which) {
+      const login = which === "login";
+      if (loginPane) loginPane.style.display = login ? "" : "none";
+      if (signupPane) signupPane.style.display = login ? "none" : "";
+      if (tabLogin) tabLogin.classList.toggle("on", login);
+      if (tabSignup) tabSignup.classList.toggle("on", !login);
+    }
+    if (tabLogin) tabLogin.addEventListener("click", () => showTab("login"));
+    if (tabSignup) tabSignup.addEventListener("click", () => showTab("signup"));
 
-      const eStatus = () => document.getElementById("emailOtpStatus");
-      const pStatus = () => document.getElementById("phoneOtpStatus");
+    // Google
+    const googleBtn = document.getElementById("googleSignIn");
+    if (googleBtn) googleBtn.addEventListener("click", () => doGoogleSignIn(role, resolve, googleBtn, document.getElementById("loginErr")));
 
-      // Email OTP
+    // Forgot password
+    const forgot = document.getElementById("forgotLink");
+    if (forgot) forgot.addEventListener("click", (e) => { e.preventDefault(); showForgotForm(role, document.getElementById("loginEmail").value.trim()); });
+
+    // ── Login ──
+    const loginBtn = document.getElementById("loginBtn");
+    async function doLogin() {
+      const email = document.getElementById("loginEmail").value.trim();
+      const pwd = document.getElementById("loginPwd").value;
+      const errEl = document.getElementById("loginErr");
+      errEl.textContent = "";
+      if (!email || !pwd) { errEl.textContent = "Enter your email and password."; return; }
+      loginBtn.disabled = true; loginBtn.textContent = "Logging in…";
+      try {
+        const data = await BW.login(email, pwd, role);
+        if (data.user.role !== role) { errEl.textContent = `This account belongs to the '${data.user.role}' portal.`; loginBtn.disabled = false; loginBtn.textContent = "Log in"; return; }
+        BW.Auth.setSession(data.token, data.user);
+        resolve(data.user);
+      } catch (err) {
+        const msg = (err && err.message) || "";
+        errEl.innerHTML = /no account|not found|invalid cred|incorrect/i.test(msg)
+          ? (canSelfRegister ? "No account or wrong password. New here? Tap <b>Sign up</b>." : "No account found. Contact your administrator.")
+          : (msg || "Login failed. Check your details.");
+        loginBtn.disabled = false; loginBtn.textContent = "Log in";
+      }
+    }
+    loginBtn.addEventListener("click", doLogin);
+    document.getElementById("loginPwd").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+
+    // ── Sign up (customers) ──
+    if (canSelfRegister) {
+      let emailVerifyToken = null, phoneToken = null, phoneConfirmation = null, recaptcha = null;
+      const formatE164 = (raw) => { let v = String(raw || "").replace(/[^\d+]/g, ""); if (!v) return ""; if (v[0] === "+") return v; if (v.length === 10) return "+91" + v; return "+" + v; };
+      const eStat = () => document.getElementById("emailOtpStatus");
+      const pStat = () => document.getElementById("phoneOtpStatus");
+
       document.getElementById("sendEmailOtp").addEventListener("click", async (e) => {
-        const btn = e.currentTarget; btn.disabled = true;
-        eStatus().textContent = "Sending…";
-        try {
-          await BW.sendEmailOtp(capturedEmail);
-          document.getElementById("emailOtpField").style.display = "";
-          eStatus().textContent = "Code sent to " + capturedEmail;
-        } catch (err) { eStatus().textContent = (err && err.message) || "Could not send code."; }
+        const btn = e.currentTarget;
+        const email = document.getElementById("suEmail").value.trim();
+        if (!/\S+@\S+\.\S+/.test(email)) { eStat().textContent = "Enter a valid email first."; return; }
+        btn.disabled = true; eStat().textContent = "Sending…";
+        try { await BW.sendEmailOtp(email); document.getElementById("emailOtpField").style.display = ""; eStat().textContent = "Code sent to " + email; }
+        catch (err) { eStat().textContent = (err && err.message) || "Could not send code."; }
         finally { setTimeout(() => { btn.disabled = false; }, 3000); }
       });
       document.getElementById("verifyEmailOtp").addEventListener("click", async () => {
+        const email = document.getElementById("suEmail").value.trim();
         const code = document.getElementById("emailOtpInput").value.trim();
-        eStatus().textContent = "Checking…";
+        eStat().textContent = "Checking…";
         try {
-          const r = await BW.verifyEmailOtp(capturedEmail, code);
+          const r = await BW.verifyEmailOtp(email, code);
           emailVerifyToken = r.verifyToken;
-          eStatus().textContent = "✓ Email verified";
+          eStat().textContent = "✓ Email verified";
           document.getElementById("emailOtpInput").disabled = true;
           document.getElementById("verifyEmailOtp").disabled = true;
-        } catch (err) { eStatus().textContent = (err && err.message) || "Incorrect code."; }
+          document.getElementById("suEmail").disabled = true;
+        } catch (err) { eStat().textContent = (err && err.message) || "Incorrect code."; }
       });
 
-      // Phone OTP via Firebase
       document.getElementById("sendPhoneOtp").addEventListener("click", async (e) => {
         const btn = e.currentTarget;
         const fbAuth = getFirebaseAuth();
         const phone = formatE164(document.getElementById("suPhone").value);
-        if (!fbAuth) { pStatus().textContent = "Phone verification unavailable."; return; }
-        if (!phone || phone.length < 10) { pStatus().textContent = "Enter a valid phone number."; return; }
-        btn.disabled = true; pStatus().textContent = "Sending OTP…";
+        if (!fbAuth) { pStat().textContent = "Phone verification unavailable."; return; }
+        if (!phone || phone.length < 10) { pStat().textContent = "Enter a valid phone number."; return; }
+        btn.disabled = true; pStat().textContent = "Sending OTP…";
         try {
-          if (!_recaptcha) {
-            _recaptcha = new firebase.auth.RecaptchaVerifier("recaptcha-container", { size: "invisible" });
-          }
-          _phoneConfirmation = await fbAuth.signInWithPhoneNumber(phone, _recaptcha);
+          if (!recaptcha) recaptcha = new firebase.auth.RecaptchaVerifier("recaptcha-container", { size: "invisible" });
+          phoneConfirmation = await fbAuth.signInWithPhoneNumber(phone, recaptcha);
           document.getElementById("phoneOtpField").style.display = "";
-          pStatus().textContent = "OTP sent to " + phone;
+          pStat().textContent = "OTP sent to " + phone;
         } catch (err) {
-          pStatus().textContent = (err && (err.code ? err.code : err.message)) || "Could not send OTP.";
-          try { if (_recaptcha) { _recaptcha.clear(); _recaptcha = null; } } catch (e2) {}
+          pStat().textContent = (err && (err.code || err.message)) || "Could not send OTP.";
+          try { if (recaptcha) { recaptcha.clear(); recaptcha = null; } } catch (x) {}
         } finally { setTimeout(() => { btn.disabled = false; }, 3000); }
       });
       document.getElementById("verifyPhoneOtp").addEventListener("click", async () => {
         const code = document.getElementById("phoneOtpInput").value.trim();
-        if (!_phoneConfirmation) { pStatus().textContent = "Send the OTP first."; return; }
-        pStatus().textContent = "Checking…";
+        if (!phoneConfirmation) { pStat().textContent = "Send the OTP first."; return; }
+        pStat().textContent = "Checking…";
         try {
-          const cred = await _phoneConfirmation.confirm(code);
+          const cred = await phoneConfirmation.confirm(code);
           phoneToken = await cred.user.getIdToken();
-          pStatus().textContent = "✓ Phone verified";
+          pStat().textContent = "✓ Phone verified";
           document.getElementById("phoneOtpInput").disabled = true;
           document.getElementById("verifyPhoneOtp").disabled = true;
-          // Don't keep the phone user signed into Firebase — we only needed the token
-          try { await getFirebaseAuth().signOut(); } catch (e2) {}
-        } catch (err) { pStatus().textContent = (err && err.message) || "Incorrect OTP."; }
+          try { await getFirebaseAuth().signOut(); } catch (x) {}
+        } catch (err) { pStat().textContent = (err && err.message) || "Incorrect OTP."; }
       });
-    }
 
-    /* ── Step 2: Submit ── */
-    const submitBtn = document.getElementById("authSubmit");
-    submitBtn.addEventListener("click", async () => {
-      const password = document.getElementById("authPassword").value;
-      const nameEl   = document.getElementById("authName");
-      const name     = nameEl ? nameEl.value.trim() : "";
-      const errEl    = document.getElementById("authErr2");
-
-      errEl.textContent = "";
-      if (!password) { errEl.textContent = "Password is required."; return; }
-      if (isNewUser && !name) { errEl.textContent = "Please enter your full name."; return; }
-      if (isNewUser && otpRequired) {
+      const signupBtn = document.getElementById("signupBtn");
+      async function doSignup() {
+        const name = document.getElementById("suName").value.trim();
+        const email = document.getElementById("suEmail").value.trim();
+        const pwd = document.getElementById("suPwd").value;
+        const phone = formatE164(document.getElementById("suPhone").value);
+        const dob = document.getElementById("suDob").value;
+        const errEl = document.getElementById("suErr");
+        errEl.textContent = "";
+        if (!name) { errEl.textContent = "Please enter your full name."; return; }
+        if (!/\S+@\S+\.\S+/.test(email)) { errEl.textContent = "Enter a valid email."; return; }
         if (!emailVerifyToken) { errEl.textContent = "Please verify your email with the code we sent."; return; }
-        if (!phoneToken) { errEl.textContent = "Please verify your phone number with the OTP."; return; }
+        if (pwd.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
+        signupBtn.disabled = true; signupBtn.textContent = "Creating account…";
+        try {
+          const data = await BW.register({ email, password: pwd, name, role, phone: phone || null, dob: dob || null, emailVerifyToken, phoneToken });
+          if (data.user.role !== role) { errEl.textContent = "This account belongs to another portal."; signupBtn.disabled = false; signupBtn.textContent = "Create account"; return; }
+          BW.Auth.setSession(data.token, data.user);
+          resolve(data.user);
+        } catch (err) { errEl.textContent = (err && err.message) || "Could not create account."; signupBtn.disabled = false; signupBtn.textContent = "Create account"; }
       }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Please wait...";
-
-      try {
-        let data;
-        if (isNewUser) {
-          const phoneEl = document.getElementById("suPhone");
-          const dobEl = document.getElementById("suDob");
-          data = await BW.register({
-            email: capturedEmail, password, name, role,
-            phone: phoneEl ? formatE164(phoneEl.value) : null,
-            dob: dobEl ? dobEl.value : null,
-            emailVerifyToken, phoneToken,
-            lat: _merchantLat, lng: _merchantLng,
-          });
-        } else {
-          data = await BW.login(capturedEmail, password, role);
-        }
-
-        if (data.user.role !== role) {
-          errEl.textContent = `This account belongs to the '${data.user.role}' portal.`;
-          submitBtn.disabled = false;
-          submitBtn.textContent = isNewUser ? "Create account" : "Sign in";
-          return;
-        }
-
-        BW.Auth.setSession(data.token, data.user);
-        resolve(data.user);
-      } catch (err) {
-        errEl.textContent = err.message || "Authentication failed. Please try again.";
-        submitBtn.disabled = false;
-        submitBtn.textContent = isNewUser ? "Create account" : "Sign in";
-      }
-    });
-
-    document.getElementById("authPassword").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submitBtn.click();
-    });
-
-    /* ── "Forgot password?" link — injected below password field ── */
-    const pwdField = document.getElementById("authPassword").closest(".field");
-    const forgotLink = document.createElement("a");
-    forgotLink.href = "#";
-    forgotLink.textContent = "Forgot password?";
-    forgotLink.style.cssText = "font-size:.8rem;color:var(--brand);display:block;margin-top:4px;text-align:right";
-    forgotLink.addEventListener("click", (e) => {
-      e.preventDefault();
-      showForgotForm(role, capturedEmail || document.getElementById("authEmail").value.trim());
-    });
-    pwdField.after(forgotLink);
+      signupBtn.addEventListener("click", doSignup);
+      document.getElementById("suPwd").addEventListener("keydown", (e) => { if (e.key === "Enter") doSignup(); });
+    }
   }
 
   /* ── Forgot-password screen ─────────────────────────────────── */

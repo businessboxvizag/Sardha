@@ -90,7 +90,7 @@
       alt: "Saardha",
     });
     return el("div", { class: "topbar" }, [
-      el("a", { class: "brand", href: "../index.html" }, [
+      el("a", { class: "brand", href: "./" }, [
         logoImg,
         el("span", {}, [
           document.createTextNode("Saardha"),
@@ -116,21 +116,55 @@
     return el("span", { class: "badge " + status }, BW.STATUS_LABEL[status] || status);
   }
 
+  // Order progress rendered along an S-curve (echoes the Saardha logo).
+  // The brand stroke fills from "Placed" to "Delivered"; a red S means cancelled.
   function tracker(status) {
     const flow = BW.STATUS_FLOW;
-    const idx = flow.indexOf(status);
-    const wrap = el("div", { class: "tracker" });
-    flow.forEach((s, i) => {
-      let cls = "step";
-      if (status === "CANCELLED") cls += "";
-      else if (i < idx) cls += " done";
-      else if (i === idx) cls += " active";
-      wrap.appendChild(
-        el("div", { class: cls }, [
-          el("div", { class: "bead" }, i < idx ? "" : String(i + 1)),
-          el("div", {}, BW.STATUS_LABEL[s]),
-        ])
-      );
+    const cancelled = status === "CANCELLED";
+    const idx = cancelled ? -1 : flow.indexOf(status);
+    const NS = "http://www.w3.org/2000/svg";
+    // A smooth letter-S path; nodes are placed on it via getPointAtLength.
+    const D = "M78,30 C78,14 55,8 40,16 C22,26 24,50 49,58 C75,67 77,92 58,101 C44,108 24,103 22,86";
+
+    const wrap = el("div", { class: "s-track" + (cancelled ? " cancelled" : "") });
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 100 130");
+    svg.setAttribute("class", "s-track-svg");
+    const base = document.createElementNS(NS, "path");
+    base.setAttribute("d", D); base.setAttribute("class", "s-base");
+    const prog = document.createElementNS(NS, "path");
+    prog.setAttribute("d", D); prog.setAttribute("class", "s-prog");
+    svg.appendChild(base); svg.appendChild(prog);
+    wrap.appendChild(svg);
+
+    const cap = el("div", { class: "s-cap" }, cancelled ? "Order declined by the store" : (BW.STATUS_LABEL[status] || status));
+    wrap.appendChild(cap);
+    if (!cancelled && idx >= 0) {
+      const total = flow.length - 1;
+      wrap.appendChild(el("div", { class: "s-step-count" }, "Step " + (idx + 1) + " of " + (total + 1)));
+    }
+
+    // Fill + place nodes after the SVG is measurable in the DOM.
+    requestAnimationFrame(() => {
+      try {
+        if (typeof prog.getTotalLength !== "function") return;
+        const len = prog.getTotalLength();
+        prog.style.strokeDasharray = len;
+        prog.style.strokeDashoffset = len;                 // start empty
+        const frac = cancelled ? 1 : (flow.length > 1 ? idx / (flow.length - 1) : 0);
+        setTimeout(() => { prog.style.strokeDashoffset = len * (1 - Math.max(0, frac)); }, 40);
+        flow.forEach((s, i) => {
+          const p = prog.getPointAtLength(len * (i / (flow.length - 1)));
+          const c = document.createElementNS(NS, "circle");
+          c.setAttribute("cx", p.x); c.setAttribute("cy", p.y);
+          c.setAttribute("r", i === idx ? 6 : 4.5);
+          c.setAttribute("class", "s-node" + (i < idx ? " done" : "") + (i === idx ? " active" : ""));
+          const t = document.createElementNS(NS, "title");
+          t.textContent = BW.STATUS_LABEL[s] || s;
+          c.appendChild(t);
+          svg.appendChild(c);
+        });
+      } catch (e) { /* non-DOM env */ }
     });
     return wrap;
   }

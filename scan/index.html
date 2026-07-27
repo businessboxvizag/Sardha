@@ -111,8 +111,11 @@
 
   <script>
     const API_BASE    = "https://sardha.onrender.com";
-    const APK_URL     = "https://sardha.onrender.com/files/sardha.apk";
     const STORAGE_KEY = "bw_unlocked_vendors";
+    let currentVendor = null;
+    // Always open the installable PWA (never the API backend). Carry the store id
+    // so the customer app adds it automatically on open.
+    function customerUrl(v) { return "/customer/" + ((v && v.id) ? ("?v=" + encodeURIComponent(v.id)) : ""); }
 
     /* ── Device detection ── */
     function isAndroid() {
@@ -131,7 +134,20 @@
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
       deferredPrompt = e;
+      const btn = document.getElementById("installBtn");
+      if (btn) btn.textContent = "📲 Install Saardha";
     });
+    // After a successful install, open the app straight into their store
+    window.addEventListener("appinstalled", () => {
+      window.location.href = customerUrl(currentVendor);
+    });
+    async function triggerInstall() {
+      if (!deferredPrompt) return false;
+      deferredPrompt.prompt();
+      try { await deferredPrompt.userChoice; } catch (e) {}
+      deferredPrompt = null;
+      return true;
+    }
 
     /* ── localStorage helpers ── */
     function getUnlocked() {
@@ -166,7 +182,7 @@
       }, 1000);
     }
 
-    /* ── Android APK install UI ── */
+    /* ── Android PWA install UI ── */
     function showAndroidInstall(vendor) {
       const card = document.getElementById("card");
       card.innerHTML = `
@@ -178,16 +194,24 @@
         <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
         <div class="vendor-meta">${vendor ? vendor.category + " · " + vendor.area : "Local delivery"}</div>
         <div class="ready-badge">⚡ Ready to deliver</div>
-        <a class="btn btn-primary" href="${APK_URL}" download="sardha.apk" id="dlBtn">
-          📲 Download Saardha App
-        </a>
+        <button class="btn btn-primary" id="installBtn">📲 Install Saardha</button>
+        <a class="btn" href="${customerUrl(vendor)}" id="openBtn"
+           style="display:block;margin-top:10px;background:transparent;border:1px solid #444;color:#ddd">Open in browser →</a>
         <div class="ios-hint" id="installHint" style="display:block;margin-top:14px">
-          <strong>How to install:</strong><br>
-          1. Tap the button above to download<br>
-          2. Open the downloaded <strong>sardha.apk</strong><br>
-          3. Tap <strong>Install</strong> (allow unknown sources if asked)
+          <strong>To install:</strong> tap <strong>Install Saardha</strong>. If nothing pops up,
+          open the browser menu <strong>⋮</strong> (top-right) and choose <strong>Install app</strong> /
+          <strong>Add to Home screen</strong>. Or tap <strong>Open in browser</strong> to start ordering now.
         </div>
       `;
+      document.getElementById("installBtn").addEventListener("click", async () => {
+        const installed = await triggerInstall();
+        if (!installed) {
+          // No native prompt available in this browser — guide + let them proceed
+          document.getElementById("installHint").innerHTML =
+            "Open the browser menu <strong>⋮</strong> (top-right) and tap <strong>Install app</strong> / " +
+            "<strong>Add to Home screen</strong>. Or tap <strong>Open in browser</strong> below to start ordering now.";
+        }
+      });
     }
 
     /* ── iOS PWA install UI ── */
@@ -201,7 +225,7 @@
         <div class="vendor-emoji">${vendor ? vendor.img : "🏪"}</div>
         <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
         <div class="ready-badge">⚡ Ready to deliver</div>
-        <a class="btn btn-primary" href="/customer/">Open App →</a>
+        <a class="btn btn-primary" href="${customerUrl(vendor)}">Open App →</a>
         <div class="ios-hint" style="display:block;margin-top:14px">
           📲 To install on iPhone:<br>
           Tap the <strong>Share</strong> button (□↑) in Safari,
@@ -236,6 +260,7 @@
 
       /* ── Fetch vendor info ── */
       const vendor = await fetchVendor(vendorId);
+      currentVendor = vendor;
 
       if (!vendor) {
         card.innerHTML = `
@@ -262,11 +287,11 @@
           <div class="vendor-name">${vendor.name}</div>
           <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
           ${banner}
-          <a class="btn btn-primary" href="/customer/">Shop Now →</a>
+          <a class="btn btn-primary" href="${customerUrl(vendor)}">Shop Now →</a>
           <div class="stores-count">You have <span>${total}</span> store${total !== 1 ? "s" : ""} unlocked</div>
           <div class="countdown" id="countdown"></div>
         `;
-        startCountdown(3, () => { window.location.href = "/customer/"; });
+        startCountdown(3, () => { window.location.href = customerUrl(vendor); });
         return;
       }
 
@@ -288,7 +313,7 @@
           <div class="vendor-name">${vendor.name}</div>
           <div class="vendor-meta">${vendor.category} · ${vendor.area}</div>
           <div class="ready-badge">⚡ Ready to deliver</div>
-          <a class="btn btn-primary" href="/customer/">Open on Desktop →</a>
+          <a class="btn btn-primary" href="${customerUrl(vendor)}">Open on Desktop →</a>
           <p style="color:#555;font-size:12px;margin-top:14px">Scan this QR from your phone to install the app</p>
         `;
       }

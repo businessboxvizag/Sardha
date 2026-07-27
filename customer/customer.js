@@ -31,7 +31,20 @@
     const me = BW.currentCustomer();
     if (me) BW.joinCustomerRoom(me.id);
 
+    // Notify the customer live when a fresh order is accepted or declined by the store
+    const _lastStatus = {};
     BW.subscribe(() => {
+      try {
+        const c = BW.currentCustomer();
+        (c ? BW.orders({ customerId: c.id }) : BW.orders()).forEach((o) => {
+          const prev = _lastStatus[o.id];
+          if (prev && prev !== o.status) {
+            if (o.status === "CANCELLED") toast("Order " + o.id.slice(-6).toUpperCase() + " was declined by the store");
+            else if (o.status === "ACCEPTED" && prev === "PLACED") toast("Order " + o.id.slice(-6).toUpperCase() + " accepted! Preparing now.");
+          }
+          _lastStatus[o.id] = o.status;
+        });
+      } catch (e) { /* ignore */ }
       if (state.route === "track" || state.route === "history" || state.route === "cart") render();
     });
 
@@ -722,6 +735,13 @@
         statusBadge(o.status),
       ]),
       el("div", { class: "card" }, [tracker(o.status)]),
+      o.status === "CANCELLED"
+        ? el("div", { class: "card", style: "border:1px solid var(--red);background:#fdeceb;margin-top:12px" }, [
+            el("div", { style: "font-weight:800;color:var(--red)" }, "Order declined by the store"),
+            el("div", { class: "muted small", style: "margin-top:4px" }, "Sorry — the store couldn't accept this order. If you paid online, your refund is being processed. You can try another store from My Stores."),
+            el("button", { class: "btn ghost sm", style: "margin-top:10px", onClick: () => go("stores") }, "Back to stores"),
+          ])
+        : document.createTextNode(""),
       ratingCard(o),
       el("div", { class: "grid cols-2", style: "margin-top:16px" }, [
         el("div", { class: "card" }, [
@@ -735,7 +755,8 @@
                 ]),
                 etaBadge(o, rider, cust),
               ])
-            : el("div", { class: "muted small", style: "margin-top:12px" }, "Waiting for a Saradhi to be assigned…"),
+            : el("div", { class: "muted small", style: "margin-top:12px" },
+                o.status === "CANCELLED" ? "This order was declined — no delivery." : "Waiting for a Saradhi to be assigned…"),
         ]),
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Order summary"),

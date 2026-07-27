@@ -130,3 +130,24 @@ Frontend (`assets/js/auth-ui.js`): customer signup now shows Phone + DOB, "Send 
 2. In **Render**, set `REQUIRE_SIGNUP_OTP=true` (leave unset/`false` to keep it off).
 3. Prerequisites: **SMTP_USER/SMTP_PASS** = a Gmail + App Password (already used for password reset); Firebase **Phone provider enabled** (done) and your live domain in Firebase **Authorized domains** (needed for reCAPTCHA/phone). Test a full signup on the live domain before flipping the flag for everyone.
 - Verified via `node --check` + a jsdom run: login screen → new-user → OTP block mounts, email verify path returns a token.
+
+---
+
+## Session update — 2026-07-27 (auth rewrite + tracker + fixes)
+On disk, pending push + deploy. Files: `assets/js/auth-ui.js`, `assets/js/util.js`, `assets/css/styles.css`, `customer/customer.js`.
+
+- **Separate Login / Sign up (#1):** auth screen rewritten with explicit **Log in | Sign up** tabs (customers). New users sign up; returning users log in. Login-only for merchant/rider/admin. Google + redirect-fallback kept.
+- **Merchant rejection now shows (#2):** when the store declines (order → CANCELLED), the customer sees a red "Order declined by the store" banner in the order view, the S-tracker turns red, and a **live toast** fires the moment it's declined (also toasts on Accepted). Live-tracking text no longer says "waiting for a Saradhi" on a cancelled order.
+- **S-curve order tracker (#3):** `util.js tracker()` replaced the linear stepper with an **S-shaped progress** (echoes the logo) — brand stroke fills Placed→Delivered with nodes on the curve and a pulsing current step; red S when cancelled. Verified by rendering the path to PNG.
+- **Password show/hide (#4):** eye toggle on all password fields (login + signup).
+- **Email OTP active in signup (#5):** signup now **requires** email OTP verification (6-digit code via your SMTP) before "Create account". Phone OTP is available/optional in signup (Firebase). Server enforcement still governed by `REQUIRE_SIGNUP_OTP`; client always verifies email regardless.
+
+Note: Firebase **Phone Auth on the Spark (free) plan has a small daily quota** — fine for testing, but upgrade to Blaze before relying on phone OTP at volume. Email OTP (your SMTP) has no such limit.
+
+---
+
+## Session update — 2026-07-27 (logo link + scan install fix)
+On disk, pending push + deploy. Files: `assets/js/util.js`, `scan/index.html`, `manifest.json`.
+
+- **Logo no longer opens the 4-app portal (#1):** top-bar logo now links to the app's own home (`./`) instead of `../index.html`. Customers/merchants/riders can't reach the portal by tapping the logo. (The portal still exists at the site root for you/admin; if you want the root hidden from end users too, redirect `/` → `/customer/` — quick follow-up.)
+- **Scan → install fixed (#2):** the install button pointed to `https://sardha.onrender.com/files/sardha.apk`, which doesn't exist on the API server → `{"error":"Not found"}`. There is no APK in the repo. Replaced the APK download with the **real PWA install**: Android uses the native `beforeinstallprompt` one-tap install (with an "Install app / Add to Home screen" menu fallback) and an "Open in browser" option; `appinstalled` opens straight into the store. All post-scan links now go to `/customer/?v=<vendorId>` (never the API host), so the store is added automatically. Installed-app name fixed from "BizWheels" → **"Saardha"** (root `manifest.json`).
