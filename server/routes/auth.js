@@ -44,7 +44,7 @@ function clientIp(req) {
 /* ── POST /api/auth/register ────────────────────────────────── */
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, name, role, phone, lat, lng } = req.body;
+    const { email, password, name, role, phone, dob, lat, lng } = req.body;
 
     if (!email || !password || !name || !role) {
       return res.status(400).json({ error: "email, password, name and role are required" });
@@ -64,6 +64,28 @@ router.post("/register", async (req, res) => {
       return res.status(409).json({ error: "Email already registered for this role" });
     }
 
+    // ── OTP gate (feature-flagged so it can't break signups until enabled) ──
+    const REQUIRE_OTP = process.env.REQUIRE_SIGNUP_OTP === "true";
+    let verifiedPhone = phone || null;
+    let emailVerified = false, phoneVerified = false;
+    if (REQUIRE_OTP && role === "customer") {
+      try {
+        const dec = jwt.verify(String(req.body.emailVerifyToken || ""), process.env.JWT_SECRET);
+        if (dec.purpose !== "email_verify" || String(dec.email || "").toLowerCase() !== String(email).toLowerCase()) throw new Error("bad");
+        emailVerified = true;
+      } catch {
+        return res.status(400).json({ error: "Please verify your email with the code we sent." });
+      }
+      try {
+        const dec = await admin.auth().verifyIdToken(String(req.body.phoneToken || ""));
+        if (!dec.phone_number) throw new Error("no phone");
+        verifiedPhone = dec.phone_number;
+        phoneVerified = true;
+      } catch {
+        return res.status(400).json({ error: "Please verify your phone number with the OTP." });
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 12);
     const userRef = db.collection("users").doc();
     const uid = userRef.id;
@@ -71,14 +93,17 @@ router.post("/register", async (req, res) => {
 
     await userRef.set({
       uid, email, passwordHash, role,
-      name, phone: phone || null, createdAt: now,
+      name, phone: verifiedPhone, createdAt: now,
+      emailVerified, phoneVerified,
     });
 
     // Role-specific profile creation
     if (role === "customer") {
       await db.collection("customers").doc(uid).set({
         userId: uid, name,
+        phone: verifiedPhone, dob: dob || null,
         address: null, lat: null, lng: null,
+        emailVerified, phoneVerified,
         joined: now.slice(0, 10), createdAt: now,
       });
       await db.collection("favorites").doc(uid).set({ vendorIds: [] });
@@ -224,6 +249,88 @@ router.post("/google", async (req, res) => {
   } catch (err) {
     console.error("google auth:", err);
     res.status(401).json({ error: "Google authentication failed" });
+  }
+});
+
+/* ── Email OTP (signup verification) ─────────────────────────── */
+const nodemailer = require("nodemailer");
+function mailTransport() {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+}
+const EMAIL_OTP_TTL_MS = 10 * 60 * 1000;
+
+/* POST /api/auth/email-otp/send  { email } → emails a 6-digit code */
+router.post("/email-otp/send", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").toLowerCase().trim();
+    if (!/\S+@\S+\.\S+/.test(email)) return res.status(400).json({ error: "Enter a valid email address." });
+
+    const ref = db.collection("email_otps").doc(email);
+    const existing = await ref.get();
+    if (existing.exists) {
+      const d = existing.data();
+      if (d.lastSentAt && (Date.now() - new Date(d.lastSentAt).getTime()) < 30000) {
+        return res.status(429).json({ error: "Please wait a few seconds before requesting another code." });
+      }
+    }
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const codeHash = await bcrypt.hash(code, 8);
+    await ref.set({
+      codeHash,
+      expiresAt: new Date(Date.now() + EMAIL_OTP_TTL_MS).toISOString(),
+      attempts: 0,
+      lastSentAt: new Date().toISOString(),
+    });
+
+    const transport = mailTransport();
+    if (transport) {
+      await transport.sendMail({
+        from: `"Saardha" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: "Your Saardha verification code",
+        html: `<p>Your Saardha verification code is:</p>
+               <p style="font-size:26px;font-weight:800;letter-spacing:5px">${code}</p>
+               <p>It expires in 10 minutes. If you didn't request this, you can ignore this email.</p>`,
+      });
+    } else {
+      console.warn("[email-otp] SMTP not configured. Code for " + email + " = " + code);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("email-otp/send:", err);
+    res.status(500).json({ error: "Could not send the code. Please try again." });
+  }
+});
+
+/* POST /api/auth/email-otp/verify  { email, code } → { verifyToken } */
+router.post("/email-otp/verify", async (req, res) => {
+  try {
+    const email = String(req.body.email || "").toLowerCase().trim();
+    const code = String(req.body.code || "").trim();
+    if (!email || !code) return res.status(400).json({ error: "Email and code are required." });
+
+    const ref = db.collection("email_otps").doc(email);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(400).json({ error: "Please request a code first." });
+
+    const d = snap.data();
+    if (new Date(d.expiresAt) < new Date()) { await ref.delete().catch(() => {}); return res.status(400).json({ error: "That code expired. Request a new one." }); }
+    if ((d.attempts || 0) >= 5) { await ref.delete().catch(() => {}); return res.status(429).json({ error: "Too many attempts. Request a new code." }); }
+
+    const ok = await bcrypt.compare(code, d.codeHash);
+    if (!ok) { await ref.update({ attempts: (d.attempts || 0) + 1 }); return res.status(400).json({ error: "Incorrect code. Try again." }); }
+
+    await ref.delete().catch(() => {});
+    const verifyToken = jwt.sign({ purpose: "email_verify", email }, process.env.JWT_SECRET, { expiresIn: "20m" });
+    res.json({ ok: true, verifyToken });
+  } catch (err) {
+    console.error("email-otp/verify:", err);
+    res.status(500).json({ error: "Verification failed. Please try again." });
   }
 });
 

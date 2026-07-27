@@ -1,0 +1,132 @@
+# Saardha — Project Status & Continuity Handoff
+
+*Last updated during build. Read this first to continue the project in a new session.*
+*No secret values are stored here (this folder syncs to a public GitHub repo). Secrets live in Render env vars, the local `server/.env`, and `server/firebase-service-account.json`.*
+
+---
+
+## What Saardha is
+A local home-delivery PWA (installable web app) for India: customers order from local shops they've **scanned**, and salaried delivery riders ("Saradhis") fulfil the orders. Four web apps share one live backend + database.
+
+## Architecture
+- **Frontend:** plain HTML/CSS/JS PWA (no framework). Four apps: `customer/`, `merchant/`, `admin/`, `rider/`, plus a `scan/` landing page and root `index.html` portal. Shared code in `assets/js/` (`api.js`, `auth-ui.js`, `util.js`, `alert-buzzer.js`, `install-prompt.js`) and `assets/css/styles.css`.
+- **Backend:** Node/Express in `server/` (routes, socket.io, JWT auth, Firebase Admin SDK). Deployed on **Render** (service `sardha-api`).
+- **Database & Auth:** Google Firestore + Firebase Auth (project `sardha-b48f1`). Firestore locked down — only the server (Admin SDK) writes.
+- **Images:** Cloudinary (cloud `s3h602bx`, unsigned preset `saardha`).
+- **Payments:** Razorpay (test mode for now).
+- **AI help:** Google Gemini (`gemini-2.0-flash`).
+- **Maps/tracking:** rider GPS + live ETA (customer polls rider location).
+
+## Live URLs
+- Customer site / apps: **https://saardha.com** (also https://sardha-b48f1.web.app)
+  - /customer  /merchant  /admin  /rider  /scan
+- Backend API: **https://sardha.onrender.com**
+- GitHub repo (backend source Render deploys from): **github.com/businessboxvizag/Sardha** (branch `main`)
+
+## Accounts owned by Stanley (all confirmed)
+- GitHub: businessboxvizag  · Firebase: sardha-b48f1 (saardhalogistics@gmail.com) · Render: sardha-api
+- Cloudinary, Razorpay, Gemini (Google AI Studio), domain saardha.com (GoDaddy)
+- Admin login for the app: stored in Render env (`ADMIN_EMAIL` / `ADMIN_PASSWORD`) — reveal via the eye icon in Render.
+
+---
+
+## How to run locally (VS Code)
+Folder: `D:\saardha\Sardha_with_payments`
+1. `cd server` → `npm install` → `npm run dev` (needs `server/.env` and `server/firebase-service-account.json`).
+2. Serve the site: right-click root `index.html` → "Open with Live Server". Use `localhost` (not 127.0.0.1) so Firebase Google login works.
+- Apps auto-detect: on localhost they call the local backend; when deployed they call sardha.onrender.com.
+
+## How to ship a change (see also HOW_TO_SHIP.md)
+- **Frontend change** (apps, look, `assets/`, `*.html`): `firebase deploy --only hosting`  (~1 min)
+- **Backend change** (`server/`): `git add -A` → `git commit -m "…"` → `git push`  → Render auto-deploys (~2–4 min). *(If push times out with HTTP 408, just run `git push` again.)*
+- Changed both → run both. Plain `git push` works (upstream is set).
+
+---
+
+## What's BUILT and DEPLOYED
+- Payments: **Cash on Delivery + Razorpay online** (server verifies signature + amount before accepting).
+- **Rebrand** to Saardha everywhere; logo on portal + login screens; **red brand color**; favicons/app icon = logo.
+- **New-order alarm** (chime + vibration + banner) for merchant & rider.
+- **Ratings & reviews** after delivery (store + Saradhi), averages auto-update.
+- **₹15 flat delivery fee** + **18% GST** on items (cart + backend total).
+- **Order-flow fix:** orders stay PLACED in the merchant "New" queue → merchant Accepts → Dispatches a rider (auto-assign on placement was removed).
+- **Rider availability rule:** an order won't be placed if no Saradhi is "available" (checked before charging for online). Rider must toggle **Online** in the rider app.
+- **Double-order guard** + "Placing your order…" loading overlay.
+- **Scanned-shops model, account-backed:** customer's shops saved to their account (`customers.shops`), sync across devices; scanning a shop QR (or `?v=` deep link) adds it. Migrates old device-local lists.
+- **Single-device login** (session id rotates on login; middleware invalidates old device) + **persistent login** (token in localStorage).
+- **Customer UI:** SVG nav icons, favorites removed, cart in footer + floating cart bar, Swiggy-style **profile page** with logout.
+- **Premium store page:** store hero (logo, rating, delivery time), image-tiled item cards, ADD → −/+ stepper (in-place), veg dots.
+- **Skeleton loaders**, **first-run onboarding guide** (4 steps) + **Help "?" button**.
+- **AI help assistant** (chat sheet, quick chips, typing animation) — Gemini-powered.
+- **Merchant product photo upload** → Cloudinary (client resizes then uploads); real photos show on customer store page (placeholder tile fallback).
+- **Install prompt** (Android one-tap install / iOS Add-to-Home-Screen guide) in customer, merchant, rider.
+- **Custom domain** saardha.com connected (Firebase Hosting), added to Firebase Authorized Domains; Render CORS allows saardha.com + firebase domains.
+- Brand-color cleanup: no pure black except text.
+
+## Render environment variables (names only)
+`NODE_ENV, PORT, JWT_SECRET, JWT_EXPIRES_IN, CORS_ORIGINS, FIREBASE_SERVICE_ACCOUNT_JSON, FRONTEND_URL, ADMIN_EMAIL, ADMIN_PASSWORD, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, SMTP_USER, SMTP_PASS, CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET, GEMINI_API_KEY`
+
+---
+
+## OPEN / PENDING items
+- **GEMINI_API_KEY casing:** the Render variable must be exactly `GEMINI_API_KEY` (all caps). It was once created as `Gemini_API_Key` — verify it's renamed, or the AI assistant only gives its built-in fallback reply.
+- **Regenerate the Gemini key** once (it appeared in chat), then update Render.
+- **Go-live payments:** swap Razorpay TEST keys for LIVE keys (`rzp_live_…`) in Render, right before real launch.
+- **Render free plan cold starts** (~50s first request after idle): upgrade to a small paid plan before real customers.
+- **Rider & merchant flow:** Stanley has more changes planned here (not yet specified).
+- **Operations to start:** real merchants + catalogs, hire salaried Saradhis, pick a launch zone, money settlement to merchants, pricing/commission, legal (business reg, agreements, privacy policy, insurance).
+- **Later:** distance-based delivery fee (flat ₹15 for pilot); real App Store / Play Store apps (needs Apple Developer $99/yr + review) if wider reach is wanted.
+
+## Gotchas / lessons
+- Env var names are **case-sensitive**.
+- Windows blocks `.js` files from unzipped downloads — right-click zip → Properties → **Unblock** before extracting.
+- On iOS, "Add to Home Screen" only works in **Safari**; Apple blocks programmatic install.
+- Firebase Storage needs the paid Blaze plan — that's why images use **Cloudinary** instead.
+- `git push` HTTP 408 = transient; just retry.
+
+---
+
+## Session update — 2026-07-27 (customer-app UI batch)
+Branch **`ui-improvements`** (commit `2eceaa1` + 2 files staged). On disk, **pending push + deploy**.
+
+Implemented (customer app):
+- **Logo mark** in the header beside "Saardha" (`assets/img/saardha-mark.png`, cropped from logo.png) — `util.js topbar`.
+- **Zoom locked** on mobile: viewport `maximum-scale=1, user-scalable=no, viewport-fit=cover` + `touch-action: manipulation` (kills iOS double-tap zoom).
+- **iPhone footer safe-area** fixed — the real cause was the missing `viewport-fit=cover`; now `env(safe-area-inset-bottom)` applies. Extra safe-area padding on content + cart bar.
+- **Footer restructured:** Orders removed; **Saardha AI button docked centre** of the bottom bar (fixes the "AI button covers the price" bug — items 3 & 4 were one problem). Floating help bubble hidden on mobile.
+- **Cart is now a full page** with a **Cart | Orders** toggle → Fresh orders (live) + Previous orders (one-tap **Reorder**). New `viewCart()`; router `cart`/`history` both map here.
+- **Profile editable:** photo (DP, client-resized), name, phone, DOB; email read-only. New `BW.updateProfile`; server `PUT /api/customers/me` now accepts `phone, dob, photoUrl`.
+- **Scan fixed for iPhone:** camera starts on a user tap (iOS requirement) + **jsQR fallback** (Safari has no BarcodeDetector, the real reason it wasn't opening); uploading a QR image now shows a preview + a **"Scan this QR →"** button.
+- **Google sign-in:** popup now **falls back to redirect** on mobile/PWA (+ getRedirectResult on reload); real Firebase error codes surfaced (e.g. auth/unauthorized-domain).
+- **Assistant:** richer knowledge prompt; route now logs the real Gemini HTTP error to Render logs and degrades to helpful reply instead of a silent generic one.
+
+Files changed: `customer/index.html`, `customer/customer.js`, `assets/js/util.js`, `assets/js/api.js`, `assets/js/auth-ui.js`, `assets/css/styles.css`, `server/routes/assistant.js`, `server/routes/customers.js`, new `assets/img/saardha-mark.png`. All pass `node --check`; jsdom run drove Home→Cart/Orders→Profile→Scan→AI with no errors.
+
+### To make this batch live
+- `git add -A && git commit -m "customer UI batch" && git push`  → Render redeploys the 2 server files.
+- `firebase deploy --only hosting`  → pushes the frontend.
+- If git complains about a lock: delete `.git/index.lock` and `.git/HEAD.lock` first.
+
+### Still open after this session
+- **OTP verification (email + phone):** NOT built. Firebase **Phone auth is now enabled** in the console, so phone OTP via Firebase is low-lift; email = emailed 6-digit code. Needs a backend build — awaiting go-ahead.
+- **Assistant key value:** if replies stay generic, check Render logs for `assistant: Gemini returned HTTP …`; a valid AI Studio key starts with `AIza`.
+- **Rider & merchant flow changes:** still unspecified — Stanley to detail.
+
+---
+
+## Session update — 2026-07-27 (OTP verification — email + phone)
+On disk, **pending push + deploy**. Built **safely behind a server flag** so deploying changes nothing until you turn it on.
+
+Backend:
+- `server/routes/auth.js`: `POST /api/auth/email-otp/send` and `/verify` — 6-digit code emailed via existing Gmail SMTP (SMTP_USER/SMTP_PASS), hashed + stored in Firestore `email_otps`, 10-min expiry, 30s resend throttle, 5-attempt cap; verify returns a 20-min signed `verifyToken`.
+- `register` now, **only when `REQUIRE_SIGNUP_OTP=true`** and role=customer, requires a valid email `verifyToken` + a Firebase **phone** idToken (verified server-side via `admin.auth().verifyIdToken`, must carry `phone_number`). Stores `phone`, `dob`, `emailVerified`, `phoneVerified` on the user + customer docs.
+- `server/index.js`: `/api/config` now returns `requireSignupOtp` so the client shows the OTP UI only when enabled.
+- `assets/js/api.js`: `sendEmailOtp`, `verifyEmailOtp`.
+
+Frontend (`assets/js/auth-ui.js`): customer signup now shows Phone + DOB, "Send email code"/"Verify email", and "Send phone OTP"/"Verify phone" (Firebase Phone Auth with invisible reCAPTCHA). "Create account" is gated on both being verified and passes the tokens to register. Only appears when `/api/config.requireSignupOtp` is true.
+
+### To turn OTP on (after deploy + test)
+1. Deploy code (git push → Render; `firebase deploy --only hosting`).
+2. In **Render**, set `REQUIRE_SIGNUP_OTP=true` (leave unset/`false` to keep it off).
+3. Prerequisites: **SMTP_USER/SMTP_PASS** = a Gmail + App Password (already used for password reset); Firebase **Phone provider enabled** (done) and your live domain in Firebase **Authorized domains** (needed for reCAPTCHA/phone). Test a full signup on the live domain before flipping the flag for everyone.
+- Verified via `node --check` + a jsdom run: login screen → new-user → OTP block mounts, email verify path returns a token.

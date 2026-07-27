@@ -76,6 +76,8 @@ app.get("/api/config", (req, res) => {
     razorpayKeyId: process.env.RAZORPAY_KEY_ID || "",
     cloudinaryCloud: process.env.CLOUDINARY_CLOUD_NAME || "",
     cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET || "",
+    // When true, customer signup requires verified email OTP + phone OTP.
+    requireSignupOtp: process.env.REQUIRE_SIGNUP_OTP === "true",
   });
 });
 

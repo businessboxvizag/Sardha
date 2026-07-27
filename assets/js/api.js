@@ -204,6 +204,8 @@
     login:  (email, password, role) => post("/api/auth/login", { email, password, role }),
     register: (data)           => post("/api/auth/register", data),
     checkEmail: (email, role)  => post("/api/auth/check-email", { email, role }),
+    sendEmailOtp:   (email)        => post("/api/auth/email-otp/send", { email }),
+    verifyEmailOtp: (email, code)  => post("/api/auth/email-otp/verify", { email, code }),
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     forgotPassword: (email, role)    => post("/api/auth/forgot-password", { email, role }),
     resetPassword:  (token, newPassword) => post("/api/auth/reset-password", { token, newPassword }),

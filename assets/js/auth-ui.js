@@ -104,6 +104,29 @@
     let _merchantLat = null;
     let _merchantLng = null;
 
+    // ── Signup OTP state ──
+    let otpRequired = false;          // set true when server config requires it (customers only)
+    let emailVerifyToken = null;      // proof the email code was verified
+    let phoneToken = null;            // Firebase phone idToken (proof the phone was verified)
+    let _phoneConfirmation = null;    // Firebase confirmationResult
+    let _recaptcha = null;
+
+    function formatE164(raw) {
+      let v = String(raw || "").replace(/[^\d+]/g, "");
+      if (!v) return "";
+      if (v[0] === "+") return v;
+      if (v.length === 10) return "+91" + v;   // default India
+      return "+" + v;
+    }
+    // Fetch server config (login runs before BW.init, so read it directly)
+    async function fetchRequireOtp() {
+      try {
+        const r = await fetch((window.BW_API_BASE || "http://localhost:3000") + "/api/config");
+        const c = await r.json();
+        return !!(c && c.requireSignupOtp);
+      } catch { return false; }
+    }
+
     /* ── Google Sign-In ── */
     const googleBtn = document.getElementById("googleSignIn");
     if (googleBtn) {
@@ -117,6 +140,14 @@
         }
         googleBtn.disabled = true;
         googleBtn.innerHTML = `${GOOGLE_SVG}Signing in...`;
+        const resetBtn = () => { googleBtn.disabled = false; googleBtn.innerHTML = `${GOOGLE_SVG}Continue with Google`; };
+        // Codes where a popup can't work (common on mobile / PWAs) → use redirect instead.
+        const REDIRECT_CODES = [
+          "auth/popup-blocked",
+          "auth/operation-not-supported-in-this-environment",
+          "auth/cancelled-popup-request",
+          "auth/web-storage-unsupported",
+        ];
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
           const result = await fbAuth.signInWithPopup(provider);
@@ -125,18 +156,32 @@
 
           if (data.user.role !== role) {
             errEl.textContent = `This Google account is registered as '${data.user.role}'. Please use the ${data.user.role} portal.`;
-            googleBtn.disabled = false;
-            googleBtn.innerHTML = `${GOOGLE_SVG}Continue with Google`;
+            resetBtn();
             return;
           }
           BW.Auth.setSession(data.token, data.user);
           resolve(data.user);
         } catch (err) {
-          errEl.textContent = err.code === "auth/popup-closed-by-user"
-            ? "Sign-in cancelled."
-            : (err.message || "Google sign-in failed.");
-          googleBtn.disabled = false;
-          googleBtn.innerHTML = `${GOOGLE_SVG}Continue with Google`;
+          if (err && REDIRECT_CODES.includes(err.code)) {
+            // Fall back to full-page redirect (handled by getRedirectResult on reload)
+            try {
+              await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+              return; // page will navigate away
+            } catch (e2) {
+              errEl.textContent = (e2 && (e2.code ? e2.code + ": " + e2.message : e2.message)) || "Google sign-in failed.";
+              resetBtn();
+              return;
+            }
+          }
+          if (err && err.code === "auth/popup-closed-by-user") {
+            errEl.textContent = "Sign-in cancelled.";
+          } else if (err && err.code === "auth/unauthorized-domain") {
+            errEl.textContent = "This site's domain isn't authorised in Firebase. Add it under Authentication → Settings → Authorized domains.";
+          } else {
+            // Show the real code so config issues are diagnosable
+            errEl.textContent = (err && (err.code ? err.code + ": " + err.message : err.message)) || "Google sign-in failed.";
+          }
+          resetBtn();
         }
       });
     }
@@ -213,6 +258,9 @@
           document.getElementById("authPassword").setAttribute("autocomplete", "new-password");
           const locField = document.getElementById("merchantLocField");
           if (locField) locField.style.display = "";
+          // Show the phone/DOB + OTP verification block only when the server requires it
+          otpRequired = (role === "customer") && await fetchRequireOtp();
+          if (otpRequired) mountSignupOtp();
         } else {
           document.getElementById("stepCreds").style.display = "none";
           document.getElementById("stepEmail").style.display = "";
@@ -246,8 +294,108 @@
       document.getElementById("nameField").style.display = "none";
       const locField = document.getElementById("merchantLocField");
       if (locField) locField.style.display = "none";
+      const otpBlock = document.getElementById("otpBlock");
+      if (otpBlock) otpBlock.remove();
+      otpRequired = false; emailVerifyToken = null; phoneToken = null; _phoneConfirmation = null;
+      try { if (_recaptcha) { _recaptcha.clear(); _recaptcha = null; } } catch (e) {}
       isNewUser = false;
     });
+
+    /* ── Signup OTP block (email + phone verification) ── */
+    function mountSignupOtp() {
+      const creds = document.getElementById("stepCreds");
+      const block = document.createElement("div");
+      block.id = "otpBlock";
+      block.innerHTML = `
+        <div class="field">
+          <label>Phone number</label>
+          <input id="suPhone" type="tel" placeholder="+91 98765 43210" autocomplete="tel" />
+        </div>
+        <div class="field">
+          <label>Date of birth <span class="muted small">(optional)</span></label>
+          <input id="suDob" type="date" />
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <button type="button" class="btn ghost sm" id="sendEmailOtp">Send email code</button>
+          <span class="muted small" id="emailOtpStatus"></span>
+        </div>
+        <div class="field" id="emailOtpField" style="display:none">
+          <input id="emailOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit email code" />
+          <button type="button" class="btn ghost sm" id="verifyEmailOtp" style="margin-top:6px;width:100%">Verify email</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <button type="button" class="btn ghost sm" id="sendPhoneOtp">Send phone OTP</button>
+          <span class="muted small" id="phoneOtpStatus"></span>
+        </div>
+        <div class="field" id="phoneOtpField" style="display:none">
+          <input id="phoneOtpInput" inputmode="numeric" maxlength="6" placeholder="6-digit phone OTP" />
+          <button type="button" class="btn ghost sm" id="verifyPhoneOtp" style="margin-top:6px;width:100%">Verify phone</button>
+        </div>
+        <div id="recaptcha-container"></div>
+      `;
+      creds.insertBefore(block, document.getElementById("authSubmit"));
+
+      const eStatus = () => document.getElementById("emailOtpStatus");
+      const pStatus = () => document.getElementById("phoneOtpStatus");
+
+      // Email OTP
+      document.getElementById("sendEmailOtp").addEventListener("click", async (e) => {
+        const btn = e.currentTarget; btn.disabled = true;
+        eStatus().textContent = "Sending…";
+        try {
+          await BW.sendEmailOtp(capturedEmail);
+          document.getElementById("emailOtpField").style.display = "";
+          eStatus().textContent = "Code sent to " + capturedEmail;
+        } catch (err) { eStatus().textContent = (err && err.message) || "Could not send code."; }
+        finally { setTimeout(() => { btn.disabled = false; }, 3000); }
+      });
+      document.getElementById("verifyEmailOtp").addEventListener("click", async () => {
+        const code = document.getElementById("emailOtpInput").value.trim();
+        eStatus().textContent = "Checking…";
+        try {
+          const r = await BW.verifyEmailOtp(capturedEmail, code);
+          emailVerifyToken = r.verifyToken;
+          eStatus().textContent = "✓ Email verified";
+          document.getElementById("emailOtpInput").disabled = true;
+          document.getElementById("verifyEmailOtp").disabled = true;
+        } catch (err) { eStatus().textContent = (err && err.message) || "Incorrect code."; }
+      });
+
+      // Phone OTP via Firebase
+      document.getElementById("sendPhoneOtp").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const fbAuth = getFirebaseAuth();
+        const phone = formatE164(document.getElementById("suPhone").value);
+        if (!fbAuth) { pStatus().textContent = "Phone verification unavailable."; return; }
+        if (!phone || phone.length < 10) { pStatus().textContent = "Enter a valid phone number."; return; }
+        btn.disabled = true; pStatus().textContent = "Sending OTP…";
+        try {
+          if (!_recaptcha) {
+            _recaptcha = new firebase.auth.RecaptchaVerifier("recaptcha-container", { size: "invisible" });
+          }
+          _phoneConfirmation = await fbAuth.signInWithPhoneNumber(phone, _recaptcha);
+          document.getElementById("phoneOtpField").style.display = "";
+          pStatus().textContent = "OTP sent to " + phone;
+        } catch (err) {
+          pStatus().textContent = (err && (err.code ? err.code : err.message)) || "Could not send OTP.";
+          try { if (_recaptcha) { _recaptcha.clear(); _recaptcha = null; } } catch (e2) {}
+        } finally { setTimeout(() => { btn.disabled = false; }, 3000); }
+      });
+      document.getElementById("verifyPhoneOtp").addEventListener("click", async () => {
+        const code = document.getElementById("phoneOtpInput").value.trim();
+        if (!_phoneConfirmation) { pStatus().textContent = "Send the OTP first."; return; }
+        pStatus().textContent = "Checking…";
+        try {
+          const cred = await _phoneConfirmation.confirm(code);
+          phoneToken = await cred.user.getIdToken();
+          pStatus().textContent = "✓ Phone verified";
+          document.getElementById("phoneOtpInput").disabled = true;
+          document.getElementById("verifyPhoneOtp").disabled = true;
+          // Don't keep the phone user signed into Firebase — we only needed the token
+          try { await getFirebaseAuth().signOut(); } catch (e2) {}
+        } catch (err) { pStatus().textContent = (err && err.message) || "Incorrect OTP."; }
+      });
+    }
 
     /* ── Step 2: Submit ── */
     const submitBtn = document.getElementById("authSubmit");
@@ -260,6 +408,10 @@
       errEl.textContent = "";
       if (!password) { errEl.textContent = "Password is required."; return; }
       if (isNewUser && !name) { errEl.textContent = "Please enter your full name."; return; }
+      if (isNewUser && otpRequired) {
+        if (!emailVerifyToken) { errEl.textContent = "Please verify your email with the code we sent."; return; }
+        if (!phoneToken) { errEl.textContent = "Please verify your phone number with the OTP."; return; }
+      }
 
       submitBtn.disabled = true;
       submitBtn.textContent = "Please wait...";
@@ -267,8 +419,13 @@
       try {
         let data;
         if (isNewUser) {
+          const phoneEl = document.getElementById("suPhone");
+          const dobEl = document.getElementById("suDob");
           data = await BW.register({
             email: capturedEmail, password, name, role,
+            phone: phoneEl ? formatE164(phoneEl.value) : null,
+            dob: dobEl ? dobEl.value : null,
+            emailVerifyToken, phoneToken,
             lat: _merchantLat, lng: _merchantLng,
           });
         } else {
@@ -443,6 +600,23 @@
       if (user && user.role === role) return user;
       BW.Auth.clearSession();
     }
+
+    // Complete a Google redirect sign-in that bounced back to this page (mobile flow)
+    const fbAuth = getFirebaseAuth();
+    if (fbAuth && fbAuth.getRedirectResult) {
+      try {
+        const result = await fbAuth.getRedirectResult();
+        if (result && result.user) {
+          const idToken = await result.user.getIdToken();
+          const data = await BW.loginWithGoogle(idToken, role);
+          if (data && data.user && data.user.role === role) {
+            BW.Auth.setSession(data.token, data.user);
+            return data.user;
+          }
+        }
+      } catch (e) { /* fall through to the login screen */ }
+    }
+
     return new Promise((resolve) => renderLoginScreen(role, resolve));
   }
 
