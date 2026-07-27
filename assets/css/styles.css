@@ -30,6 +30,9 @@ body {
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  /* Lock zoom: disable double-tap-to-zoom on iOS Safari (which ignores user-scalable) */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -50,6 +53,10 @@ button { font-family: inherit; }
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 800; color: #fff;
   background: var(--brand);
+}
+.brand-logo-img {
+  width: 32px; height: 32px; flex-shrink: 0;
+  object-fit: contain; display: block;
 }
 .brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
 .topbar .spacer { flex: 1; }
@@ -460,6 +467,34 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
 .product-name { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
 .product-price { font-size: 13px; color: var(--muted); }
 
+/* ── Cart + Orders view (segmented) ──────────────────────── */
+.seg-toggle {
+  display: flex; background: var(--surface-2); border-radius: 12px;
+  padding: 4px; margin: 0 0 14px; gap: 4px;
+}
+.seg-toggle button {
+  flex: 1; border: none; background: transparent; cursor: pointer;
+  padding: 9px; border-radius: 9px; font-size: 13.5px; font-weight: 700;
+  color: var(--muted); font-family: inherit;
+}
+.seg-toggle button.on { background: var(--surface); color: var(--brand); box-shadow: var(--shadow); }
+.order-section-title { font-size: 14px; font-weight: 800; margin: 4px 2px 10px; }
+.order-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 13px; margin-bottom: 12px; box-shadow: var(--shadow);
+}
+.order-card .oc-top { display: flex; justify-content: space-between; align-items: center; }
+.order-card .oc-id { font-size: 11px; color: var(--muted); }
+.order-card .oc-items { font-size: 13.5px; font-weight: 700; margin-top: 7px; }
+.order-card .oc-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.oc-live { font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #e9f9ef; color: #12a150; }
+.oc-done { font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.oc-reorder {
+  margin-top: 11px; border: 1.4px solid var(--brand); color: var(--brand);
+  background: var(--brand-lt); border-radius: 10px; text-align: center;
+  padding: 8px; font-size: 12.5px; font-weight: 800; cursor: pointer;
+}
+
 /* ── Bottom nav ──────────────────────────────────────────── */
 .bottom-nav { display: none; }
 
@@ -552,4 +587,33 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
     padding: 2px 5px; border-radius: 99px; min-width: 15px; text-align: center;
     pointer-events: none;
   }
+
+  /* Center Saardha AI button docked in the footer */
+  .bn-ai-wrap { flex: 0 0 64px; display: flex; justify-content: center; }
+  .bn-ai {
+    position: relative;
+    width: 58px; height: 58px; border-radius: 50%;
+    margin-top: -24px;               /* lift above the bar */
+    background: var(--surface);
+    border: 3px solid var(--surface);
+    box-shadow: 0 8px 20px rgba(230,42,31,.38);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .bn-ai::before {
+    content: ""; position: absolute; inset: 3px; border-radius: 50%;
+    background: linear-gradient(135deg, #fff2f1, #ffe1df);
+  }
+  .bn-ai img { width: 38px; height: 38px; object-fit: contain; position: relative; z-index: 1; }
+  .bn-ai .bn-ai-dot {
+    position: absolute; top: 3px; right: 5px; width: 11px; height: 11px;
+    background: #22c55e; border: 2px solid var(--surface); border-radius: 50%; z-index: 2;
+  }
+
+  /* AI is now in the footer on mobile — hide the floating help bubble */
+  .help-fab { display: none; }
+
+  /* Respect the iPhone home-indicator safe area everywhere it matters */
+  .content { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .cart-bar { bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
 }

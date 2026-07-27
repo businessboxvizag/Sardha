@@ -274,6 +274,14 @@
 
     askAssistant: (message, history) => post("/api/assistant", { message, history }),
 
+    // Update the signed-in customer's profile (name, phone, dob, photoUrl, address).
+    updateProfile: async (fields) => {
+      const c = await put("/api/customers/me", fields);
+      _cache.myCustomer = c;
+      emit();
+      return c;
+    },
+
     rateOrder: async (orderId, data) => {
       const order = await post(`/api/orders/${orderId}/rating`, data);
       const idx = _cache.orders.findIndex((o) => o.id === orderId);

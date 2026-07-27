@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Saardha — Customer</title>
   <link rel="icon" type="image/png" href="../assets/img/icon.png" />
   <link rel="stylesheet" href="../assets/css/styles.css" />
@@ -21,6 +21,8 @@
   <script>window.BW_API_BASE = ["localhost","127.0.0.1"].includes(location.hostname) ? "http://localhost:3000" : "https://sardha.onrender.com";</script>
 
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <!-- jsQR: cross-browser QR decoding fallback (iOS Safari has no BarcodeDetector) -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/auth-ui.js"></script>
   <script src="../assets/js/util.js"></script>

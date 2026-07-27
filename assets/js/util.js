@@ -84,9 +84,14 @@
 
   // Build the standard top bar
   function topbar(roleLabel, right) {
+    const logoImg = el("img", {
+      class: "brand-logo-img",
+      src: "../assets/img/saardha-mark.png",
+      alt: "Saardha",
+    });
     return el("div", { class: "topbar" }, [
       el("a", { class: "brand", href: "../index.html" }, [
-        el("span", { class: "brand-logo" }, "S"),
+        logoImg,
         el("span", {}, [
           document.createTextNode("Saardha"),
           el("small", {}, "On-demand local delivery"),

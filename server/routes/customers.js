@@ -46,7 +46,7 @@ router.put("/me", requireAuth, requireRole("customer"), async (req, res) => {
     if (snap.empty) return res.status(404).json({ error: "Customer profile not found" });
 
     const ref = snap.docs[0].ref;
-    const allowed = ["address", "lat", "lng", "name"];
+    const allowed = ["address", "lat", "lng", "name", "phone", "dob", "photoUrl"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
