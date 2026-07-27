@@ -52,7 +52,18 @@
 
     // First-time users get an animated how-to guide (once)
     try { if (!localStorage.getItem("saardha_onboarded")) setTimeout(showOnboarding, 500); } catch (e) {}
+
+    // Behavioral analytics (first-party): app open + cart abandonment
+    if (BW.track) {
+      BW.track("app_open", {});
+      window.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden" && cartCount() > 0 && !_orderJustPlaced) {
+          BW.track("cart_abandoned", { items: cartCount(), value: cartTotal(), vendorId: state.cartVendor });
+        }
+      });
+    }
   }
+  let _orderJustPlaced = false;
 
   /* ----- cart helpers ----- */
   function cartCount() {
@@ -78,6 +89,7 @@
     }
     state.cartVendor = product.vendorId;
     state.cart[product.id] = (state.cart[product.id] || 0) + 1;
+    if (BW.track) BW.track("add_to_cart", { product: product.name, vendorId: product.vendorId, price: product.price });
     toast(product.name + " added");
     render();
   }
@@ -253,7 +265,14 @@
       el("input", {
         placeholder: "Search your stores…",
         value: state.search,
-        onInput: (e) => { state.search = e.target.value; renderGrid(); },
+        onInput: (e) => {
+          state.search = e.target.value; renderGrid();
+          if (BW.track) {
+            clearTimeout(window._searchTrackTimer);
+            const q = e.target.value.trim();
+            if (q.length >= 2) window._searchTrackTimer = setTimeout(() => BW.track("search", { q: q }), 900);
+          }
+        },
       }),
     ]);
 
@@ -350,9 +369,11 @@
     }
   }
 
+  let _lastViewedStore = null;
   function viewVendor() {
     const v = BW.vendor(state.vendorId);
     if (!v) { go("stores"); return; }
+    if (BW.track && _lastViewedStore !== v.id) { _lastViewedStore = v.id; BW.track("view_store", { vendorId: v.id, name: v.name }); }
     const products = BW.products(v.id);
     const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
 
@@ -696,6 +717,8 @@
   }
 
   function showOrderConfirmation(order) {
+    _orderJustPlaced = true;
+    if (BW.track) BW.track("order_placed", { orderId: order && order.id, vendorId: order && order.vendorId, total: order && order.total, method: order && order.paymentMethod });
     const overlay = el("div", { class: "order-confirm-overlay" }, [
       el("div", { class: "order-confirm-circle" }, [
         el("svg", { width: "50", height: "50", viewBox: "0 0 50 50" }, [
@@ -1249,7 +1272,9 @@
       name: name,
       phone: (cust && cust.phone) || "",
       dob: (cust && cust.dob) || "",
+      gender: (cust && cust.gender) || "",
       photoUrl: (cust && cust.photoUrl) || "",
+      addresses: (cust && Array.isArray(cust.addresses) ? cust.addresses.slice() : []),
     };
 
     /* --- Avatar (photo or initials) with camera overlay --- */
@@ -1294,6 +1319,37 @@
     const emailIn = el("input", { type: "email", value: email, disabled: true, style: "opacity:.7" });
     const phoneIn = el("input", { type: "tel", value: draft.phone, placeholder: "+91 …", inputmode: "tel" });
     const dobIn   = el("input", { type: "date", value: draft.dob });
+    const genderIn = el("select", {}, ["", "female", "male", "other"].map((g) =>
+      el("option", Object.assign({ value: g }, draft.gender === g ? { selected: true } : {}),
+        g === "" ? "Prefer not to say" : g.charAt(0).toUpperCase() + g.slice(1))));
+
+    /* --- Saved addresses manager --- */
+    const addrList = el("div", {});
+    function renderAddrs() {
+      addrList.innerHTML = "";
+      if (!draft.addresses.length) {
+        addrList.appendChild(el("div", { class: "muted small", style: "padding:4px 0 8px" }, "No saved addresses yet."));
+      }
+      draft.addresses.forEach((a, i) => {
+        addrList.appendChild(el("div", { class: "row between", style: "padding:8px 0;border-bottom:0.5px solid var(--border);gap:10px" }, [
+          el("div", { style: "min-width:0" }, [
+            el("span", { class: "badge", style: "background:var(--brand-lt);color:var(--brand);font-weight:700" }, a.tag || "Address"),
+            el("div", { class: "small", style: "margin-top:3px" }, a.line || ""),
+          ]),
+          el("button", { class: "btn ghost sm", onClick: () => { draft.addresses.splice(i, 1); renderAddrs(); } }, "Remove"),
+        ]));
+      });
+    }
+    renderAddrs();
+    const tagIn = el("select", {}, ["Home", "Work", "Other"].map((t) => el("option", { value: t }, t)));
+    const lineIn = el("input", { type: "text", placeholder: "Flat / street / area, landmark" });
+    const addAddrBtn = el("button", { class: "btn ghost sm", onClick: () => {
+      const line = lineIn.value.trim();
+      if (!line) return;
+      draft.addresses.push({ tag: tagIn.value, line: line });
+      lineIn.value = "";
+      renderAddrs();
+    } }, "Add");
 
     const errEl = el("div", { class: "auth-err", style: "margin:4px 0" });
     const saveBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:6px" }, "Save changes");
@@ -1303,7 +1359,9 @@
         name: nameIn.value.trim(),
         phone: phoneIn.value.trim(),
         dob: dobIn.value,
+        gender: genderIn.value,
         photoUrl: draft.photoUrl,
+        addresses: draft.addresses,
       };
       if (!fields.name) { errEl.textContent = "Please enter your name."; return; }
       saveBtn.disabled = true; saveBtn.textContent = "Saving…";
@@ -1331,8 +1389,18 @@
         field("Email", emailIn, "Email is linked to your login."),
         field("Phone number", phoneIn),
         field("Date of birth", dobIn, "🎁 We'll send a birthday treat on your special day."),
+        field("Gender", genderIn),
         errEl,
         saveBtn,
+      ]),
+      el("div", { class: "card", style: "margin-top:12px" }, [
+        el("h3", { style: "margin:0 0 6px;font-size:15px" }, "Saved addresses"),
+        addrList,
+        el("div", { style: "display:flex;gap:8px;margin-top:10px" }, [
+          el("div", { style: "flex:0 0 90px" }, [tagIn]),
+          el("div", { style: "flex:1" }, [lineIn]),
+        ]),
+        el("div", { style: "margin-top:8px" }, [addAddrBtn]),
       ]),
       el("div", { class: "card", style: "margin-top:12px" }, [
         el("div", { class: "row between", style: "padding:2px 0" }, [

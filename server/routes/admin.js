@@ -53,6 +53,20 @@ router.get("/logins", requireAuth, requireRole("admin"), async (req, res) => {
   }
 });
 
+/* ── GET /api/admin/support ──── recent assistant/support transcripts ── */
+router.get("/support", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const snap = await db.collection("support_logs").get();
+    const logs = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => new Date(b.at) - new Date(a.at))
+      .slice(0, 300);
+    res.json(logs);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
 /* ── GET /api/admin/users ──────────────────────────────────────
  * Returns all user accounts (no passwordHash).                  */
 router.get("/users", requireAuth, requireRole("admin"), async (req, res) => {

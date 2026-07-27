@@ -8,10 +8,28 @@ const router = express.Router();
 router.get("/", requireAuth, requireRole("merchant", "admin"), async (req, res) => {
   try {
     const snap = await db.collection("customers").get();
+    const isAdmin = req.user.role === "admin";
+
+    // Admin gets the full directory enriched with the account email + verification
+    // status (joined from the users collection). Merchants get a minimal view.
+    let usersByUid = {};
+    if (isAdmin) {
+      const usersSnap = await db.collection("users").get();
+      usersSnap.docs.forEach((u) => { const d = u.data(); usersByUid[d.uid] = d; });
+    }
+
     const customers = snap.docs.map((d) => {
       const data = d.data();
-      delete data.userId; // don't expose internal uid link
-      return { id: d.id, ...data };
+      const uid = data.userId;
+      if (!isAdmin) { delete data.userId; return { id: d.id, name: data.name, phone: data.phone || null }; }
+      const u = usersByUid[uid] || {};
+      return {
+        id: d.id, ...data,
+        email: u.email || data.email || null,
+        authProvider: u.authProvider || "email",
+        emailVerified: data.emailVerified || u.emailVerified || false,
+        phoneVerified: data.phoneVerified || u.phoneVerified || false,
+      };
     });
     res.json(customers);
   } catch (err) {
@@ -46,7 +64,7 @@ router.put("/me", requireAuth, requireRole("customer"), async (req, res) => {
     if (snap.empty) return res.status(404).json({ error: "Customer profile not found" });
 
     const ref = snap.docs[0].ref;
-    const allowed = ["address", "lat", "lng", "name", "phone", "dob", "photoUrl"];
+    const allowed = ["address", "lat", "lng", "name", "phone", "dob", "photoUrl", "gender", "addresses"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 

@@ -1,7 +1,20 @@
 const express = require("express");
 const { requireAuth } = require("../middleware/auth");
+const { db } = require("../config/firebase");
 
 const router = express.Router();
+
+// Store each Q&A so admin can review support quality (first-party, no sharing).
+function logSupport(req, message, reply) {
+  try {
+    db.collection("support_logs").add({
+      userId: (req.user && req.user.uid) || null,
+      email: (req.user && req.user.email) || null,
+      message, reply,
+      at: new Date().toISOString(),
+    });
+  } catch (e) { /* logging must never break the reply */ }
+}
 
 const SYSTEM = `You are the in-app help assistant for Saardha, a local home-delivery app in India.
 Help customers use the app, briefly and warmly. Key facts:
@@ -24,6 +37,7 @@ router.post("/", requireAuth, async (req, res) => {
     const key = process.env.GEMINI_API_KEY;
     if (!key) {
       console.warn("assistant: GEMINI_API_KEY not set — returning canned help.");
+      logSupport(req, message, FALLBACK);
       return res.json({ reply: FALLBACK });
     }
 
@@ -70,8 +84,10 @@ router.post("/", requireAuth, async (req, res) => {
 
     if (!reply) {
       console.error("assistant: Gemini response had no text. Payload:", JSON.stringify(data).slice(0, 600));
+      logSupport(req, message, FALLBACK);
       return res.json({ reply: FALLBACK });
     }
+    logSupport(req, message, reply);
     res.json({ reply });
   } catch (err) {
     console.error("assistant:", err);

@@ -131,8 +131,19 @@
           </div>
           <div class="field"><label>Date of birth <span class="muted small">(optional)</span></label>
             <input id="suDob" type="date" /></div>
+          <div class="field"><label>Gender <span class="muted small">(optional)</span></label>
+            <select id="suGender">
+              <option value="">Prefer not to say</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+            </select></div>
           ${pwField("suPwd", "Choose a password (min 6)", "new-password")}
           <div id="recaptcha-container"></div>
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted);margin:4px 0 12px;cursor:pointer">
+            <input type="checkbox" id="suConsent" style="margin-top:2px;flex-shrink:0" />
+            <span>I agree to Saardha's <a href="/privacy/" target="_blank" style="color:var(--brand)">Privacy Policy</a> and consent to my data being used to provide and improve the service.</span>
+          </label>
           <div class="auth-err" id="suErr"></div>
           <button class="btn primary" id="signupBtn" style="width:100%">Create account</button>
         </div>` : ""}
@@ -266,15 +277,18 @@
         const pwd = document.getElementById("suPwd").value;
         const phone = formatE164(document.getElementById("suPhone").value);
         const dob = document.getElementById("suDob").value;
+        const gender = document.getElementById("suGender").value;
+        const consent = document.getElementById("suConsent").checked;
         const errEl = document.getElementById("suErr");
         errEl.textContent = "";
         if (!name) { errEl.textContent = "Please enter your full name."; return; }
         if (!/\S+@\S+\.\S+/.test(email)) { errEl.textContent = "Enter a valid email."; return; }
         if (!emailVerifyToken) { errEl.textContent = "Please verify your email with the code we sent."; return; }
         if (pwd.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
+        if (!consent) { errEl.textContent = "Please accept the Privacy Policy to continue."; return; }
         signupBtn.disabled = true; signupBtn.textContent = "Creating account…";
         try {
-          const data = await BW.register({ email, password: pwd, name, role, phone: phone || null, dob: dob || null, emailVerifyToken, phoneToken });
+          const data = await BW.register({ email, password: pwd, name, role, phone: phone || null, dob: dob || null, gender: gender || null, consent, emailVerifyToken, phoneToken });
           if (data.user.role !== role) { errEl.textContent = "This account belongs to another portal."; signupBtn.disabled = false; signupBtn.textContent = "Create account"; return; }
           BW.Auth.setSession(data.token, data.user);
           resolve(data.user);

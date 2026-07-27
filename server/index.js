@@ -63,6 +63,7 @@ app.use("/api/vendors",   apiLimiter,  require("./routes/vendors"));
 app.use("/api/orders",    orderLimiter, require("./routes/orders"));
 app.use("/api/payments",  require("./routes/payments"));
 app.use("/api/assistant", require("./routes/assistant"));
+app.use("/api/events",    require("./routes/events"));
 app.use("/api/riders",    require("./routes/riders"));
 app.use("/api/customers", require("./routes/customers"));
 app.use("/api/analytics", require("./routes/analytics"));

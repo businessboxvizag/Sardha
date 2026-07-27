@@ -151,3 +151,34 @@ On disk, pending push + deploy. Files: `assets/js/util.js`, `scan/index.html`, `
 
 - **Logo no longer opens the 4-app portal (#1):** top-bar logo now links to the app's own home (`./`) instead of `../index.html`. Customers/merchants/riders can't reach the portal by tapping the logo. (The portal still exists at the site root for you/admin; if you want the root hidden from end users too, redirect `/` → `/customer/` — quick follow-up.)
 - **Scan → install fixed (#2):** the install button pointed to `https://sardha.onrender.com/files/sardha.apk`, which doesn't exist on the API server → `{"error":"Not found"}`. There is no APK in the repo. Replaced the APK download with the **real PWA install**: Android uses the native `beforeinstallprompt` one-tap install (with an "Install app / Add to Home screen" menu fallback) and an "Open in browser" option; `appinstalled` opens straight into the store. All post-scan links now go to `/customer/?v=<vendorId>` (never the API host), so the store is added automatically. Installed-app name fixed from "BizWheels" → **"Saardha"** (root `manifest.json`).
+
+---
+
+## Session update — 2026-07-27 (admin: customer data + analytics dashboard)
+On disk, pending push + deploy. Files: `server/routes/customers.js`, `admin/index.html`, `admin/admin.js`.
+
+- **Customer data now visible to admin:** `GET /api/customers` was stripping `userId`, so the admin's customer table could never join the email — fixed. For **admin only** it now enriches each customer with email, authProvider, emailVerified, phoneVerified (joined from `users`). Merchants still get a minimal view (name + phone).
+- **New top-level "Customers" tab** in the admin panel: searchable directory (name, email, phone, DOB, verified ✉/📱, orders, spent, last order, joined) + KPI row. Search filters in place (no focus loss).
+- **Analytics dashboard rebuilt (Chart.js):** GMV, net revenue, orders, AOV, delivered/fulfilment, cancelled/cancel-rate, customers + new-today, repeat rate, delivery fees, avg delivery time, Saradhis online, verified counts — plus 8 charts: revenue trend (14d), orders/day, new customers/day, order-status doughnut, payment-method doughnut, peak order hours, top stores by revenue, top items. Chart.js loaded from CDN in `admin/index.html`; instances tracked + destroyed on re-render.
+- **Overview** KPIs expanded (GMV, cancelled, repeat rate, customers) using the same live model.
+- Nav reordered: Overview · Analytics · Customers · Stores · Fleet · Settings · Monitor. All admin-only (admin login required).
+
+---
+
+## Session update — 2026-07-27 (Bucket-1 data collection + admin)
+On disk, pending push + deploy. New: `server/routes/events.js`, `privacy/index.html`. Changed: `server/index.js`, `server/routes/{assistant,auth,customers,admin}.js`, `assets/js/{api,auth-ui}.js`, `customer/customer.js`, `admin/admin.js`.
+
+Scope decision (Swiggy/Zomato/Blinkit-style data): built the **legitimate, PWA-possible, first-party** subset only. Deliberately NOT built: device fingerprinting (IMEI/MAC/serial — browsers block), advertising IDs (IDFA/AAID), background GPS, call recording, and any data-selling/sharing with ad networks/FMCG/finance (needs consent framework + legal review under DPDP Act 2023).
+
+Built:
+- **Consent + Privacy Policy:** `/privacy/` page (DPDP-aligned template — needs lawyer review). Signup now has a **required consent checkbox**; `register` stores `consentAt`.
+- **Behavioral event tracking:** new `events` collection + `POST /api/events` (customer) / `GET /api/events` (admin). Client `BW.track()` fires `app_open`, `search`, `view_store`, `add_to_cart`, `order_placed`, `cart_abandoned` (fire-and-forget, never blocks UI).
+- **Richer profile:** signup + profile collect **gender** and **saved addresses** (tagged Home/Work/Other); server allow-list + register updated.
+- **Device + support logs:** login logs now capture `user-agent` (shown as parsed "iOS · Safari" etc.); assistant Q&A saved to `support_logs`, exposed via `GET /api/admin/support`.
+- **Admin panel:** Customers directory adds Gender + Addresses columns; Monitor gains **Behavior** (searches, store views, add-to-cart, cart→order conversion, top searches, most-viewed stores) and **Support** (transcripts) tabs; Logins shows Device.
+
+Verified: all files `node --check`; jsdom run confirms Customers columns, Behavior/Support tabs, and device parsing render.
+
+### Recommended before turning data collection fully on
+- Have the privacy policy reviewed by a lawyer; set a real grievance-officer email.
+- The commercialization/sharing items (Bucket 3) remain deliberately unbuilt — get consent flows + legal sign-off first.

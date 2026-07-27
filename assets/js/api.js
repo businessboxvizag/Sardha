@@ -82,7 +82,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
-    logins: [], allUsers: [], shops: [],
+    logins: [], allUsers: [], shops: [], events: [], support: [],
   };
 
   /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
@@ -162,6 +162,8 @@
         get("/api/analytics").then((a) => { _cache.analytics = a; }),
         get("/api/admin/logins").then((l) => { _cache.logins = l; }),
         get("/api/admin/users").then((u) => { _cache.allUsers = u; }),
+        get("/api/events").then((e) => { _cache.events = e; }).catch(() => {}),
+        get("/api/admin/support").then((s) => { _cache.support = s; }).catch(() => {}),
       );
     } else if (role === "rider") {
       loads.push(
@@ -206,6 +208,11 @@
     checkEmail: (email, role)  => post("/api/auth/check-email", { email, role }),
     sendEmailOtp:   (email)        => post("/api/auth/email-otp/send", { email }),
     verifyEmailOtp: (email, code)  => post("/api/auth/email-otp/verify", { email, code }),
+
+    // Fire-and-forget behavioral event (never blocks or breaks the UI)
+    track: (type, props) => { try { post("/api/events", { type, props: props || {} }).catch(() => {}); } catch (e) {} },
+    events:  () => [...(_cache.events || [])],
+    support: () => [...(_cache.support || [])],
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     forgotPassword: (email, role)    => post("/api/auth/forgot-password", { email, role }),
     resetPassword:  (token, newPassword) => post("/api/auth/reset-password", { token, newPassword }),

@@ -37,9 +37,10 @@
     const unassigned = BW.orders().filter((o) => !o.riderId && [S.PLACED, S.ACCEPTED].includes(o.status)).length;
     const nav = el("div", { class: "sidebar" }, [
       navItem("overview",  "Ov", "Overview"),
-      navItem("fleet",     "Fl", "Fleet"),
-      navItem("vendors",   "Ve", "Vendors"),
       navItem("analytics", "An", "Analytics"),
+      navItem("customers", "Cu", "Customers"),
+      navItem("vendors",   "Ve", "Stores"),
+      navItem("fleet",     "Fl", "Fleet"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
     ]);
@@ -103,14 +104,21 @@
       ]);
     });
 
+    const O = computeAnalytics();
     shell("overview", [
       el("h1", { class: "page-title" }, "Platform Overview"),
-      el("p", { class: "page-sub" }, "Live snapshot across all vendors and Saradhis."),
+      el("p", { class: "page-sub" }, "Live snapshot across all stores and Saradhis."),
       el("div", { class: "grid cols-4" }, [
-        stat("Total orders",  String(a.totalOrders || 0), "+" + (a.activeOrders || 0) + " active"),
-        stat("Revenue",       money(Math.round(a.revenue || 0)), "avg " + money(Math.round(a.avgOrderValue || 0))),
-        stat("Delivered",     String(a.deliveredOrders || 0), ""),
-        stat("Saradhis online", (a.ridersOnline || 0) + " / " + riders.length, ""),
+        stat("Total orders",  String(O.totalOrders), "+" + O.active + " active"),
+        stat("Revenue",       money(Math.round(O.revenue)), "avg " + money(Math.round(O.aov))),
+        stat("Delivered",     String(O.delivered), Math.round(O.fulfilRate * 100) + "% fulfilment"),
+        stat("Customers",     String(O.totalCustomers), "+" + O.newToday + " today"),
+      ]),
+      el("div", { class: "grid cols-4", style: "margin-top:14px" }, [
+        stat("GMV",           money(Math.round(O.gmv)), "merchandise value"),
+        stat("Cancelled",     String(O.cancelled), Math.round(O.cancelRate * 100) + "% rate"),
+        stat("Repeat rate",   Math.round(O.repeatRate * 100) + "%", "returning buyers"),
+        stat("Saradhis online", O.ridersOnline + " / " + riders.length, ""),
       ]),
       el("h3", { style: "margin:24px 0 10px" }, "Recent orders"),
       el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
@@ -462,46 +470,183 @@
   }
 
   /* ====================== ANALYTICS ====================== */
-  function viewAnalytics() {
-    const a = BW.analytics() || {};
+  /* ── Chart.js helpers ── */
+  let _charts = [];
+  function destroyCharts() { _charts.forEach((c) => { try { c.destroy(); } catch (e) {} }); _charts = []; }
+  function makeChart(canvas, config) { if (typeof Chart === "undefined" || !canvas) return null; try { const c = new Chart(canvas, config); _charts.push(c); return c; } catch (e) { return null; } }
+  function baseOpts() { return { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }; }
+  function hbarOpts() { return { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }; }
+  function doughnutOpts() { return { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { boxWidth: 12, font: { size: 11 } } } } }; }
+  function shortDay(k) { const d = new Date(k); return (d.getMonth() + 1) + "/" + d.getDate(); }
+  function dayKey(d) { const x = new Date(d); return isNaN(x) ? null : x.toISOString().slice(0, 10); }
+  function lastNDays(n) { const a = [], now = new Date(); for (let i = n - 1; i >= 0; i--) { const d = new Date(now); d.setDate(now.getDate() - i); a.push(d.toISOString().slice(0, 10)); } return a; }
+
+  /* ── Compute the full analytics model from live data ── */
+  function computeAnalytics() {
+    const orders = BW.orders();
+    const customers = BW.customers();
+    const users = (BW.allUsers ? BW.allUsers() : []).filter((u) => u.role === "customer");
     const vendors = BW.vendors();
-    const revenueByVendor = a.revenueByVendor || {};
-    const maxRev = Math.max(1, ...Object.values(revenueByVendor));
+    const riders = BW.riders();
 
-    const bars = vendors.map((v) => {
-      const rev = revenueByVendor[v.id] || 0;
-      const pct = (rev / maxRev) * 100;
-      return el("div", { style: "margin-bottom:14px" }, [
-        el("div", { class: "row between small", style: "margin-bottom:4px" }, [
-          el("span", {}, v.img + " " + v.name), el("strong", {}, money(rev)),
-        ]),
-        el("div", { style: "height:12px;background:var(--surface-2);border-radius:999px;overflow:hidden" }, [
-          el("div", { style: `height:100%;width:${pct}%;background:linear-gradient(90deg,var(--brand),var(--brand-2))` }),
-        ]),
-      ]);
-    });
+    const nonCancelled = orders.filter((o) => o.status !== "CANCELLED");
+    const delivered = orders.filter((o) => o.status === "DELIVERED");
+    const cancelled = orders.filter((o) => o.status === "CANCELLED");
+    const active = orders.filter((o) => !["DELIVERED", "CANCELLED"].includes(o.status));
+    const revenue = nonCancelled.reduce((s, o) => s + (o.total || 0), 0);
+    const gmv = nonCancelled.reduce((s, o) => s + (o.subtotal || o.total || 0), 0);
+    const deliveryFees = delivered.reduce((s, o) => s + (o.deliveryFee || 0), 0);
+    const aov = nonCancelled.length ? revenue / nonCancelled.length : 0;
+    const cancelRate = orders.length ? cancelled.length / orders.length : 0;
+    const fulfilRate = orders.length ? delivered.length / orders.length : 0;
+    const codCount = nonCancelled.filter((o) => o.paymentMethod !== "ONLINE").length;
+    const onlineCount = nonCancelled.filter((o) => o.paymentMethod === "ONLINE").length;
 
-    const dist = a.statusDistribution || {};
-    const STATUS_LABEL = BW.STATUS_LABEL;
-    const distRows = Object.keys(STATUS_LABEL).filter((s) => dist[s]).map((s) =>
-      el("div", { class: "row between", style: "padding:7px 0;border-bottom:1px solid var(--border)" }, [
-        statusBadge(s), el("strong", {}, String(dist[s])),
-      ]));
+    const statusDist = {}; orders.forEach((o) => { statusDist[o.status] = (statusDist[o.status] || 0) + 1; });
+    const revByVendor = {}; nonCancelled.forEach((o) => { revByVendor[o.vendorId] = (revByVendor[o.vendorId] || 0) + (o.total || 0); });
+    const topStores = vendors.map((v) => ({ name: v.name, rev: revByVendor[v.id] || 0 })).sort((a, b) => b.rev - a.rev).slice(0, 7);
+    const itemQty = {}; nonCancelled.forEach((o) => (o.items || []).forEach((l) => { itemQty[l.name] = (itemQty[l.name] || 0) + (l.qty || 0); }));
+    const topItems = Object.entries(itemQty).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty).slice(0, 7);
+    const hours = new Array(24).fill(0); orders.forEach((o) => { const d = new Date(o.createdAt); if (!isNaN(d)) hours[d.getHours()]++; });
 
-    const stat = (k, v) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v)]);
+    const days = lastNDays(14);
+    const ordersByDay = {}, revByDay = {}, newCustByDay = {};
+    days.forEach((k) => { ordersByDay[k] = 0; revByDay[k] = 0; newCustByDay[k] = 0; });
+    orders.forEach((o) => { const k = dayKey(o.createdAt); if (k in ordersByDay) { ordersByDay[k]++; if (o.status !== "CANCELLED") revByDay[k] += (o.total || 0); } });
+    const custSource = customers.length ? customers : users;
+    custSource.forEach((c) => { const k = dayKey(c.createdAt || c.joined); if (k in newCustByDay) newCustByDay[k]++; });
+
+    const ordersByCust = {}; orders.forEach((o) => { ordersByCust[o.customerId] = (ordersByCust[o.customerId] || 0) + 1; });
+    const custWithOrders = Object.keys(ordersByCust).length;
+    const repeatCust = Object.values(ordersByCust).filter((n) => n > 1).length;
+    const repeatRate = custWithOrders ? repeatCust / custWithOrders : 0;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const newToday = custSource.filter((c) => dayKey(c.createdAt || c.joined) === todayKey).length;
+    const verifiedEmail = customers.filter((c) => c.emailVerified).length;
+    const verifiedPhone = customers.filter((c) => c.phoneVerified).length;
+
+    const durations = delivered.map((o) => { const h = o.history || []; if (h.length < 2) return null; const f = new Date(h[0].at), l = new Date(h[h.length - 1].at); return (l - f) / 60000; }).filter((x) => x != null && x > 0);
+    const avgDelivery = durations.length ? durations.reduce((s, x) => s + x, 0) / durations.length : null;
+
+    return {
+      totalOrders: orders.length, delivered: delivered.length, active: active.length, cancelled: cancelled.length,
+      revenue, gmv, deliveryFees, aov, cancelRate, fulfilRate, codCount, onlineCount, statusDist,
+      topStores, topItems, hours, days, ordersByDay, revByDay, newCustByDay,
+      totalCustomers: customers.length, custWithOrders, repeatRate, newToday, verifiedEmail, verifiedPhone,
+      ridersOnline: riders.filter((r) => r.status && r.status !== "offline").length, ridersTotal: riders.length, avgDelivery,
+    };
+  }
+
+  function viewAnalytics() {
+    const A = computeAnalytics();
+    const m0 = (n) => money(Math.round(n || 0));
+    const stat = (k, v, d) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v), d ? el("span", { class: "d" }, d) : document.createTextNode("")]);
+    const canv = () => el("canvas", {});
+    const cRev = canv(), cOrd = canv(), cNew = canv(), cStatus = canv(), cPay = canv(), cStores = canv(), cItems = canv(), cHours = canv();
+    const chartCard = (title, canvas, h) => el("div", { class: "card" }, [el("h3", { style: "margin:0 0 10px;font-size:14px" }, title), el("div", { style: "position:relative;height:" + (h || 220) + "px" }, [canvas])]);
 
     shell("analytics", [
       el("h1", { class: "page-title" }, "Analytics & Reporting"),
-      el("p", { class: "page-sub" }, "Platform performance across vendors, orders and revenue."),
+      el("p", { class: "page-sub" }, "Everything across orders, revenue, customers and fleet — private to you."),
       el("div", { class: "grid cols-4" }, [
-        stat("Gross revenue",   money(Math.round(a.revenue || 0))),
-        stat("Orders",          String(a.totalOrders || 0)),
-        stat("Avg order value", money(Math.round(a.avgOrderValue || 0))),
-        stat("Fulfilment",      a.totalOrders ? Math.round(((a.deliveredOrders || 0) / a.totalOrders) * 100) + "%" : "—"),
+        stat("GMV", m0(A.gmv), "gross merchandise value"),
+        stat("Net revenue", m0(A.revenue), "incl. fees + tax"),
+        stat("Orders", String(A.totalOrders), A.active + " active now"),
+        stat("Avg order value", m0(A.aov), ""),
       ]),
-      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [
-        el("div", { class: "card" }, [el("h3", { style: "margin-top:0" }, "Revenue by vendor"), bars.length ? el("div", {}, bars) : el("div", { class: "muted small" }, "No data yet.")]),
-        el("div", { class: "card" }, [el("h3", { style: "margin-top:0" }, "Order status distribution"), ...distRows]),
+      el("div", { class: "grid cols-4", style: "margin-top:14px" }, [
+        stat("Delivered", String(A.delivered), Math.round(A.fulfilRate * 100) + "% fulfilment"),
+        stat("Cancelled", String(A.cancelled), Math.round(A.cancelRate * 100) + "% cancel rate"),
+        stat("Customers", String(A.totalCustomers), "+" + A.newToday + " today"),
+        stat("Repeat rate", Math.round(A.repeatRate * 100) + "%", "of ordering customers"),
+      ]),
+      el("div", { class: "grid cols-4", style: "margin-top:14px" }, [
+        stat("Delivery fees", m0(A.deliveryFees), "collected"),
+        stat("Avg delivery", A.avgDelivery ? Math.round(A.avgDelivery) + " min" : "—", "placed → delivered"),
+        stat("Saradhis online", A.ridersOnline + " / " + A.ridersTotal, ""),
+        stat("Verified", A.verifiedEmail + " ✉ · " + A.verifiedPhone + " 📱", "email · phone"),
+      ]),
+      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [chartCard("Revenue — last 14 days", cRev), chartCard("Orders — last 14 days", cOrd)]),
+      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [chartCard("New customers — last 14 days", cNew), chartCard("Order status", cStatus)]),
+      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [chartCard("Payment method", cPay), chartCard("Peak order hours", cHours)]),
+      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [chartCard("Top stores by revenue", cStores), chartCard("Top items", cItems)]),
+    ]);
+
+    requestAnimationFrame(() => {
+      const RED = "#e62a1f", RED2 = "#ff8a3c", BLUE = "#4b7bec", GREEN = "#3ba55d", AMBER = "#f5a623";
+      const PAL = ["#e62a1f", "#ff8a3c", "#f5a623", "#3ba55d", "#4b7bec", "#8e44ad", "#16a085"];
+      makeChart(cRev, { type: "line", data: { labels: A.days.map(shortDay), datasets: [{ data: A.days.map((d) => Math.round(A.revByDay[d])), borderColor: RED, backgroundColor: "rgba(230,42,31,.12)", fill: true, tension: .35, pointRadius: 2 }] }, options: baseOpts() });
+      makeChart(cOrd, { type: "bar", data: { labels: A.days.map(shortDay), datasets: [{ data: A.days.map((d) => A.ordersByDay[d]), backgroundColor: RED }] }, options: baseOpts() });
+      makeChart(cNew, { type: "bar", data: { labels: A.days.map(shortDay), datasets: [{ data: A.days.map((d) => A.newCustByDay[d]), backgroundColor: BLUE }] }, options: baseOpts() });
+      const sK = Object.keys(A.statusDist);
+      makeChart(cStatus, { type: "doughnut", data: { labels: sK.map((s) => BW.STATUS_LABEL[s] || s), datasets: [{ data: sK.map((s) => A.statusDist[s]), backgroundColor: PAL }] }, options: doughnutOpts() });
+      makeChart(cPay, { type: "doughnut", data: { labels: ["Cash on delivery", "Online"], datasets: [{ data: [A.codCount, A.onlineCount], backgroundColor: [RED, GREEN] }] }, options: doughnutOpts() });
+      makeChart(cHours, { type: "bar", data: { labels: A.hours.map((_, h) => h), datasets: [{ data: A.hours, backgroundColor: RED2 }] }, options: baseOpts() });
+      makeChart(cStores, { type: "bar", data: { labels: A.topStores.map((s) => s.name), datasets: [{ data: A.topStores.map((s) => Math.round(s.rev)), backgroundColor: RED }] }, options: hbarOpts() });
+      makeChart(cItems, { type: "bar", data: { labels: A.topItems.map((s) => s.name), datasets: [{ data: A.topItems.map((s) => s.qty), backgroundColor: AMBER }] }, options: hbarOpts() });
+    });
+  }
+
+  /* ====================== CUSTOMERS (directory) ====================== */
+  function viewCustomers() {
+    const customers = BW.customers();
+    const orders = BW.orders();
+    const ordersByCust = {}, spentByCust = {}, lastByCust = {};
+    orders.forEach((o) => {
+      ordersByCust[o.customerId] = (ordersByCust[o.customerId] || 0) + 1;
+      if (o.status === "DELIVERED") spentByCust[o.customerId] = (spentByCust[o.customerId] || 0) + (o.total || 0);
+      const t = new Date(o.createdAt);
+      if (!lastByCust[o.customerId] || t > lastByCust[o.customerId]) lastByCust[o.customerId] = t;
+    });
+
+    const tbody = el("tbody", {});
+    function renderRows(q) {
+      const query = (q || "").toLowerCase().trim();
+      let list = customers.slice();
+      if (query) list = list.filter((c) => [c.name, c.email, c.phone].some((x) => String(x || "").toLowerCase().includes(query)));
+      list.sort((a, b) => (ordersByCust[b.id] || 0) - (ordersByCust[a.id] || 0));
+      tbody.innerHTML = "";
+      if (!list.length) { tbody.appendChild(el("tr", {}, el("td", { colspan: "9", class: "muted", style: "text-align:center;padding:20px" }, "No customers found."))); return; }
+      list.forEach((c) => {
+        tbody.appendChild(el("tr", {}, [
+          el("td", {}, el("strong", {}, c.name || "—")),
+          el("td", { class: "muted small" }, c.email || "—"),
+          el("td", {}, c.phone || el("span", { class: "muted" }, "—")),
+          el("td", { class: "muted small" }, c.dob || "—"),
+          el("td", { class: "muted small" }, c.gender || "—"),
+          el("td", { class: "small" }, (c.emailVerified ? "✉️" : "·") + "  " + (c.phoneVerified ? "📱" : "·")),
+          el("td", { class: "muted small" }, (Array.isArray(c.addresses) && c.addresses.length) ? (c.addresses.length + "×") : "—"),
+          el("td", {}, String(ordersByCust[c.id] || 0)),
+          el("td", {}, money(spentByCust[c.id] || 0)),
+          el("td", { class: "muted small" }, lastByCust[c.id] ? timeAgo(lastByCust[c.id]) : "—"),
+          el("td", { class: "muted small" }, c.joined || "—"),
+        ]));
+      });
+    }
+    renderRows("");
+
+    const searchEl = el("input", { type: "search", placeholder: "Search name, email or phone…", style: "max-width:320px" });
+    searchEl.addEventListener("input", (e) => renderRows(e.target.value));
+
+    const withOrders = Object.keys(ordersByCust).length;
+    const stat = (k, v) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v)]);
+
+    shell("customers", [
+      el("div", { class: "row between", style: "align-items:center;flex-wrap:wrap;gap:10px" }, [
+        el("div", {}, [el("h1", { class: "page-title" }, "Customers"), el("p", { class: "page-sub" }, customers.length + " total · visible only to you")]),
+        searchEl,
+      ]),
+      el("div", { class: "grid cols-4", style: "margin:10px 0 16px" }, [
+        stat("Total customers", String(customers.length)),
+        stat("Placed an order", String(withOrders)),
+        stat("Email verified", String(customers.filter((c) => c.emailVerified).length)),
+        stat("Phone verified", String(customers.filter((c) => c.phoneVerified).length)),
+      ]),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Name", "Email", "Phone", "DOB", "Gender", "Verified", "Addr", "Orders", "Spent", "Last order", "Joined"].map((h) => el("th", {}, h)))),
+          tbody,
+        ]),
       ]),
     ]);
   }
@@ -515,10 +660,12 @@
   }
 
   function render() {
+    destroyCharts();
     switch (state.route) {
       case "fleet":     return viewFleet();
       case "vendors":   return viewVendors();
       case "analytics": return viewAnalytics();
+      case "customers": return viewCustomers();
       case "settings":  return viewSettings();
       case "monitor":   return viewMonitor();
       default:          return viewOverview();
@@ -541,13 +688,16 @@
 
     const tabs = el("div", { style: "display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap" }, [
       tabBtn("logins",    "Logins"),
+      tabBtn("behavior",  "Behavior"),
       tabBtn("orders",    "Orders"),
-      tabBtn("customers", "Customers"),
       tabBtn("payments",  "Payments"),
+      tabBtn("support",   "Support"),
     ]);
 
     let body;
     if (monState.tab === "logins")         body = renderLoginLogs();
+    else if (monState.tab === "behavior")  body = renderBehavior();
+    else if (monState.tab === "support")   body = renderSupport();
     else if (monState.tab === "orders")    body = renderAllOrders();
     else if (monState.tab === "customers") body = renderAllCustomers();
     else                                   body = renderPayments();
@@ -582,14 +732,68 @@
       el("td", {}, l.email || "—"),
       el("td", {}, el("span", { class: "badge " + l.role }, l.role)),
       el("td", { class: "muted small" }, l.method || "email"),
+      el("td", { class: "muted small" }, uaDevice(l.ua)),
       el("td", { class: "muted small" }, l.ip || "—"),
     ]));
     return el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
       el("table", {}, [
-        el("thead", {}, el("tr", {}, ["Time", "Email", "Role", "Method", "IP"].map((h) => el("th", {}, h)))),
+        el("thead", {}, el("tr", {}, ["Time", "Email", "Role", "Method", "Device", "IP"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows),
       ]),
     ]);
+  }
+
+  // Turn a raw user-agent into a short, readable device/browser label.
+  function uaDevice(ua) {
+    if (!ua) return "—";
+    const os = /iphone|ipad|ipod/i.test(ua) ? "iOS" : /android/i.test(ua) ? "Android" : /windows/i.test(ua) ? "Windows" : /mac os/i.test(ua) ? "macOS" : /linux/i.test(ua) ? "Linux" : "";
+    const br = /edg\//i.test(ua) ? "Edge" : /chrome|crios/i.test(ua) ? "Chrome" : /firefox|fxios/i.test(ua) ? "Firefox" : /safari/i.test(ua) ? "Safari" : "";
+    return [os, br].filter(Boolean).join(" · ") || "Unknown";
+  }
+
+  /* ── Behavior (first-party event analytics) ── */
+  function renderBehavior() {
+    const events = BW.events ? BW.events() : [];
+    const by = (t) => events.filter((e) => e.type === t);
+    const searches = by("search"), views = by("view_store"), adds = by("add_to_cart"), placed = by("order_placed"), abandoned = by("cart_abandoned");
+
+    const countMap = (arr, key) => { const m = {}; arr.forEach((e) => { const k = (e.props && e.props[key]) || "—"; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 10); };
+    const topSearches = countMap(searches, "q");
+    const topStores = countMap(views, "name");
+    const conv = adds.length ? Math.round((placed.length / adds.length) * 100) : 0;
+
+    const stat = (k, v, d) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v), d ? el("span", { class: "d" }, d) : document.createTextNode("")]);
+    const listCard = (title, rows) => el("div", { class: "card" }, [
+      el("h3", { style: "margin:0 0 8px;font-size:14px" }, title),
+      rows.length ? el("div", {}, rows.map(([k, n]) => el("div", { class: "row between", style: "padding:6px 0;border-bottom:0.5px solid var(--border)" }, [el("span", { class: "small", style: "min-width:0;overflow:hidden;text-overflow:ellipsis" }, k), el("strong", {}, String(n))]))) : el("div", { class: "muted small" }, "No data yet."),
+    ]);
+
+    if (!events.length) {
+      return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No behavioral events yet. They'll appear as customers use the app after deploy.")]);
+    }
+    return el("div", {}, [
+      el("div", { class: "grid cols-4", style: "margin-bottom:14px" }, [
+        stat("Searches", String(searches.length)),
+        stat("Store views", String(views.length)),
+        stat("Add-to-cart", String(adds.length)),
+        stat("Cart → order", conv + "%", abandoned.length + " abandoned"),
+      ]),
+      el("div", { class: "grid cols-2" }, [
+        listCard("Top searches", topSearches),
+        listCard("Most-viewed stores", topStores),
+      ]),
+    ]);
+  }
+
+  /* ── Support transcripts (assistant Q&A) ── */
+  function renderSupport() {
+    const logs = BW.support ? BW.support() : [];
+    if (!logs.length) return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No support conversations yet.")]);
+    return el("div", {}, logs.slice(0, 100).map((l) => el("div", { class: "card", style: "margin-bottom:10px" }, [
+      el("div", { class: "row between", style: "margin-bottom:6px" }, [el("strong", { class: "small" }, l.email || "Guest"), el("span", { class: "muted small" }, clockTime(l.at))]),
+      el("div", { class: "small", style: "margin-bottom:4px" }, [el("span", { class: "muted" }, "Q: "), l.message || ""]),
+      el("div", { class: "small" }, [el("span", { class: "muted" }, "A: "), l.reply || ""]),
+    ])));
   }
 
   function renderAllOrders() {

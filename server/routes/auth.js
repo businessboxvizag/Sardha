@@ -26,11 +26,12 @@ async function startSession(uid) {
 }
 
 /** Non-blocking login audit — failure is silently ignored */
-function logLogin(userId, email, role, ip, method) {
+function logLogin(userId, email, role, ip, method, ua) {
   db.collection("logins").add({
     userId, email, role,
     ip: ip || "unknown",
     method: method || "email",
+    ua: (ua || "").slice(0, 200),
     at: new Date().toISOString(),
   }).catch(() => {});
 }
@@ -44,7 +45,8 @@ function clientIp(req) {
 /* ── POST /api/auth/register ────────────────────────────────── */
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, name, role, phone, dob, lat, lng } = req.body;
+    const { email, password, name, role, phone, dob, gender, consent, lat, lng } = req.body;
+    const consentAt = consent ? new Date().toISOString() : null;
 
     if (!email || !password || !name || !role) {
       return res.status(400).json({ error: "email, password, name and role are required" });
@@ -93,17 +95,17 @@ router.post("/register", async (req, res) => {
 
     await userRef.set({
       uid, email, passwordHash, role,
-      name, phone: verifiedPhone, createdAt: now,
-      emailVerified, phoneVerified,
+      name, phone: verifiedPhone, gender: gender || null, createdAt: now,
+      emailVerified, phoneVerified, consentAt,
     });
 
     // Role-specific profile creation
     if (role === "customer") {
       await db.collection("customers").doc(uid).set({
         userId: uid, name,
-        phone: verifiedPhone, dob: dob || null,
-        address: null, lat: null, lng: null,
-        emailVerified, phoneVerified,
+        phone: verifiedPhone, dob: dob || null, gender: gender || null,
+        address: null, addresses: [], lat: null, lng: null,
+        emailVerified, phoneVerified, consentAt,
         joined: now.slice(0, 10), createdAt: now,
       });
       await db.collection("favorites").doc(uid).set({ vendorIds: [] });
@@ -127,7 +129,7 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    logLogin(uid, email, role, clientIp(req), "email_register");
+    logLogin(uid, email, role, clientIp(req), "email_register", req.headers["user-agent"]);
 
     const sid = await startSession(uid);
     const token = signToken({ uid, email, role, name }, sid);
@@ -187,7 +189,7 @@ router.post("/login", async (req, res) => {
       }
     }
 
-    logLogin(user.uid, user.email, user.role, clientIp(req), "email");
+    logLogin(user.uid, user.email, user.role, clientIp(req), "email", req.headers["user-agent"]);
 
     const sid = await startSession(user.uid);
     const token = signToken(user, sid);
@@ -241,7 +243,7 @@ router.post("/google", async (req, res) => {
     }
 
     const user = userSnap.data();
-    logLogin(user.uid, user.email, user.role, clientIp(req), "google");
+    logLogin(user.uid, user.email, user.role, clientIp(req), "google", req.headers["user-agent"]);
 
     const sid = await startSession(user.uid);
     const token = signToken(user, sid);
