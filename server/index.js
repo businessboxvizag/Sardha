@@ -74,6 +74,7 @@ app.use("/api/settings",  require("./routes/settings"));
 app.get("/api/config", (req, res) => {
   res.json({
     mapboxToken: process.env.MAPBOX_TOKEN || "",
+    googleMapsKey: process.env.GOOGLE_MAPS_KEY || "",
     razorpayKeyId: process.env.RAZORPAY_KEY_ID || "",
     cloudinaryCloud: process.env.CLOUDINARY_CLOUD_NAME || "",
     cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET || "",

@@ -25,7 +25,15 @@ function canTransition(role, fromStatus, toStatus) {
   return (allowed[fromStatus] || []).includes(toStatus);
 }
 
-const toOrder = (doc) => ({ id: doc.id, ...doc.data() });
+// Never expose the delivery OTP inside order payloads — the rider must get it
+// from the customer verbally. The customer reads theirs via GET /:id/otp.
+const toOrder = (doc) => { const { deliveryOtp, ...rest } = doc.data(); return { id: doc.id, ...rest }; };
+
+// COD cash-in-hand limit (admin-configurable in settings; default ₹2000)
+async function getCodLimit() {
+  try { const s = await db.collection("settings").doc("global").get(); const d = s.exists ? s.data() : {}; return Number(d.codCashLimit) || 2000; }
+  catch (e) { return 2000; }
+}
 
 function emitOrderUpdate(io, order) {
   if (!io) return;
@@ -342,13 +350,39 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
       history: [...(order.history || []), { status: nextStatus, at: now }],
     };
 
-    if (nextStatus === "DELIVERED" && order.riderId) {
-      const riderRef = db.collection("riders").doc(order.riderId);
-      const riderDoc = await riderRef.get();
-      await riderRef.update({
-        status: "available",
-        deliveriesToday: (riderDoc.data().deliveriesToday || 0) + 1,
-      });
+    // Heading out → issue a 4-digit delivery OTP the customer reads out at the door.
+    if (nextStatus === "OUT_FOR_DELIVERY") {
+      updates.deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+    }
+
+    if (nextStatus === "DELIVERED") {
+      // Drop-off OTP verification — rider must enter the customer's 4-digit code.
+      if (role === "rider") {
+        const otp = String(req.body.otp || "").trim();
+        if (!order.deliveryOtp || otp !== order.deliveryOtp) {
+          return res.status(400).json({ error: "Incorrect delivery OTP. Ask the customer for their 4-digit code." });
+        }
+      }
+      // Cash on delivery — record the collected cash into the rider's floating balance.
+      let cash = 0;
+      if (order.paymentMethod === "COD") {
+        cash = Number(req.body.cashCollected);
+        if (!cash || cash <= 0) return res.status(400).json({ error: "Enter the cash amount collected from the customer." });
+        updates.paymentStatus = "COLLECTED";
+        updates.cashCollected = cash;
+      }
+      if (order.riderId) {
+        const riderRef = db.collection("riders").doc(order.riderId);
+        const rd = (await riderRef.get()).data() || {};
+        const riderUpd = { status: "available", deliveriesToday: (rd.deliveriesToday || 0) + 1 };
+        if (order.paymentMethod === "COD") {
+          const limit = await getCodLimit();
+          const newCash = (rd.cashInHand || 0) + cash;
+          riderUpd.cashInHand = newCash;
+          if (newCash >= limit && !rd.cashOverLimitSince) riderUpd.cashOverLimitSince = now;
+        }
+        await riderRef.update(riderUpd);
+      }
     }
 
     await ref.update(updates);
@@ -365,6 +399,20 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
 
 /* ââ PATCH /api/orders/:id/assign âââââââââââââââââââââââââââââ
    Assign or reassign a rider to an order (merchant / admin)     */
+router.get("/:id/otp", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const doc = await db.collection("orders").doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: "Order not found" });
+    const order = doc.data();
+    const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    const custId = custSnap.empty ? null : custSnap.docs[0].id;
+    if (order.customerId !== custId) return res.status(403).json({ error: "Not your order" });
+    res.json({ otp: order.deliveryOtp || null, status: order.status });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch delivery OTP" });
+  }
+});
+
 router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async (req, res) => {
   try {
     const { riderId } = req.body;

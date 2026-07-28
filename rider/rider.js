@@ -4,7 +4,7 @@
  * ========================================================= */
 (function () {
   "use strict";
-  const { el, money, timeAgo, toast, topbar } = UI;
+  const { el, money, timeAgo, toast, topbar, modal } = UI;
   const S = BW.STATUS;
   const root = document.getElementById("root");
 
@@ -74,6 +74,9 @@
 
   /* ── Actions ──────────────────────────────────────────── */
   async function doAdvance(orderId) {
+    // Final step (Out for delivery → Delivered) needs the customer's OTP (+ cash for COD)
+    const cur = BW.orders().find((o) => o.id === orderId);
+    if (cur && cur.status === S.OUT_FOR_DELIVERY) { promptDeliver(cur); return; }
     try {
       const order = await BW.advanceOrder(orderId);
       toast(BW.STATUS_LABEL[order.status]);
@@ -95,7 +98,137 @@
     root.innerHTML = "";
     root.appendChild(renderTopBar());
     root.appendChild(renderStatusCard());
+    root.appendChild(renderCashCard());
+    root.appendChild(renderRatingsCard());
     root.appendChild(renderOrderList(orders));
+  }
+
+  /* ── Cash-in-hand (COD floating balance) ───────────────── */
+  function renderCashCard() {
+    const cash = (myRider && myRider.cashInHand) || 0;
+    const limit = BW.codCashLimit ? BW.codCashLimit() : 2000;
+    const pct = Math.min(100, Math.round((cash / limit) * 100));
+    const over = cash >= limit;
+    const suspended = over && myRider && myRider.cashOverLimitSince &&
+      (Date.now() - new Date(myRider.cashOverLimitSince).getTime() > 24 * 3600 * 1000);
+    return el("div", { class: "rider-status-card", style: "margin-top:12px" }, [
+      el("div", { class: "row between", style: "align-items:center" }, [
+        el("div", {}, [
+          el("div", { style: "font-weight:800;font-size:15px" }, "Cash in hand"),
+          el("div", { class: "muted small" }, "Limit " + money(limit) + (over ? " · over limit" : "")),
+        ]),
+        el("div", { style: "font-size:22px;font-weight:800;color:" + (over ? "var(--red)" : "var(--brand)") }, money(cash)),
+      ]),
+      el("div", { style: "height:10px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:10px" }, [
+        el("div", { style: "height:100%;width:" + pct + "%;background:" + (over ? "var(--red)" : "linear-gradient(90deg,var(--brand),var(--brand-2))") }),
+      ]),
+      suspended ? el("div", { class: "auth-err", style: "margin-top:10px;text-align:left" }, "Duty suspended — settle your cash to go back online.") : null,
+      cash > 0 ? el("button", {
+        class: "btn " + (over ? "danger" : "primary") + " sm", style: "width:100%;margin-top:12px",
+        onClick: () => settleCash(Math.round(cash)),
+      }, "Settle " + money(Math.round(cash)) + " via UPI") : null,
+    ].filter(Boolean));
+  }
+
+  async function settleCash(amount) {
+    if (typeof Razorpay === "undefined") { toast("Settlement is unavailable right now."); return; }
+    try {
+      const start = await BW.settleCashStart(me.uid, amount);
+      const rzp = new Razorpay({
+        key: start.keyId, amount: start.amount, currency: start.currency, order_id: start.razorpayOrderId,
+        name: "Saardha", description: "Cash settlement",
+        handler: async function (resp) {
+          try {
+            await BW.settleCashVerify(me.uid, {
+              razorpay_payment_id: resp.razorpay_payment_id, razorpay_order_id: resp.razorpay_order_id,
+              razorpay_signature: resp.razorpay_signature, amount: amount,
+            });
+            await syncRider(); toast("Cash settled — thank you!"); render();
+          } catch (e) { toast(e.message || "Could not confirm settlement."); }
+        },
+      });
+      rzp.open();
+    } catch (e) { toast(e.message || "Could not start settlement."); }
+  }
+
+  /* ── Geofence check when going on duty ─────────────────── */
+  function haversineKm(la1, lo1, la2, lo2) {
+    if (la1 == null || lo1 == null || la2 == null || lo2 == null) return Infinity;
+    var R = 6371, toR = function (d) { return d * Math.PI / 180; };
+    var dLa = toR(la2 - la1), dLo = toR(lo2 - lo1);
+    var a = Math.sin(dLa / 2) ** 2 + Math.cos(toR(la1)) * Math.cos(toR(la2)) * Math.sin(dLo / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function checkGeofence() {
+    return new Promise(function (resolve) {
+      var zones = BW.operationalZones ? BW.operationalZones() : [];
+      if (!zones.length) return resolve(true); // no zones configured → allow
+      if (!navigator.geolocation) { toast("Enable location to go on duty."); return resolve(false); }
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        var lat = pos.coords.latitude, lng = pos.coords.longitude;
+        var inside = zones.some(function (z) { return haversineKm(lat, lng, z.lat, z.lng) <= (z.radiusKm || 5); });
+        if (!inside) { toast("You're outside the operational zone — move closer to go on duty."); resolve(false); }
+        else resolve(true);
+      }, function () { toast("Couldn't get your location. Allow GPS to go on duty."); resolve(false); },
+        { enableHighAccuracy: true, timeout: 10000 });
+    });
+  }
+
+  /* ── Delivery: collect OTP (+ cash for COD) ────────────── */
+  function promptDeliver(order) {
+    const isCod = order.paymentMethod === "COD";
+    const otpIn = el("input", { inputmode: "numeric", maxlength: "4", placeholder: "4-digit OTP from customer", style: "width:100%;margin-bottom:10px" });
+    const cashIn = isCod ? el("input", { inputmode: "numeric", placeholder: "Cash collected (₹)", value: String(order.total || ""), style: "width:100%;margin-bottom:10px" }) : null;
+    const err = el("div", { class: "auth-err", style: "text-align:left" });
+    let close;
+    const submit = el("button", { class: "btn success" }, "Mark Delivered");
+    submit.addEventListener("click", async function () {
+      const otp = otpIn.value.trim();
+      if (otp.length !== 4) { err.textContent = "Enter the 4-digit OTP the customer shows you."; return; }
+      const body = { otp: otp };
+      if (isCod) { const c = Number(cashIn.value); if (!c || c <= 0) { err.textContent = "Enter the cash amount collected."; return; } body.cashCollected = c; }
+      submit.disabled = true; submit.textContent = "Confirming…";
+      try { await BW.advanceOrder(order.id, body); if (close) close(); toast("Delivered ✓"); await syncRider(); render(); }
+      catch (e) { err.textContent = e.message || "Could not complete delivery."; submit.disabled = false; submit.textContent = "Mark Delivered"; }
+    });
+    close = modal({
+      title: "Complete delivery · #" + order.id.slice(-6).toUpperCase(),
+      body: el("div", {}, [
+        el("p", { class: "muted small", style: "margin:0 0 10px" }, "Ask the customer for their 4-digit delivery OTP" + (isCod ? " and collect the cash." : ".")),
+        otpIn, cashIn, err,
+      ].filter(Boolean)),
+      footer: [submit],
+    });
+  }
+
+  /* ── Ratings & feedback from customers ─────────────────── */
+  function renderRatingsCard() {
+    const rated = BW.orders().filter((o) => o.riderId === me.uid && o.rating && o.rating.rider != null);
+    const count = rated.length;
+    const avg = count ? (rated.reduce((s, o) => s + o.rating.rider, 0) / count)
+                      : ((myRider && myRider.rating) || null);
+    const stars = (n) => "★".repeat(Math.round(n)) + "☆".repeat(5 - Math.round(n));
+    const comments = rated.filter((o) => o.rating.comment)
+      .sort((a, b) => new Date(b.rating.at) - new Date(a.rating.at)).slice(0, 6);
+
+    return el("div", { class: "rider-status-card", style: "margin-top:12px" }, [
+      el("div", { class: "row between", style: "align-items:center" }, [
+        el("div", {}, [
+          el("div", { style: "font-weight:800;font-size:15px" }, "My rating"),
+          el("div", { class: "muted small" }, count ? (count + " rated deliver" + (count === 1 ? "y" : "ies")) : "No ratings yet"),
+        ]),
+        el("div", { style: "text-align:right" }, [
+          el("div", { style: "font-size:22px;font-weight:800;color:var(--brand)" }, avg ? avg.toFixed(1) : "—"),
+          el("div", { style: "color:#f5a623;font-size:13px" }, avg ? stars(avg) : ""),
+        ]),
+      ]),
+      comments.length
+        ? el("div", { style: "margin-top:10px" }, comments.map((o) => el("div", { style: "padding:8px 0;border-top:0.5px solid var(--border)" }, [
+            el("div", { style: "color:#f5a623;font-size:12px" }, stars(o.rating.rider)),
+            el("div", { class: "small", style: "margin-top:2px" }, o.rating.comment),
+          ])))
+        : null,
+    ].filter(Boolean));
   }
 
   /* ── Top bar ──────────────────────────────────────────── */
@@ -127,6 +260,10 @@
       onClick: async () => {
         if (!myRider) return;
         const next = isOnline ? "offline" : "available";
+        if (next === "available") {
+          const inZone = await checkGeofence();   // blocks + toasts if outside the operational zone
+          if (!inZone) return;
+        }
         try {
           await BW.setMyRiderStatus(me.uid, next);
           toast(next === "available" ? "You are now Online" : "You are now Offline");

@@ -40,6 +40,11 @@ router.post("/forgot-password", async (req, res) => {
     const { email, role } = req.body;
     if (!email) return genericOk();
 
+    // Admin accounts can NEVER be reset via email — credentials are managed only
+    // through the server environment (ADMIN_EMAIL / ADMIN_PASSWORD). This prevents
+    // anyone from triggering an admin password reset.
+    if (role === "admin") return genericOk();
+
     const snap = await db.collection("users")
       .where("email", "==", email.toLowerCase().trim())
       .get();
@@ -49,7 +54,8 @@ router.post("/forgot-password", async (req, res) => {
     const targetDoc = (role ? snap.docs.find((d) => d.data().role === role) : null) || snap.docs[0];
     const user = targetDoc.data();
 
-    // Don't reset Google-only accounts
+    // Never reset admin accounts, or Google-only accounts
+    if (user.role === "admin") return genericOk();
     if (!user.passwordHash) return genericOk();
 
     // Create token
@@ -112,7 +118,11 @@ router.post("/reset-password", async (req, res) => {
       return res.status(400).json({ error: "Invalid or expired reset link" });
     }
 
-    const { userId, expiresAt } = tokenDoc.data();
+    const { userId, expiresAt, role: tokenRole } = tokenDoc.data();
+    if (tokenRole === "admin") {
+      await db.collection("password_resets").doc(token).delete().catch(() => {});
+      return res.status(403).json({ error: "Admin passwords cannot be reset here." });
+    }
     if (new Date(expiresAt) < new Date()) {
       await db.collection("password_resets").doc(token).delete();
       return res.status(400).json({ error: "Reset link has expired. Please request a new one." });

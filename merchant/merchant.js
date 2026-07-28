@@ -207,6 +207,7 @@
     const nav = el("div", { class: "sidebar" }, [
       navItem("orders",    "Orders",    pending),
       navItem("inventory", "Inventory"),
+      navItem("analytics", "Analytics"),
     ]);
 
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
@@ -215,6 +216,7 @@
     root.appendChild(el("div", { class: "bottom-nav" }, [
       bnItem("orders",    "Or", "Orders",    pending || null),
       bnItem("inventory", "In", "Inventory"),
+      bnItem("analytics", "An", "Analytics"),
     ]));
 
     function navItem(route, label, count) {
@@ -357,21 +359,27 @@
       (o) => ![S.DELIVERED, S.CANCELLED].includes(o.status)
     );
 
-    const map = el("div", { class: "map", style: "height:360px" });
-    const addPin = (lat, lng, head, lbl) => {
-      if (!lat || !lng) return;
-      const { x, y } = project(lat, lng);
-      map.appendChild(el("div", { class: "pin", style: `left:${x}%;top:${y}%` }, [
-        el("div", { class: "head" }, head), el("div", { class: "lbl small" }, lbl),
-      ]));
-    };
-    addPin(vendor.lat, vendor.lng, "M", vendor.name.split(" ")[0]);
+    // Build markers (store + active riders) for a real map when a key is set
+    const gmMarkers = [];
+    if (vendor.lat && vendor.lng) gmMarkers.push({ lat: vendor.lat, lng: vendor.lng, label: vendor.name });
     active.forEach((o) => {
-      if (o.riderId) {
-        const r = BW.riders().find((r) => r.id === o.riderId);
-        if (r) addPin(r.lat, r.lng, "R", r.name.split(" ")[0]);
-      }
+      if (o.riderId) { const r = BW.riders().find((r) => r.id === o.riderId); if (r && r.lat) gmMarkers.push({ lat: r.lat, lng: r.lng, label: r.name }); }
     });
+    let map = UI.gmap ? UI.gmap({ markers: gmMarkers, height: 360 }) : null;
+    if (!map) {
+      map = el("div", { class: "map", style: "height:360px" });
+      const addPin = (lat, lng, head, lbl) => {
+        if (!lat || !lng) return;
+        const { x, y } = project(lat, lng);
+        map.appendChild(el("div", { class: "pin", style: `left:${x}%;top:${y}%` }, [
+          el("div", { class: "head" }, head), el("div", { class: "lbl small" }, lbl),
+        ]));
+      };
+      addPin(vendor.lat, vendor.lng, "M", vendor.name.split(" ")[0]);
+      active.forEach((o) => {
+        if (o.riderId) { const r = BW.riders().find((r) => r.id === o.riderId); if (r) addPin(r.lat, r.lng, "R", r.name.split(" ")[0]); }
+      });
+    }
 
     const rows = active.length ? active.map((o) => {
       const cust = BW.customers().find((c) => c.id === o.customerId);
@@ -730,9 +738,77 @@
     shell("qr", body);
   }
 
+  /* ====================== ANALYTICS ====================== */
+  function viewAnalytics() {
+    const period = viewAnalytics._period || "7d";
+    const orders = BW.orders({ vendorId: state.vendorId });
+    const now = Date.now();
+    const startToday = new Date(new Date().toDateString()).getTime();
+    const cutoff = period === "today" ? startToday : period === "30d" ? now - 30 * 864e5 : now - 7 * 864e5;
+    const inRange = orders.filter((o) => new Date(o.createdAt).getTime() >= cutoff);
+    const nonCancelled = inRange.filter((o) => o.status !== "CANCELLED");
+    const delivered = inRange.filter((o) => o.status === "DELIVERED");
+    const cod = nonCancelled.filter((o) => o.paymentMethod !== "ONLINE");
+    const online = nonCancelled.filter((o) => o.paymentMethod === "ONLINE");
+    const revenue = nonCancelled.reduce((s, o) => s + (o.total || 0), 0);
+    const codRev = cod.reduce((s, o) => s + (o.total || 0), 0);
+    const onlineRev = online.reduce((s, o) => s + (o.total || 0), 0);
+    const aov = nonCancelled.length ? revenue / nonCancelled.length : 0;
+
+    const periodBtn = (id, label) => el("button", {
+      class: "btn " + (period === id ? "primary sm" : "ghost sm"),
+      onClick: () => { viewAnalytics._period = id; render(); },
+    }, label);
+    const stat = (k, v, d) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v), d ? el("span", { class: "d" }, d) : document.createTextNode("")]);
+    const kv = (k, v) => el("div", { class: "row between", style: "padding:7px 0;border-bottom:0.5px solid var(--border)" }, [el("span", { class: "muted" }, k), el("strong", {}, v)]);
+    const payRow = (label, count, rev, total) => {
+      const pct = total ? Math.round((rev / total) * 100) : 0;
+      return el("div", { style: "margin-bottom:14px" }, [
+        el("div", { class: "row between small", style: "margin-bottom:4px" }, [
+          el("span", {}, label + " · " + count + " order" + (count === 1 ? "" : "s")),
+          el("strong", {}, money(Math.round(rev)) + " · " + pct + "%"),
+        ]),
+        el("div", { style: "height:12px;background:var(--surface-2);border-radius:999px;overflow:hidden" }, [
+          el("div", { style: "height:100%;width:" + pct + "%;background:linear-gradient(90deg,var(--brand),var(--brand-2))" }),
+        ]),
+      ]);
+    };
+
+    shell("analytics", [
+      el("h1", { class: "page-title" }, "Analytics"),
+      el("p", { class: "page-sub" }, "Your store's sales and payment breakdown."),
+      el("div", { style: "display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" }, [
+        periodBtn("today", "Today"), periodBtn("7d", "This week"), periodBtn("30d", "This month"),
+      ]),
+      el("div", { class: "grid cols-4" }, [
+        stat("Revenue", money(Math.round(revenue)), nonCancelled.length + " orders"),
+        stat("Delivered", String(delivered.length), ""),
+        stat("Avg order", money(Math.round(aov)), ""),
+        stat("Cancelled", String(inRange.length - nonCancelled.length), ""),
+      ]),
+      el("div", { class: "grid cols-2", style: "margin-top:16px" }, [
+        el("div", { class: "card" }, [
+          el("h3", { style: "margin-top:0" }, "Payment method"),
+          payRow("Cash on delivery", cod.length, codRev, revenue),
+          payRow("Online (UPI / Card)", online.length, onlineRev, revenue),
+          !nonCancelled.length ? el("div", { class: "muted small" }, "No orders in this period yet.") : document.createTextNode(""),
+        ]),
+        el("div", { class: "card" }, [
+          el("h3", { style: "margin-top:0" }, "Summary"),
+          kv("Gross revenue", money(Math.round(revenue))),
+          kv("COD collected", money(Math.round(codRev))),
+          kv("Online received", money(Math.round(onlineRev))),
+          kv("Total orders", String(nonCancelled.length)),
+        ]),
+      ]),
+    ]);
+  }
+  viewAnalytics._period = "7d";
+
   function render() {
     switch (state.route) {
       case "inventory": return viewInventory();
+      case "analytics": return viewAnalytics();
       default:          return viewOrders();
     }
   }

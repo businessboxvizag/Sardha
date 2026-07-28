@@ -214,11 +214,18 @@
     } catch (e) { /* ignore malformed links */ }
   }
 
+  // Per-user local cache key — so different customers on the SAME device never
+  // see each other's stores. The server account list (BW.shops) is the real
+  // source of truth; this local list is just a per-user fallback cache.
+  function lsKey() {
+    var u = (BW.Auth && BW.Auth.getUser) ? BW.Auth.getUser() : null;
+    return "bw_unlocked_vendors_" + ((u && u.uid) || "anon");
+  }
+
   function getUnlockedVendors() {
-    // Account-backed stores (sync across devices) merged with any legacy device-local list
-    var acct = (BW.shops ? BW.shops() : []) || [];
+    var acct = (BW.shops ? BW.shops() : []) || [];   // account-backed, scoped to this user
     var local = [];
-    try { local = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]"); } catch (e) {}
+    try { local = JSON.parse(localStorage.getItem(lsKey()) || "[]"); } catch (e) {}
     if (!Array.isArray(local)) local = [];
     var seen = {}, out = [];
     acct.concat(local).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } });
@@ -227,18 +234,24 @@
 
   function addStoreLocal(id) {
     try {
-      var l = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
+      var k = lsKey();
+      var l = JSON.parse(localStorage.getItem(k) || "[]");
       if (!Array.isArray(l)) l = [];
-      if (l.indexOf(id) < 0) { l.push(id); localStorage.setItem("bw_unlocked_vendors", JSON.stringify(l)); }
+      if (l.indexOf(id) < 0) { l.push(id); localStorage.setItem(k, JSON.stringify(l)); }
     } catch (e) {}
   }
 
   function migrateLocalShops() {
     try {
-      var local = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]");
-      if (!Array.isArray(local) || !local.length || !BW.addShop) return;
+      if (!BW.addShop) return;
       var acct = (BW.shops ? BW.shops() : []) || [];
-      local.forEach(function (id) { if (acct.indexOf(id) < 0) BW.addShop(id).catch(function () {}); });
+      // Move any legacy device-global list + the current per-user list into the account,
+      // then delete the legacy global key so it can never leak between users again.
+      var legacy = []; try { legacy = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]"); } catch (e) {}
+      var mine   = []; try { mine   = JSON.parse(localStorage.getItem(lsKey()) || "[]"); } catch (e) {}
+      var all = (Array.isArray(legacy) ? legacy : []).concat(Array.isArray(mine) ? mine : []);
+      all.forEach(function (id) { if (id && acct.indexOf(id) < 0) BW.addShop(id).catch(function () {}); });
+      try { localStorage.removeItem("bw_unlocked_vendors"); } catch (e) {}
     } catch (e) {}
   }
 
@@ -758,6 +771,7 @@
         statusBadge(o.status),
       ]),
       el("div", { class: "card" }, [tracker(o.status)]),
+      o.status === "OUT_FOR_DELIVERY" ? deliveryOtpCard(o) : document.createTextNode(""),
       o.status === "CANCELLED"
         ? el("div", { class: "card", style: "border:1px solid var(--red);background:#fdeceb;margin-top:12px" }, [
             el("div", { style: "font-weight:800;color:var(--red)" }, "Order declined by the store"),
@@ -894,7 +908,28 @@
     });
   }
 
+  // Customer's own 4-digit delivery OTP — read out to the Saradhi at the door.
+  function deliveryOtpCard(o) {
+    const box = el("div", { class: "card", style: "text-align:center;border:1px solid var(--brand);background:var(--brand-lt)" }, [
+      el("div", { class: "small", style: "font-weight:700;color:var(--brand)" }, "Delivery OTP"),
+      el("div", { style: "font-size:30px;font-weight:800;letter-spacing:8px;color:var(--brand);margin:4px 0" }, "····"),
+      el("div", { class: "muted small" }, "Share this with your Saradhi to receive your order"),
+    ]);
+    const codeEl = box.children[1];
+    if (BW.deliveryOtp) BW.deliveryOtp(o.id).then((r) => { if (r && r.otp) codeEl.textContent = r.otp; }).catch(() => {});
+    return box;
+  }
+
   function mapFor(vendor, customer, rider) {
+    // Real Google Map when a key is configured, else the built-in map.
+    if (UI.gmap) {
+      const markers = [];
+      if (vendor && vendor.lat)   markers.push({ lat: vendor.lat, lng: vendor.lng, label: "Store" });
+      if (customer && customer.lat) markers.push({ lat: customer.lat, lng: customer.lng, label: "You" });
+      if (rider && rider.lat)     markers.push({ lat: rider.lat, lng: rider.lng, label: "Rider" });
+      const gm = UI.gmap({ markers: markers, height: 240 });
+      if (gm) return gm;
+    }
     const map = el("div", { class: "map" });
     const pin = (lat, lng, head, lbl) => {
       if (!lat || !lng) return document.createTextNode("");

@@ -168,6 +168,8 @@
     } else if (role === "rider") {
       loads.push(
         get("/api/orders").then((o) => { _cache.orders = o; }),
+        get("/api/riders").then((r) => { _cache.riders = r; }).catch(() => {}),
+        get("/api/settings").then((s) => { _cache.settings = s; }).catch(() => {}),
       );
     }
 
@@ -318,13 +320,22 @@
       return order;
     },
 
-    advanceOrder: async (orderId) => {
-      const order = await patch(`/api/orders/${orderId}/advance`);
+    advanceOrder: async (orderId, extra) => {
+      const order = await patch(`/api/orders/${orderId}/advance`, extra || {});
       const idx = _cache.orders.findIndex((o) => o.id === orderId);
       if (idx >= 0) _cache.orders[idx] = order;
       emit();
       return order;
     },
+
+    // Customer reads their own delivery OTP (rider never receives it)
+    deliveryOtp: (orderId) => get(`/api/orders/${orderId}/otp`),
+
+    // Rider cash settlement via Razorpay UPI deposit
+    settleCashStart:  (riderId, amount) => post(`/api/riders/${riderId}/settle`, { amount }),
+    settleCashVerify: (riderId, data)   => post(`/api/riders/${riderId}/settle/verify`, data),
+    codCashLimit: () => (_cache.settings && _cache.settings.codCashLimit != null) ? Number(_cache.settings.codCashLimit) : 2000,
+    operationalZones: () => (_cache.settings && Array.isArray(_cache.settings.operationalZones)) ? _cache.settings.operationalZones : [],
 
     assignRider: async (orderId, riderId) => {
       const order = await patch(`/api/orders/${orderId}/assign`, { riderId });

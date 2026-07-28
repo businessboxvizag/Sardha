@@ -182,3 +182,37 @@ Verified: all files `node --check`; jsdom run confirms Customers columns, Behavi
 ### Recommended before turning data collection fully on
 - Have the privacy policy reviewed by a lawyer; set a real grievance-officer email.
 - The commercialization/sharing items (Bucket 3) remain deliberately unbuilt — get consent flows + legal sign-off first.
+
+---
+
+## Session update — 2026-07-27 (admin security, per-user stores, merchant analytics, rider ratings, Google Maps)
+On disk, pending push + deploy.
+
+- **#1 Admin auth locked down** (`server/routes/reset.js`, `auth-ui.js`): password reset is now **refused for the admin role** in both forgot-password and reset-password; the "Forgot password?" link is hidden on the admin login. Admin credentials remain env-only (`ADMIN_EMAIL`/`ADMIN_PASSWORD`), non-registerable. Keep those env values private.
+- **#2 Per-user store memory** (`customer/customer.js`): the device-global `bw_unlocked_vendors` key leaked stores between users on a shared device. Now the local cache is **namespaced per user id** and the **account-backed shop list is the source of truth**; the legacy global key is migrated into the account and deleted. Different customers on one device now see only their own stores.
+- **#4 Merchant analytics** (`merchant/merchant.js`): new Analytics tab with **Today / This week / This month** toggle, revenue/AOV/delivered/cancelled, and a **COD vs Online** payment-method split (counts, amounts, %).
+- **#5 Rider ratings** (`rider/rider.js`): rider home now shows their **average rating + count and recent customer comments** (the backend already aggregates rider ratings on rate).
+- **#3 Google Maps** (`server/index.js`, `assets/js/util.js` + customer/admin/merchant): added `googleMapsKey` to `/api/config` and a shared `UI.gmap()` loader. Real embedded Google Maps now render on **customer order tracking, admin fleet, and merchant dispatch** when the key is set (falls back to the built-in map otherwise). The **rider app already uses Google Maps directions/navigation links.**
+
+### To turn Google Maps on
+Set `GOOGLE_MAPS_KEY` in Render env (a Google Cloud Maps JavaScript API key with billing enabled + your domain restricted). Until set, all apps use the built-in map — nothing breaks.
+
+---
+
+## Session update — 2026-07-27 (rider ops: OTP delivery, COD floating cash, geofence)
+On disk, pending push + deploy. Decisions: kept current dispatch, ₹2,000 COD limit + Razorpay settlement + 24h auto-suspend, no face check, OTP-only drop-off.
+
+Backend (`orders.js`, `riders.js`, `settings.js`):
+- **Delivery OTP:** heading Out-for-delivery generates a 4-digit `deliveryOtp`; it's **stripped from all order payloads** (rider never sees it) and read by the customer via `GET /api/orders/:id/otp`. Marking Delivered (rider) requires the matching OTP.
+- **COD floating cash:** on COD delivery the rider enters cash collected → added to `rider.cashInHand`; crossing the limit stamps `cashOverLimitSince`. Going online is **blocked (auto-suspended) after 24h** over limit. `POST /riders/:id/settle` + `/settle/verify` deposit cash via **Razorpay UPI** and clear the balance (`settlements` collection records it).
+- **Settings:** admin-editable `codCashLimit` (default ₹2000) and `operationalZones` [{name,lat,lng,radiusKm}].
+
+Rider app (`rider.js`, `index.html`): **Cash-in-hand card** (progress vs limit + "Settle via UPI" using Razorpay checkout), **geofence check** on go-online (must be inside a zone if any are set), **delivery flow** now pops an OTP (+ cash for COD) modal before completing, and a **suspended** banner when overdue.
+
+Customer (`customer.js`): shows the **4-digit delivery OTP** on the tracking screen once the order is out for delivery.
+
+Admin (`admin.js`): Fleet table adds a **Cash** column (red when over limit); Settings adds **COD limit** and an **operational-zones editor** (add by lat/lng or "use my location").
+
+Verified: all `node --check`; jsdom confirms cash card, settle button, ratings, and the OTP+cash delivery modal.
+
+Not built (per your choices / needs vendor): accept-decline dispatch ping, face/selfie verification, masked calling.

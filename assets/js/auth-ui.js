@@ -102,7 +102,7 @@
           ${pwField("loginPwd", "Enter password", "current-password")}
           <div class="auth-err" id="loginErr"></div>
           <button class="btn primary" id="loginBtn" style="width:100%">Log in</button>
-          <a href="#" id="forgotLink" style="font-size:.8rem;color:var(--brand);display:block;margin-top:10px;text-align:right">Forgot password?</a>
+          ${role === "admin" ? "" : `<a href="#" id="forgotLink" style="font-size:.8rem;color:var(--brand);display:block;margin-top:10px;text-align:right">Forgot password?</a>`}
         </div>
 
         ${canSelfRegister ? `

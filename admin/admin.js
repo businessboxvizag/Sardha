@@ -134,16 +134,23 @@
   function viewFleet() {
     const riders = BW.riders();
 
-    const map = el("div", { class: "map", style: "height:380px" });
-    riders.forEach((r) => {
-      if (!r.lat || !r.lng) return;
-      const { x, y } = project(r.lat, r.lng);
-      const statusCls = r.status === "available" ? "pin-available" : r.status === "on_delivery" ? "pin-busy" : "pin-offline";
-      map.appendChild(el("div", { class: "pin " + statusCls, style: `left:${x}%;top:${y}%` }, [
-        el("div", { class: "head" }, "R"),
-        el("div", { class: "lbl small" }, r.name.split(" ")[0]),
-      ]));
-    });
+    let map;
+    const gmMarkers = riders.filter((r) => r.lat && r.lng).map((r) => ({ lat: r.lat, lng: r.lng, label: r.name }));
+    const gm = UI.gmap ? UI.gmap({ markers: gmMarkers, height: 380 }) : null;
+    if (gm) {
+      map = gm;
+    } else {
+      map = el("div", { class: "map", style: "height:380px" });
+      riders.forEach((r) => {
+        if (!r.lat || !r.lng) return;
+        const { x, y } = project(r.lat, r.lng);
+        const statusCls = r.status === "available" ? "pin-available" : r.status === "on_delivery" ? "pin-busy" : "pin-offline";
+        map.appendChild(el("div", { class: "pin " + statusCls, style: `left:${x}%;top:${y}%` }, [
+          el("div", { class: "head" }, "R"),
+          el("div", { class: "lbl small" }, r.name.split(" ")[0]),
+        ]));
+      });
+    }
 
     const rows = riders.map((r) => {
       const active = BW.orders().find((o) => o.riderId === r.id && ![S.DELIVERED, S.CANCELLED].includes(o.status));
@@ -161,6 +168,7 @@
         el("td", { class: "muted small" }, r.vehicle || "—"),
         el("td", {}, "⭐ " + r.rating),
         el("td", {}, r.deliveriesToday + " today"),
+        el("td", { style: (r.cashInHand || 0) >= (BW.codCashLimit ? BW.codCashLimit() : 2000) ? "color:var(--red);font-weight:700" : "" }, money(r.cashInHand || 0)),
         el("td", {}, active ? "#" + active.id.slice(-6).toUpperCase() : el("span", { class: "muted" }, "—")),
         el("td", {}, statusSel),
       ]);
@@ -188,7 +196,7 @@
         ]),
         el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
           el("table", {}, [
-            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Active", "Status"].map((h) => el("th", {}, h)))),
+            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "Active", "Status"].map((h) => el("th", {}, h)))),
             el("tbody", {}, rows),
           ]),
         ]),
@@ -932,6 +940,55 @@
       }
     }}, "Save");
 
+    /* --- COD cash-in-hand limit --- */
+    const codLimit = BW.codCashLimit ? BW.codCashLimit() : 2000;
+    const codEl = el("input", { type: "number", value: String(codLimit), min: "0", step: "100", style: "max-width:140px" });
+    const codSave = el("button", { class: "btn primary" }, "Save");
+    codSave.addEventListener("click", async () => {
+      const val = Number(codEl.value);
+      if (isNaN(val) || val < 0) { toast("Enter a valid amount"); return; }
+      codSave.disabled = true; codSave.textContent = "Saving…";
+      try { await BW.updateSettings({ codCashLimit: val }); await BW.init("admin"); toast("COD limit set to ₹" + val); }
+      catch (err) { toast("Error: " + err.message); }
+      codSave.disabled = false; codSave.textContent = "Save";
+    });
+
+    /* --- Operational zones (geofencing for rider duty) --- */
+    const zones = (BW.operationalZones ? BW.operationalZones() : []).slice();
+    const zoneList = el("div", {});
+    function renderZones() {
+      zoneList.innerHTML = "";
+      if (!zones.length) zoneList.appendChild(el("div", { class: "muted small", style: "padding:4px 0 8px" }, "No zones set — riders can go on duty anywhere."));
+      zones.forEach((z, i) => zoneList.appendChild(el("div", { class: "row between", style: "padding:8px 0;border-bottom:0.5px solid var(--border)" }, [
+        el("div", {}, [el("strong", {}, z.name || "Zone"), el("div", { class: "muted small" }, "(" + Number(z.lat).toFixed(4) + ", " + Number(z.lng).toFixed(4) + ") · " + (z.radiusKm || 5) + " km")]),
+        el("button", { class: "btn ghost sm", onClick: () => { zones.splice(i, 1); renderZones(); } }, "Remove"),
+      ])));
+    }
+    renderZones();
+    const zName = el("input", { placeholder: "Zone name (e.g. Banjara Hills)", style: "width:100%;margin-bottom:6px" });
+    const zLat = el("input", { placeholder: "Latitude", inputmode: "decimal", style: "width:100%;margin-bottom:6px" });
+    const zLng = el("input", { placeholder: "Longitude", inputmode: "decimal", style: "width:100%;margin-bottom:6px" });
+    const zRad = el("input", { placeholder: "Radius km", value: "5", inputmode: "decimal", style: "width:100%;margin-bottom:6px" });
+    const zGps = el("button", { class: "btn ghost sm" }, "Use my location");
+    zGps.addEventListener("click", () => {
+      if (!navigator.geolocation) return toast("GPS not available");
+      navigator.geolocation.getCurrentPosition((p) => { zLat.value = p.coords.latitude.toFixed(6); zLng.value = p.coords.longitude.toFixed(6); toast("Location filled"); }, () => toast("Couldn't get location"));
+    });
+    const zAdd = el("button", { class: "btn primary sm" }, "Add zone");
+    zAdd.addEventListener("click", () => {
+      const lat = Number(zLat.value), lng = Number(zLng.value);
+      if (!zName.value.trim() || isNaN(lat) || isNaN(lng)) { toast("Enter a name and valid lat/lng"); return; }
+      zones.push({ name: zName.value.trim(), lat: lat, lng: lng, radiusKm: Number(zRad.value) || 5 });
+      zName.value = zLat.value = zLng.value = ""; zRad.value = "5"; renderZones();
+    });
+    const zSave = el("button", { class: "btn primary" }, "Save zones");
+    zSave.addEventListener("click", async () => {
+      zSave.disabled = true; zSave.textContent = "Saving…";
+      try { await BW.updateSettings({ operationalZones: zones }); await BW.init("admin"); toast("Operational zones saved"); }
+      catch (err) { toast("Error: " + err.message); }
+      zSave.disabled = false; zSave.textContent = "Save zones";
+    });
+
     shell("settings", [
       el("h1", { class: "page-title" }, "Settings"),
       el("p", { class: "page-sub" }, "Configure platform-wide options."),
@@ -943,6 +1000,23 @@
           el("label", {}, "Delivery fee (₹)"),
           el("div", { style: "display:flex;gap:10px;align-items:center" }, [feeEl, saveBtn]),
         ]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Rider cash-in-hand limit"),
+        el("p", { class: "muted small", style: "margin:0 0 14px" }, "When a rider's collected COD cash reaches this, they can't go online until they settle it (auto-suspended after 24h)."),
+        el("div", { class: "field" }, [
+          el("label", {}, "COD limit (₹)"),
+          el("div", { style: "display:flex;gap:10px;align-items:center" }, [codEl, codSave]),
+        ]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Operational zones"),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Riders can only go on duty inside one of these zones. Leave empty to allow anywhere."),
+        zoneList,
+        el("div", { style: "margin-top:12px" }, [zName, zLat, zLng, zRad,
+          el("div", { style: "display:flex;gap:8px" }, [zGps, zAdd]),
+        ]),
+        el("div", { style: "margin-top:12px" }, [zSave]),
       ]),
     ]);
   }

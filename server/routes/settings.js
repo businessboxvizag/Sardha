@@ -10,7 +10,12 @@ router.get("/", async (req, res) => {
   try {
     const doc = await db.collection("settings").doc(SETTINGS_DOC).get();
     const data = doc.exists ? doc.data() : {};
-    res.json({ deliveryFee: data.deliveryFee ?? 15, ...data });
+    res.json({
+      deliveryFee: data.deliveryFee ?? 15,
+      codCashLimit: data.codCashLimit ?? 2000,
+      operationalZones: data.operationalZones ?? [],
+      ...data,
+    });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch settings" });
   }
@@ -19,10 +24,12 @@ router.get("/", async (req, res) => {
 /* ── PUT /api/settings ─── admin only ── */
 router.put("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const allowed = ["deliveryFee"];
+    const allowed = ["deliveryFee", "codCashLimit", "operationalZones"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.deliveryFee !== undefined) updates.deliveryFee = Number(updates.deliveryFee);
+    if (updates.codCashLimit !== undefined) updates.codCashLimit = Number(updates.codCashLimit);
+    if (updates.operationalZones !== undefined && !Array.isArray(updates.operationalZones)) delete updates.operationalZones;
     await db.collection("settings").doc(SETTINGS_DOC).set(updates, { merge: true });
     const doc = await db.collection("settings").doc(SETTINGS_DOC).get();
     res.json(doc.data());

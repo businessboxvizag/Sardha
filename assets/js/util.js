@@ -116,6 +116,51 @@
     return el("span", { class: "badge " + status }, BW.STATUS_LABEL[status] || status);
   }
 
+  /* ── Google Maps (shared across all apps) ─────────────────────
+     Lazy-loads the Maps JS API using the key from BW.config().
+     gmap(opts) returns a populated container, or null when no key
+     is configured so the caller can fall back to the simple map. */
+  var _gmapsPromise = null;
+  function loadGoogleMaps(key) {
+    if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
+    if (_gmapsPromise) return _gmapsPromise;
+    if (!key) return Promise.reject(new Error("no maps key"));
+    _gmapsPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) + "&loading=async";
+      s.async = true; s.defer = true;
+      s.onload = function () { resolve(window.google.maps); };
+      s.onerror = function () { reject(new Error("maps failed to load")); };
+      document.head.appendChild(s);
+    });
+    return _gmapsPromise;
+  }
+  function mapsKey() {
+    try { return (window.BW && BW.config && BW.config().googleMapsKey) || ""; } catch (e) { return ""; }
+  }
+  // markers: [{ lat, lng, label, color }]
+  function gmap(opts) {
+    opts = opts || {};
+    var key = mapsKey();
+    if (!key) return null; // caller falls back to the built-in map
+    var container = el("div", { style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    loadGoogleMaps(key).then(function (maps) {
+      var pts = (opts.markers || []).filter(function (m) { return m && m.lat != null && m.lng != null; });
+      var center = opts.center || (pts[0] ? { lat: Number(pts[0].lat), lng: Number(pts[0].lng) } : { lat: 17.385, lng: 78.4867 });
+      var map = new maps.Map(container, { center: center, zoom: opts.zoom || 14, disableDefaultUI: true, zoomControl: true });
+      var bounds = new maps.LatLngBounds();
+      pts.forEach(function (m) {
+        new maps.Marker({
+          position: { lat: Number(m.lat), lng: Number(m.lng) }, map: map, title: m.label || "",
+          label: m.label ? { text: String(m.label).charAt(0), color: "#fff", fontWeight: "700" } : undefined,
+        });
+        bounds.extend({ lat: Number(m.lat), lng: Number(m.lng) });
+      });
+      if (pts.length > 1) map.fitBounds(bounds);
+    }).catch(function () { container.innerHTML = ""; });
+    return container;
+  }
+
   // Order progress rendered along an S-curve (echoes the Saardha logo).
   // The brand stroke fills from "Placed" to "Delivered"; a red S means cancelled.
   function tracker(status) {
@@ -169,5 +214,5 @@
     return wrap;
   }
 
-  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker };
+  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap };
 })(window);
