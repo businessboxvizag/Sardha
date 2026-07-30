@@ -2,6 +2,7 @@ const express = require("express");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { verifySignature, instance: razorpayInstance } = require("../config/razorpay");
+const { notifyPartner } = require("../lib/webhooks");
 
 const router = express.Router();
 
@@ -308,6 +309,7 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
     const updatedOrder = toOrder(updated);
 
     emitOrderUpdate(req.app.get("io"), updatedOrder);
+    notifyPartner(updatedOrder, updatedOrder.status);
     res.json(updatedOrder);
   } catch (err) {
     console.error("PATCH /orders/:id/status:", err);
@@ -351,15 +353,16 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
     };
 
     // Heading out → issue a 4-digit delivery OTP the customer reads out at the door.
-    if (nextStatus === "OUT_FOR_DELIVERY") {
+    // (Partner deliveries have no Saardha customer to hold an OTP — skipped for now.)
+    if (nextStatus === "OUT_FOR_DELIVERY" && order.source !== "partner") {
       updates.deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
     }
 
     if (nextStatus === "DELIVERED") {
-      // Drop-off OTP verification — rider must enter the customer's 4-digit code.
-      if (role === "rider") {
+      // Drop-off OTP verification — only when an OTP was issued (non-partner orders).
+      if (role === "rider" && order.deliveryOtp) {
         const otp = String(req.body.otp || "").trim();
-        if (!order.deliveryOtp || otp !== order.deliveryOtp) {
+        if (otp !== order.deliveryOtp) {
           return res.status(400).json({ error: "Incorrect delivery OTP. Ask the customer for their 4-digit code." });
         }
       }
@@ -390,6 +393,7 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
     const updatedOrder = toOrder(updated);
 
     emitOrderUpdate(req.app.get("io"), updatedOrder);
+    notifyPartner(updatedOrder, updatedOrder.status);
     res.json(updatedOrder);
   } catch (err) {
     console.error(err);
@@ -452,6 +456,7 @@ router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async
     const updatedOrder = toOrder(updated);
 
     emitOrderUpdate(req.app.get("io"), updatedOrder);
+    notifyPartner(updatedOrder, updatedOrder.status);
     res.json(updatedOrder);
   } catch (err) {
     console.error(err);
@@ -518,6 +523,7 @@ router.post("/:id/auto-assign", requireAuth, requireRole("merchant", "admin"), a
     const updatedOrder = toOrder(updated);
 
     emitOrderUpdate(req.app.get("io"), updatedOrder);
+    notifyPartner(updatedOrder, updatedOrder.status);
 
     // Also notify rider's room
     const io = req.app.get("io");

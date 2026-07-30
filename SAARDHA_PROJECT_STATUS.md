@@ -216,3 +216,20 @@ Admin (`admin.js`): Fleet table adds a **Cash** column (red when over limit); Se
 Verified: all `node --check`; jsdom confirms cash card, settle button, ratings, and the OTP+cash delivery modal.
 
 Not built (per your choices / needs vendor): accept-decline dispatch ping, face/selfie verification, masked calling.
+
+---
+
+## Session update — 2026-07-27 (Delivery-as-a-Service platform, Phase 1)
+On disk, pending push + deploy. New: `server/middleware/partnerAuth.js`, `server/lib/webhooks.js`, `server/routes/partner.js`, `PARTNER_API.md`. Changed: `server/index.js`, `server/routes/{orders,admin}.js`, `assets/js/api.js`, `rider/rider.js`, `admin/admin.js`.
+
+Turned Saardha into a **multi-tenant delivery platform** any approved business can integrate with (the rice & millets app = partner #1).
+- **Partner model + API keys:** `partners` collection; admin approves a business and issues a key (SHA-256 hashed, shown once). API-key auth via `x-api-key`.
+- **Partner Delivery API** (`/api/partner`): `POST /quote` (distance-based fee), `POST /deliveries` (creates a job → auto-assigns nearest rider), `GET /deliveries/:id`. Deliveries live in the shared `orders` collection (`source:"partner"`) so dispatch, the rider app, tracking and COD-cash all reuse existing code.
+- **Webhooks:** partner-configured URL is POSTed on every status change (`server/lib/webhooks.js`, wired into the order status/advance handlers).
+- **Rider app:** renders partner deliveries (pickup name/coords from `order.pickup`, item text, "Via <partner>"). Partner deliveries skip the customer OTP (no Saardha customer); COD cash still tracked.
+- **Admin:** new **Partners** tab — approve/suspend partners, set distance pricing (base + per-km + min), issue/copy the API key, see delivery counts.
+- **Spec:** `PARTNER_API.md` — hand this to the rice app's developer.
+
+Verified: all `node --check`; jsdom confirms the admin Partners view and rider partner-card render.
+
+Phase 2 (next): prepaid wallet/billing + COD reconciliation/payout, self-serve partner dashboard, white-label public tracking page, road-distance pricing via Maps, cancel endpoint.

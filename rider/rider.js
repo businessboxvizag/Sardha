@@ -317,9 +317,12 @@
 
   /* ── Order card ─────────────────────────────────────── */
   function renderCard(o) {
+    const isPartner = o.source === "partner";
     const vendor = BW.vendor(o.vendorId);
+    const fromName = isPartner ? ((o.pickup && o.pickup.name) || o.partnerName || "Pickup") : (vendor ? vendor.name : "—");
     const itemCount = (o.items || []).reduce((s, i) => s + (i.qty || 1), 0);
-    const deliverTo = o.deliverTo || o.deliveryAddress || "Address not set";
+    const itemsLabel = isPartner ? (o.itemsText || "Package") : (itemCount + " item" + (itemCount !== 1 ? "s" : "") + " · " + money(o.total || 0));
+    const deliverTo = o.deliverTo || o.deliveryAddress || (o.dropName || "Address not set");
 
     const NEXT = {
       [S.ASSIGNED]:         { label: "Confirm Pickup",   cls: "primary" },
@@ -328,8 +331,8 @@
     };
     const next = NEXT[o.status];
 
-    const vendorLat = vendor && vendor.lat;
-    const vendorLng = vendor && vendor.lng;
+    const vendorLat = isPartner ? (o.pickup && o.pickup.lat) : (vendor && vendor.lat);
+    const vendorLng = isPartner ? (o.pickup && o.pickup.lng) : (vendor && vendor.lng);
     const custLat   = o.deliverLat;
     const custLng   = o.deliverLng;
 
@@ -345,11 +348,12 @@
         el("span", { class: "badge " + o.status }, BW.STATUS_LABEL[o.status] || o.status),
       ]),
       el("div", { class: "rider-card-body" }, [
-        row("From",       vendor ? vendor.name : "—"),
+        row("From",       fromName),
         row("Deliver to", deliverTo),
-        row("Items",      itemCount + " item" + (itemCount !== 1 ? "s" : "") + " · " + money(o.total || 0)),
+        row("Items",      itemsLabel),
+        isPartner ? row("Via",  o.partnerName || "Partner") : null,
         row("Placed",     timeAgo(o.createdAt)),
-      ]),
+      ].filter(Boolean)),
       mapBtns.length ? el("div", { class: "rider-map-row" }, mapBtns) : null,
       next ? el("button", {
         class: "btn " + next.cls + " rider-advance-btn",

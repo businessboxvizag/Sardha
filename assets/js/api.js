@@ -82,7 +82,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
-    logins: [], allUsers: [], shops: [], events: [], support: [],
+    logins: [], allUsers: [], shops: [], events: [], support: [], partners: [],
   };
 
   /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
@@ -164,6 +164,7 @@
         get("/api/admin/users").then((u) => { _cache.allUsers = u; }),
         get("/api/events").then((e) => { _cache.events = e; }).catch(() => {}),
         get("/api/admin/support").then((s) => { _cache.support = s; }).catch(() => {}),
+        get("/api/admin/partners").then((p) => { _cache.partners = p; }).catch(() => {}),
       );
     } else if (role === "rider") {
       loads.push(
@@ -215,6 +216,11 @@
     track: (type, props) => { try { post("/api/events", { type, props: props || {} }).catch(() => {}); } catch (e) {} },
     events:  () => [...(_cache.events || [])],
     support: () => [...(_cache.support || [])],
+
+    // Delivery partners (admin)
+    partners: () => [...(_cache.partners || [])],
+    createPartner: async (data) => { const r = await post("/api/admin/partners", data); if (r && r.partner) _cache.partners.push(r.partner); emit(); return r; },
+    updatePartner: async (id, data) => { const p = await patch(`/api/admin/partners/${id}`, data); const i = _cache.partners.findIndex((x) => x.id === id); if (i >= 0) _cache.partners[i] = p; emit(); return p; },
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
     forgotPassword: (email, role)    => post("/api/auth/forgot-password", { email, role }),
     resetPassword:  (token, newPassword) => post("/api/auth/reset-password", { token, newPassword }),

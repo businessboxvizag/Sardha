@@ -40,6 +40,7 @@
       navItem("analytics", "An", "Analytics"),
       navItem("customers", "Cu", "Customers"),
       navItem("vendors",   "Ve", "Stores"),
+      navItem("partners",  "Pa", "Partners"),
       navItem("fleet",     "Fl", "Fleet"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
@@ -674,6 +675,7 @@
       case "vendors":   return viewVendors();
       case "analytics": return viewAnalytics();
       case "customers": return viewCustomers();
+      case "partners":  return viewPartners();
       case "settings":  return viewSettings();
       case "monitor":   return viewMonitor();
       default:          return viewOverview();
@@ -919,6 +921,70 @@
 
 
   /* ====================== SETTINGS ====================== */
+  /* ====================== DELIVERY PARTNERS ====================== */
+  function viewPartners() {
+    const partners = BW.partners ? BW.partners() : [];
+    const orders = BW.orders();
+    const nameEl = el("input", { placeholder: "Business name (e.g. Millet Mart)" });
+    const hookEl = el("input", { placeholder: "https://their-app.com/webhooks/saardha" });
+    const baseEl = el("input", { type: "number", value: "20", style: "max-width:90px" });
+    const perkmEl = el("input", { type: "number", value: "8", style: "max-width:90px" });
+    const minEl = el("input", { type: "number", value: "25", style: "max-width:90px" });
+
+    const createBtn = el("button", { class: "btn primary" }, "Create partner + issue key");
+    createBtn.addEventListener("click", async () => {
+      if (!nameEl.value.trim()) { toast("Enter a business name"); return; }
+      createBtn.disabled = true; createBtn.textContent = "Creating…";
+      try {
+        const r = await BW.createPartner({ name: nameEl.value.trim(), webhookUrl: hookEl.value.trim() || null, priceBase: Number(baseEl.value) || 20, pricePerKm: Number(perkmEl.value) || 8, priceMin: Number(minEl.value) || 25 });
+        UI.modal({ title: "API key for " + r.partner.name, body: el("div", {}, [
+          el("p", { class: "muted small" }, "Copy this now — it's shown only once. Send it to the partner to authenticate their delivery requests."),
+          el("div", { style: "font-family:monospace;background:var(--surface-2);padding:10px;border-radius:8px;word-break:break-all;margin:8px 0" }, r.apiKey),
+          el("button", { class: "btn ghost sm", onClick: () => { if (navigator.clipboard) navigator.clipboard.writeText(r.apiKey).then(() => toast("Copied")); } }, "Copy key"),
+        ]) });
+        nameEl.value = hookEl.value = ""; render();
+      } catch (e) { toast("Error: " + (e.message || "failed")); }
+      createBtn.disabled = false; createBtn.textContent = "Create partner + issue key";
+    });
+
+    const rows = partners.map((p) => {
+      const dCount = orders.filter((o) => o.partnerId === p.id).length;
+      const toggle = el("button", { class: "btn ghost sm", onClick: async () => {
+        try { await BW.updatePartner(p.id, { status: p.status === "active" ? "suspended" : "active" }); toast("Updated"); render(); } catch (e) { toast(e.message); }
+      } }, p.status === "active" ? "Suspend" : "Activate");
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, p.name)),
+        el("td", {}, el("span", { class: "badge " + (p.status === "active" ? "DELIVERED" : "") }, p.status || "active")),
+        el("td", { class: "muted small" }, "₹" + p.priceBase + " + ₹" + p.pricePerKm + "/km (min ₹" + p.priceMin + ")"),
+        el("td", { class: "muted small" }, p.keyPrefix || "—"),
+        el("td", {}, String(dCount)),
+        el("td", {}, toggle),
+      ]);
+    });
+
+    shell("partners", [
+      el("h1", { class: "page-title" }, "Delivery Partners"),
+      el("p", { class: "page-sub" }, "Businesses that use Saardha for last-mile delivery. Approve one to issue an API key."),
+      el("div", { class: "card", style: "max-width:640px;margin-bottom:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Add a partner"),
+        el("div", { class: "field" }, [el("label", {}, "Business name"), nameEl]),
+        el("div", { class: "field" }, [el("label", {}, "Webhook URL (status callbacks, optional)"), hookEl]),
+        el("div", { style: "display:flex;gap:12px;flex-wrap:wrap" }, [
+          el("div", { class: "field" }, [el("label", {}, "Base ₹"), baseEl]),
+          el("div", { class: "field" }, [el("label", {}, "Per km ₹"), perkmEl]),
+          el("div", { class: "field" }, [el("label", {}, "Min ₹"), minEl]),
+        ]),
+        createBtn,
+      ]),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Partner", "Status", "Pricing", "API key", "Deliveries", ""].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: "6", class: "muted", style: "text-align:center;padding:20px" }, "No partners yet."))]),
+        ]),
+      ]),
+    ]);
+  }
+
   async function viewSettings() {
     const fee = BW.deliveryFee ? BW.deliveryFee() : 25;
     const feeEl  = el("input", { type: "number", value: String(fee), min: "0", step: "1", style: "max-width:140px" });

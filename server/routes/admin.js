@@ -2,8 +2,59 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const { hashKey, generateKey } = require("../middleware/partnerAuth");
 
 const router = express.Router();
+
+/* ── Delivery partners (DaaS) ─────────────────────────────────
+ * Admin approves businesses and issues API keys. The raw key is
+ * returned ONCE at creation; only its hash is stored.          */
+router.get("/partners", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const snap = await db.collection("partners").get();
+    res.json(snap.docs.map((d) => { const { apiKeyHash, ...safe } = d.data(); return { id: d.id, ...safe }; }));
+  } catch (err) { res.json([]); }
+});
+
+router.post("/partners", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Partner name required" });
+    const key = generateKey();
+    const now = new Date().toISOString();
+    const ref = db.collection("partners").doc();
+    const partner = {
+      name,
+      webhookUrl: req.body.webhookUrl || null,
+      priceBase: Number(req.body.priceBase) || 20,
+      pricePerKm: Number(req.body.pricePerKm) || 8,
+      priceMin: Number(req.body.priceMin) || 25,
+      status: "active",
+      apiKeyHash: hashKey(key),
+      keyPrefix: key.slice(0, 12) + "…",
+      createdAt: now,
+    };
+    await ref.set(partner);
+    const { apiKeyHash, ...safe } = partner;
+    res.status(201).json({ partner: { id: ref.id, ...safe }, apiKey: key });
+  } catch (err) {
+    console.error("create partner:", err);
+    res.status(500).json({ error: "Failed to create partner" });
+  }
+});
+
+router.patch("/partners/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const allowed = ["name", "webhookUrl", "priceBase", "pricePerKm", "priceMin", "status"];
+    const updates = {};
+    allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+    ["priceBase", "pricePerKm", "priceMin"].forEach((k) => { if (updates[k] !== undefined) updates[k] = Number(updates[k]); });
+    await db.collection("partners").doc(req.params.id).update(updates);
+    const doc = await db.collection("partners").doc(req.params.id).get();
+    const { apiKeyHash, ...safe } = doc.data();
+    res.json({ id: doc.id, ...safe });
+  } catch (err) { res.status(500).json({ error: "Failed to update partner" }); }
+});
 
 /* ── DELETE /api/admin/clear-demo ──────────────────────────────
  * One-time endpoint to wipe seed/demo data from Firestore.
