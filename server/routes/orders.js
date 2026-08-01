@@ -218,6 +218,8 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       deliverTo: customer.address,
       deliverLat: customer.lat,
       deliverLng: customer.lng,
+      // Delivery OTP is issued at order time so the customer sees it from the start.
+      deliveryOtp: String(Math.floor(1000 + Math.random() * 9000)),
       history: [{ status: "PLACED", at: now }],
       createdAt: now,
       updatedAt: now,
@@ -352,9 +354,8 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
       history: [...(order.history || []), { status: nextStatus, at: now }],
     };
 
-    // Heading out → issue a 4-digit delivery OTP the customer reads out at the door.
-    // (Partner deliveries have no Saardha customer to hold an OTP — skipped for now.)
-    if (nextStatus === "OUT_FOR_DELIVERY" && order.source !== "partner") {
+    // Fallback: issue an OTP if one wasn't set at order time (older orders / non-partner).
+    if (nextStatus === "OUT_FOR_DELIVERY" && order.source !== "partner" && !order.deliveryOtp) {
       updates.deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
     }
 

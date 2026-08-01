@@ -22,6 +22,10 @@
     await BW.init("rider");
 
     syncRider();
+    // Always-on duty: make the Saradhi available for assignment while the app is open.
+    if (myRider && myRider.status === "offline") {
+      try { await BW.setMyRiderStatus(me.uid, "available"); syncRider(); } catch (e) {}
+    }
     startGPS();   // always share location while the app is open
 
     // Seed so we only alarm on deliveries assigned AFTER the app opened
@@ -240,46 +244,20 @@
   }
 
   /* ── Status card ─────────────────────────────────────── */
+  // Always-on-duty model: salaried Saradhis don't toggle — they're on duty
+  // whenever the app is open and receive assigned tasks directly.
   function renderStatusCard() {
-    const statusLabel = !myRider ? "Loading…" :
-      myRider.status === "on_delivery" ? "On Delivery" :
-      myRider.status === "offline"     ? "Offline" : "Online";
-
     const deliveriesText = myRider && myRider.deliveriesToday
       ? myRider.deliveriesToday + " delivered today"
-      : null;
-
-    const gpsLine = gpsActive ? "Location sharing active" :
-      gpsError ? "Warning: " + gpsError : "Acquiring GPS signal...";
-
-    const isOnline = myRider && myRider.status !== "offline";
-    const toggleBtn = el("button", {
-      class: "btn sm " + (isOnline ? "danger" : "success"),
-      style: "margin-top:12px;width:100%",
-      disabled: myRider && myRider.status === "on_delivery",
-      onClick: async () => {
-        if (!myRider) return;
-        const next = isOnline ? "offline" : "available";
-        if (next === "available") {
-          const inZone = await checkGeofence();   // blocks + toasts if outside the operational zone
-          if (!inZone) return;
-        }
-        try {
-          await BW.setMyRiderStatus(me.uid, next);
-          toast(next === "available" ? "You are now Online" : "You are now Offline");
-        } catch (err) { toast("Error: " + err.message); }
-      },
-    }, myRider && myRider.status === "on_delivery"
-        ? "On Delivery"
-        : isOnline ? "Go Offline" : "Go Online");
-
+      : "Ready for tasks";
+    const gpsLine = gpsActive ? "📍 Location sharing active" :
+      gpsError ? "Warning: " + gpsError : "Acquiring GPS signal…";
     return el("div", { class: "rider-status-card" }, [
       el("div", { class: "rider-status-top" }, [
-        el("span", { class: "badge " + (myRider ? myRider.status : "offline") }, statusLabel),
-        deliveriesText ? el("span", { class: "rider-deliveries-count" }, deliveriesText) : null,
-      ].filter(Boolean)),
+        el("span", { class: "badge available" }, "On duty"),
+        el("span", { class: "rider-deliveries-count" }, deliveriesText),
+      ]),
       el("p", { class: "rider-gps-line" }, gpsLine),
-      toggleBtn,
     ]);
   }
 
@@ -296,9 +274,9 @@
     }
 
     wrap.appendChild(
-      el("h3", { class: "page-title" }, "Active Deliveries (" + orders.length + ")")
+      el("h3", { class: "page-title" }, "Your tasks (" + orders.length + ")")
     );
-    orders.forEach((o) => wrap.appendChild(renderCard(o)));
+    orders.forEach((o, i) => wrap.appendChild(renderCard(o, i + 1)));
     return wrap;
   }
 
@@ -316,7 +294,7 @@
   }
 
   /* ── Order card ─────────────────────────────────────── */
-  function renderCard(o) {
+  function renderCard(o, taskNo) {
     const isPartner = o.source === "partner";
     const vendor = BW.vendor(o.vendorId);
     const fromName = isPartner ? ((o.pickup && o.pickup.name) || o.partnerName || "Pickup") : (vendor ? vendor.name : "—");
@@ -344,7 +322,7 @@
 
     return el("div", { class: "card rider-card" }, [
       el("div", { class: "order-card-head" }, [
-        el("span", { class: "order-id" }, "#" + o.id.slice(-6).toUpperCase()),
+        el("span", { class: "order-id" }, (taskNo ? "Task " + taskNo + " · " : "") + "#" + o.id.slice(-6).toUpperCase()),
         el("span", { class: "badge " + o.status }, BW.STATUS_LABEL[o.status] || o.status),
       ]),
       el("div", { class: "rider-card-body" }, [

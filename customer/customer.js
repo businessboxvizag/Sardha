@@ -152,8 +152,8 @@
       bnItem("profile",  ICONS.profile, "Profile"),
     ]));
 
-    // Floating cart bar — slides up whenever the cart has items
-    if (cartCount() > 0) {
+    // Floating cart bar — slides up whenever the cart has items (but not on the cart page itself)
+    if (cartCount() > 0 && active !== "cart") {
       const sub = cartTotal();
       const tot = sub + Math.round(sub * 0.18) + (BW.deliveryFee ? BW.deliveryFee() : 15);
       root.appendChild(el("div", { class: "cart-bar", onClick: () => go("cart") }, [
@@ -771,7 +771,7 @@
         statusBadge(o.status),
       ]),
       el("div", { class: "card" }, [tracker(o.status)]),
-      o.status === "OUT_FOR_DELIVERY" ? deliveryOtpCard(o) : document.createTextNode(""),
+      (o.status !== "DELIVERED" && o.status !== "CANCELLED") ? deliveryOtpCard(o) : document.createTextNode(""),
       o.status === "CANCELLED"
         ? el("div", { class: "card", style: "border:1px solid var(--red);background:#fdeceb;margin-top:12px" }, [
             el("div", { style: "font-weight:800;color:var(--red)" }, "Order declined by the store"),
@@ -926,7 +926,7 @@
       const markers = [];
       if (vendor && vendor.lat)   markers.push({ lat: vendor.lat, lng: vendor.lng, label: "Store" });
       if (customer && customer.lat) markers.push({ lat: customer.lat, lng: customer.lng, label: "You" });
-      if (rider && rider.lat)     markers.push({ lat: rider.lat, lng: rider.lng, label: "Rider" });
+      if (rider && rider.lat)     markers.push({ lat: rider.lat, lng: rider.lng, label: "Saradhi", icon: "chariot" });
       const gm = UI.gmap({ markers: markers, height: 240 });
       if (gm) return gm;
     }

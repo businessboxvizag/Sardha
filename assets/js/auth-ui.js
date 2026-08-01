@@ -201,7 +201,7 @@
       } catch (err) {
         const msg = (err && err.message) || "";
         errEl.innerHTML = /no account|not found|invalid cred|incorrect/i.test(msg)
-          ? (canSelfRegister ? "No account or wrong password. New here? Tap <b>Sign up</b>." : "No account found. Contact your administrator.")
+          ? (canSelfRegister ? "Incorrect email or password. New here? Tap <b>Sign up</b>." : "Incorrect email or password.")
           : (msg || "Login failed. Check your details.");
         loginBtn.disabled = false; loginBtn.textContent = "Log in";
       }

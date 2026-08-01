@@ -35,18 +35,30 @@
   };
 
   /* ââ Auth helpers âââââââââââââââââââââââââââââââââââââââââââ */
+  // Each app (customer / merchant / rider / admin) lives on the same domain and
+  // shares localStorage, so scope the session by app path — otherwise logging into
+  // one app clobbers another's token in the same browser.
+  const SCOPE = (function () {
+    var p = (location.pathname || "").toLowerCase();
+    var roles = ["merchant", "rider", "admin", "customer"];
+    for (var i = 0; i < roles.length; i++) { if (p.indexOf("/" + roles[i]) !== -1) return roles[i]; }
+    return "customer";
+  })();
+  const TOKEN_KEY = "bw_token_" + SCOPE;
+  const USER_KEY  = "bw_user_" + SCOPE;
+
   const Auth = {
-    getToken: () => localStorage.getItem("bw_token"),
-    getUser:  () => { try { return JSON.parse(localStorage.getItem("bw_user")); } catch { return null; } },
+    getToken: () => localStorage.getItem(TOKEN_KEY),
+    getUser:  () => { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; } },
     setSession: (token, user) => {
-      localStorage.setItem("bw_token", token);
-      localStorage.setItem("bw_user", JSON.stringify(user));
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
     },
     clearSession: () => {
-      localStorage.removeItem("bw_token");
-      localStorage.removeItem("bw_user");
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
     },
-    isLoggedIn: () => !!localStorage.getItem("bw_token"),
+    isLoggedIn: () => !!localStorage.getItem(TOKEN_KEY),
   };
 
   /* ââ HTTP helpers âââââââââââââââââââââââââââââââââââââââââââ */
@@ -61,11 +73,16 @@
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && data.error === "session_superseded") {
-      Auth.clearSession();
-      alert("You've been signed out because your account was opened on another device.");
-      window.location.reload();
-      throw new Error("session_superseded");
+    // Auth failures on a signed-in request → clear the (missing/expired/superseded)
+    // session and send them back to login, instead of a confusing error toast.
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      const authErr = ["session_superseded", "No token provided", "Invalid or expired token"].includes(data.error);
+      if (authErr) {
+        Auth.clearSession();
+        if (data.error === "session_superseded") alert("You've been signed out because your account was opened on another device.");
+        window.location.reload();
+        throw new Error(data.error);
+      }
     }
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;

@@ -138,6 +138,16 @@
   function mapsKey() {
     try { return (window.BW && BW.config && BW.config().googleMapsKey) || ""; } catch (e) { return ""; }
   }
+  // Chariot marker for the Saradhi (who "rides a chariot").
+  var CHARIOT_ICON = "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">' +
+    '<circle cx="24" cy="24" r="21" fill="#ffffff" stroke="#e62a1f" stroke-width="2.5"/>' +
+    '<g stroke="#e62a1f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+    '<path d="M17 27 L17 20 L30 20 C31 20 31 21 31 22 L31 27 Z" fill="#e62a1f"/>' +
+    '<path d="M31 21 L36 18"/><path d="M31 26 L38 24"/>' +
+    '<circle cx="18" cy="31" r="5.5" fill="#ffffff"/>' +
+    '<path d="M18 25.5 L18 36.5 M12.5 31 L23.5 31 M14.2 27.2 L21.8 34.8 M21.8 27.2 L14.2 34.8"/>' +
+    '</g></svg>');
   // markers: [{ lat, lng, label, color }]
   function gmap(opts) {
     opts = opts || {};
@@ -150,10 +160,14 @@
       var map = new maps.Map(container, { center: center, zoom: opts.zoom || 14, disableDefaultUI: true, zoomControl: true });
       var bounds = new maps.LatLngBounds();
       pts.forEach(function (m) {
-        new maps.Marker({
-          position: { lat: Number(m.lat), lng: Number(m.lng) }, map: map, title: m.label || "",
-          label: m.label ? { text: String(m.label).charAt(0), color: "#fff", fontWeight: "700" } : undefined,
-        });
+        var opts = { position: { lat: Number(m.lat), lng: Number(m.lng) }, map: map, title: m.label || "" };
+        if (m.icon === "chariot") {
+          // The Saradhi's top-down chariot artwork (falls back to the SVG glyph if missing).
+          opts.icon = { url: "/assets/img/saradhi-chariot.png", scaledSize: new maps.Size(72, 34), anchor: new maps.Point(36, 17) };
+        } else if (m.label) {
+          opts.label = { text: String(m.label).charAt(0), color: "#fff", fontWeight: "700" };
+        }
+        new maps.Marker(opts);
         bounds.extend({ lat: Number(m.lat), lng: Number(m.lng) });
       });
       if (pts.length > 1) map.fitBounds(bounds);
