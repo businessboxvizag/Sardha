@@ -136,7 +136,7 @@
     const riders = BW.riders();
 
     let map;
-    const gmMarkers = riders.filter((r) => r.lat && r.lng).map((r) => ({ lat: r.lat, lng: r.lng, label: r.name }));
+    const gmMarkers = riders.filter((r) => r.lat && r.lng).map((r) => ({ lat: r.lat, lng: r.lng, label: r.name, icon: "chariot" }));
     const gm = UI.gmap ? UI.gmap({ markers: gmMarkers, height: 380 }) : null;
     if (gm) {
       map = gm;

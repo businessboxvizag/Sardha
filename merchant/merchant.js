@@ -363,7 +363,7 @@
     const gmMarkers = [];
     if (vendor.lat && vendor.lng) gmMarkers.push({ lat: vendor.lat, lng: vendor.lng, label: vendor.name });
     active.forEach((o) => {
-      if (o.riderId) { const r = BW.riders().find((r) => r.id === o.riderId); if (r && r.lat) gmMarkers.push({ lat: r.lat, lng: r.lng, label: r.name }); }
+      if (o.riderId) { const r = BW.riders().find((r) => r.id === o.riderId); if (r && r.lat) gmMarkers.push({ lat: r.lat, lng: r.lng, label: r.name, icon: "chariot" }); }
     });
     let map = UI.gmap ? UI.gmap({ markers: gmMarkers, height: 360 }) : null;
     if (!map) {
