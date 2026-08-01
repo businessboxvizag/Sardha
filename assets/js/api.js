@@ -291,11 +291,11 @@
     /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items, paymentMethod,
                          razorpay_payment_id, razorpay_order_id, razorpay_signature,
-                         deliverLat, deliverLng, deliverTo }) => {
+                         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName }) => {
       const order = await post("/api/orders", {
         vendorId, items, paymentMethod,
         razorpay_payment_id, razorpay_order_id, razorpay_signature,
-        deliverLat, deliverLng, deliverTo,
+        deliverLat, deliverLng, deliverTo, deliverPhone, deliverName,
       });
       _cache.orders.unshift(order);
       emit();
@@ -404,8 +404,8 @@
     },
 
     // Rider pushes GPS position to server
-    updateMyLocation: (riderId, lat, lng) =>
-      patch(`/api/riders/${riderId}/location`, { lat, lng }),
+    updateMyLocation: (riderId, lat, lng, orderId) =>
+      patch(`/api/riders/${riderId}/location`, { lat, lng, orderId: orderId || null }),
 
     toggleFavorite: async (vendorId) => {
       const vendorIds = await post("/api/customers/me/favorites/toggle", { vendorId });

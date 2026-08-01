@@ -580,14 +580,22 @@
         mkOpt("ONLINE", "Pay online (UPI/Card)"),
       ]));
 
-      // ---- Delivery location (type an address + drop a pin) ----
+      // ---- Delivery address (Zomato-style: pin + structured fields) ----
       const cust0 = BW.currentCustomer();
-      if (state.deliverAddr == null) state.deliverAddr = (cust0 && cust0.address) || "";
+      if (state.deliverFlat == null) state.deliverFlat = "";
+      if (state.deliverArea == null) state.deliverArea = (cust0 && cust0.address) || "";
+      if (state.deliverLandmark == null) state.deliverLandmark = "";
+      if (state.deliverPhone == null) state.deliverPhone = (cust0 && cust0.phone) || "";
+      if (state.deliverName == null) state.deliverName = (cust0 && cust0.name) || "";
       if (!state.deliverLoc && cust0 && cust0.lat) state.deliverLoc = { lat: cust0.lat, lng: cust0.lng };
 
-      const addrIn = el("input", { type: "text", value: state.deliverAddr, placeholder: "House / flat, street, area, landmark" });
-      addrIn.addEventListener("input", (e) => { state.deliverAddr = e.target.value; });
-      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "No pin yet");
+      const field = (label, valKey, ph, inputmode) => {
+        const inp = el("input", { type: "text", value: state[valKey] || "", placeholder: ph, inputmode: inputmode || "text" });
+        inp.addEventListener("input", (e) => { state[valKey] = e.target.value; });
+        return el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), inp]);
+      };
+
+      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "⚠️ No pin — please set your location");
       const useLocBtn = el("button", { class: "btn ghost sm", type: "button" }, "📍 Use my current location");
       useLocBtn.addEventListener("click", () => {
         if (!navigator.geolocation) { toast("Location not available"); return; }
@@ -598,19 +606,23 @@
         );
       });
       const picker = UI.mapPicker ? UI.mapPicker({
-        height: 200,
+        height: 180,
         lat: state.deliverLoc && state.deliverLoc.lat,
         lng: state.deliverLoc && state.deliverLoc.lng,
         onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; },
       }) : null;
 
       panelCart.appendChild(el("div", { class: "card", style: "margin-bottom:12px" }, [
-        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Delivery location"),
-        addrIn,
-        el("div", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, [useLocBtn, locStatus]),
-        picker
-          ? el("div", { style: "margin-top:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin or tap the map to set your exact spot"), picker])
-          : el("div", { class: "muted small", style: "margin-top:8px" }, "Tap “Use my current location” so your Saradhi finds you."),
+        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Delivery address"),
+        el("div", { style: "display:flex;gap:8px;align-items:center;margin-bottom:8px" }, [useLocBtn, locStatus]),
+        picker ? el("div", { style: "margin-bottom:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your exact door"), picker]) : document.createTextNode(""),
+        field("Flat / House no. & building", "deliverFlat", "e.g. Flat 3B, Sunrise Apartments"),
+        field("Area / street / colony", "deliverArea", "e.g. MG Road, Dwaraka Nagar"),
+        field("Landmark", "deliverLandmark", "e.g. near Reliance Fresh"),
+        el("div", { style: "display:flex;gap:8px" }, [
+          el("div", { style: "flex:1" }, [field("Receiver name", "deliverName", "Name")]),
+          el("div", { style: "flex:1" }, [field("Receiver phone", "deliverPhone", "10-digit mobile", "tel")]),
+        ]),
       ]));
 
       panelCart.appendChild(el("button", {
@@ -701,11 +713,31 @@
     });
   }
 
+  // Compose a precise delivery address from the structured fields.
+  function composedDeliverTo() {
+    return [state.deliverFlat, state.deliverArea, state.deliverLandmark]
+      .map((s) => (s || "").trim()).filter(Boolean).join(", ");
+  }
+  // Require a usable address (a pin, or enough typed detail) before ordering.
+  function ensureDeliveryAddress() {
+    const addr = composedDeliverTo();
+    if (!state.deliverLoc && addr.length < 6) {
+      toast("Please set your delivery address — drop a pin or fill the address.");
+      return false;
+    }
+    if (!state.deliverArea || state.deliverArea.trim().length < 3) {
+      toast("Please add the area / street for delivery.");
+      return false;
+    }
+    return true;
+  }
+
   let _placing = false;
   async function placeOrder() {
     if (_placing) return; // guard against double-tap creating two orders
     const vendorId = state.cartVendor;
     const items = cartLines();
+    if (!ensureDeliveryAddress()) return;
     if (state.paymentMethod === "ONLINE") return payOnlineThenPlace(vendorId, items);
     _placing = true;
     const loc = state.deliverLoc || await getDeliveryLocation();   // chosen pin, else auto-GPS
@@ -713,7 +745,8 @@
     try {
       const cust = BW.currentCustomer();
       const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD",
-        deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: state.deliverAddr || (cust && cust.address) });
+        deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
+        deliverPhone: state.deliverPhone, deliverName: state.deliverName });
       state.cart = {};
       state.cartVendor = null;
       hidePlacing();
@@ -762,7 +795,8 @@
             razorpay_payment_id: resp.razorpay_payment_id,
             razorpay_order_id: resp.razorpay_order_id,
             razorpay_signature: resp.razorpay_signature,
-            deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: state.deliverAddr || (cust && cust.address),
+            deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
+            deliverPhone: state.deliverPhone, deliverName: state.deliverName,
           });
           state.cart = {};
           state.cartVendor = null;
@@ -841,6 +875,7 @@
                 el("div", { class: "row between", style: "margin-top:12px" }, [
                   el("div", {}, [el("div", { style: "font-weight:600" }, rider.name), el("div", { class: "muted small" }, (rider.vehicle || "") + " · " + (rider.rating || "5") + " ★")]),
                   el("a", { class: "btn ghost sm", href: "tel:" + rider.phone }, "Call"),
+                  waLink(rider.phone) ? el("a", { class: "btn ghost sm", href: waLink(rider.phone), target: "_blank", rel: "noopener" }, "Chat") : document.createTextNode(""),
                 ]),
                 etaBadge(o, rider, cust),
               ])
@@ -855,7 +890,7 @@
           el("div", { class: "line", style: "border-top:1px solid var(--border);margin-top:8px;padding-top:10px" }, [
             el("strong", {}, "Total"), el("strong", {}, money(o.total)),
           ]),
-          cust ? el("div", { class: "muted small", style: "margin-top:10px" }, "Deliver to: " + cust.address) : document.createTextNode(""),
+          el("div", { class: "muted small", style: "margin-top:10px" }, "Deliver to: " + (o.deliverTo || (cust && cust.address) || "—")),
         ]),
       ]),
     ];
@@ -958,6 +993,15 @@
         } }, "Submit rating"),
       ],
     });
+  }
+
+  // WhatsApp deep link (adds India country code for 10-digit numbers).
+  function waLink(phone) {
+    if (!phone) return null;
+    var d = String(phone).replace(/\D/g, "");
+    if (!d) return null;
+    if (d.length === 10) d = "91" + d;
+    return "https://wa.me/" + d;
   }
 
   // Customer's own 4-digit delivery OTP — read out to the Saradhi at the door.

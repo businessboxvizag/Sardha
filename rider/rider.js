@@ -63,7 +63,9 @@
       (pos) => {
         gpsActive = true;
         gpsError = null;
-        BW.updateMyLocation(me.uid, pos.coords.latitude, pos.coords.longitude)
+        // Include the active delivery's id so the customer watching it gets live updates.
+        const active = myOrders()[0];
+        BW.updateMyLocation(me.uid, pos.coords.latitude, pos.coords.longitude, active && active.id)
           .catch(() => {});
         render();
       },
@@ -290,6 +292,17 @@
     return el("a", { class: "rider-map-btn", href: url, target: "_blank", rel: "noopener" }, label);
   }
 
+  // Turn-by-turn navigation from the rider's CURRENT location (origin omitted →
+  // Google Maps uses live GPS) straight to the destination, starting navigation.
+  function navigateBtn(lat, lng, addr, label) {
+    let dest = null;
+    if (lat && lng) dest = lat + "," + lng;
+    else if (addr) dest = encodeURIComponent(addr);
+    if (!dest) return null;
+    const url = "https://www.google.com/maps/dir/?api=1&destination=" + dest + "&travelmode=driving&dir_action=navigate";
+    return el("a", { class: "btn accent", href: url, target: "_blank", rel: "noopener", style: "width:100%;display:block;text-align:center;margin-bottom:8px" }, label);
+  }
+
   function directionsLink(fromLat, fromLng, toLat, toLng, toAddress) {
     let dest = null;
     if (toLat && toLng) dest = toLat + "," + toLng;
@@ -322,10 +335,14 @@
     const custLng   = o.deliverLng;
 
     const pickupAddr = isPartner ? (o.pickup && o.pickup.address) : (vendor && vendor.name);
+    // Context-aware navigation: head to the store until picked up, then to the customer.
+    const pickedUp = [S.PICKED_UP, S.OUT_FOR_DELIVERY].includes(o.status);
+    const nav = pickedUp
+      ? navigateBtn(custLat, custLng, deliverTo, "🧭 Navigate to customer")
+      : navigateBtn(vendorLat, vendorLng, pickupAddr, "🧭 Navigate to pickup");
     const mapBtns = [
-      mapsLink(vendorLat, vendorLng, "Pickup location", pickupAddr),
-      mapsLink(custLat, custLng, "Delivery location", deliverTo),
-      directionsLink(vendorLat, vendorLng, custLat, custLng, deliverTo),
+      mapsLink(vendorLat, vendorLng, "Pickup", pickupAddr),
+      mapsLink(custLat, custLng, "Delivery", deliverTo),
     ].filter(Boolean);
 
     return el("div", { class: "card rider-card" }, [
@@ -340,7 +357,9 @@
         isPartner ? row("Via",  o.partnerName || "Partner") : null,
         row("Placed",     timeAgo(o.createdAt)),
       ].filter(Boolean)),
+      nav,
       mapBtns.length ? el("div", { class: "rider-map-row" }, mapBtns) : null,
+      contactRow(o),
       next ? el("button", {
         class: "btn " + next.cls + " rider-advance-btn",
         onclick: () => doAdvance(o.id),
@@ -353,6 +372,27 @@
       el("span", { class: "rider-row-label" }, label),
       el("span", { class: "rider-row-val"   }, value),
     ]);
+  }
+
+  // WhatsApp deep link (adds India country code for 10-digit numbers).
+  function waLink(phone) {
+    if (!phone) return null;
+    var d = String(phone).replace(/\D/g, "");
+    if (!d) return null;
+    if (d.length === 10) d = "91" + d;
+    return "https://wa.me/" + d;
+  }
+
+  // Call / WhatsApp the customer (uses the order's receiver phone).
+  function contactRow(o) {
+    const phone = o.dropPhone || o.customerPhone;
+    if (!phone) return null;
+    const btns = [
+      el("a", { class: "rider-map-btn", href: "tel:" + phone }, "📞 Call customer"),
+    ];
+    const wa = waLink(phone);
+    if (wa) btns.push(el("a", { class: "rider-map-btn", href: wa, target: "_blank", rel: "noopener" }, "💬 Chat"));
+    return el("div", { class: "rider-map-row" }, btns);
   }
 
   /* ── Go ─────────────────────────────────────────────── */

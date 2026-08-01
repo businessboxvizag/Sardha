@@ -219,6 +219,8 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       deliverTo: req.body.deliverTo || customer.address,
       deliverLat: req.body.deliverLat != null ? Number(req.body.deliverLat) : customer.lat,
       deliverLng: req.body.deliverLng != null ? Number(req.body.deliverLng) : customer.lng,
+      dropPhone: req.body.deliverPhone || customer.phone || null,
+      dropName: req.body.deliverName || customer.name || null,
       // Delivery OTP is issued at order time so the customer sees it from the start.
       deliveryOtp: String(Math.floor(1000 + Math.random() * 9000)),
       history: [{ status: "PLACED", at: now }],

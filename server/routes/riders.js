@@ -126,7 +126,11 @@ router.patch("/:id/location", requireAuth, async (req, res) => {
 
     const io = req.app.get("io");
     if (io) {
-      io.to("admin").emit("rider:location", { riderId: req.params.id, lat, lng });
+      const payload = { riderId: req.params.id, lat, lng };
+      io.to("admin").emit("rider:location", payload);
+      // Stream to the customer watching this delivery (rider sends its active orderId).
+      const orderId = req.body.orderId;
+      if (orderId) io.to("order:" + orderId).emit("rider:location", payload);
     }
     res.json({ ok: true });
   } catch (err) {
