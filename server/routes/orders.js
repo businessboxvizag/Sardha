@@ -215,9 +215,10 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       paymentStatus, // COD -> PENDING then COLLECTED on delivery; ONLINE -> PAID here
       razorpayOrderId: pm === "ONLINE" ? razorpay_order_id : null,
       razorpayPaymentId: pm === "ONLINE" ? razorpay_payment_id : null,
-      deliverTo: customer.address,
-      deliverLat: customer.lat,
-      deliverLng: customer.lng,
+      // Prefer a fresh delivery location sent at checkout; fall back to the saved profile.
+      deliverTo: req.body.deliverTo || customer.address,
+      deliverLat: req.body.deliverLat != null ? Number(req.body.deliverLat) : customer.lat,
+      deliverLng: req.body.deliverLng != null ? Number(req.body.deliverLng) : customer.lng,
       // Delivery OTP is issued at order time so the customer sees it from the start.
       deliveryOtp: String(Math.floor(1000 + Math.random() * 9000)),
       history: [{ status: "PLACED", at: now }],
@@ -226,6 +227,14 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     };
 
     await ref.set(order);
+
+    // Persist a fresh delivery location to the customer's profile for next time.
+    if (req.body.deliverLat != null && req.body.deliverLng != null) {
+      db.collection("customers").doc(customer.id).update({
+        lat: Number(req.body.deliverLat), lng: Number(req.body.deliverLng),
+        address: req.body.deliverTo || customer.address || null,
+      }).catch(() => {});
+    }
 
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.

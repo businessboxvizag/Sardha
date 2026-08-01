@@ -228,5 +228,23 @@
     return wrap;
   }
 
-  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap };
+  // Interactive pin picker: a Google Map with a draggable marker. Tap or drag to
+  // set the drop point; calls opts.onPick(lat, lng). Returns null if no Maps key.
+  function mapPicker(opts) {
+    opts = opts || {};
+    var key = mapsKey();
+    if (!key) return null;
+    var container = el("div", { style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    loadGoogleMaps(key).then(function (maps) {
+      var start = { lat: Number(opts.lat) || 17.6868, lng: Number(opts.lng) || 83.2185 }; // default Visakhapatnam
+      var map = new maps.Map(container, { center: start, zoom: (opts.lat ? 16 : 12), disableDefaultUI: true, zoomControl: true });
+      var marker = new maps.Marker({ position: start, map: map, draggable: true });
+      function report(latLng) { if (opts.onPick) opts.onPick(latLng.lat(), latLng.lng()); }
+      marker.addListener("dragend", function () { report(marker.getPosition()); });
+      map.addListener("click", function (e) { marker.setPosition(e.latLng); report(e.latLng); });
+    }).catch(function () { container.innerHTML = ""; });
+    return container;
+  }
+
+  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap, mapPicker };
 })(window);

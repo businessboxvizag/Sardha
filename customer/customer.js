@@ -579,6 +579,40 @@
         mkOpt("COD", "Cash on delivery"),
         mkOpt("ONLINE", "Pay online (UPI/Card)"),
       ]));
+
+      // ---- Delivery location (type an address + drop a pin) ----
+      const cust0 = BW.currentCustomer();
+      if (state.deliverAddr == null) state.deliverAddr = (cust0 && cust0.address) || "";
+      if (!state.deliverLoc && cust0 && cust0.lat) state.deliverLoc = { lat: cust0.lat, lng: cust0.lng };
+
+      const addrIn = el("input", { type: "text", value: state.deliverAddr, placeholder: "House / flat, street, area, landmark" });
+      addrIn.addEventListener("input", (e) => { state.deliverAddr = e.target.value; });
+      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "No pin yet");
+      const useLocBtn = el("button", { class: "btn ghost sm", type: "button" }, "📍 Use my current location");
+      useLocBtn.addEventListener("click", () => {
+        if (!navigator.geolocation) { toast("Location not available"); return; }
+        useLocBtn.disabled = true; useLocBtn.textContent = "Locating…";
+        navigator.geolocation.getCurrentPosition(
+          (p) => { state.deliverLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; toast("Location pinned"); renderCartPanel(); },
+          () => { toast("Couldn't get location — allow GPS or drop a pin."); useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location"; }
+        );
+      });
+      const picker = UI.mapPicker ? UI.mapPicker({
+        height: 200,
+        lat: state.deliverLoc && state.deliverLoc.lat,
+        lng: state.deliverLoc && state.deliverLoc.lng,
+        onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; },
+      }) : null;
+
+      panelCart.appendChild(el("div", { class: "card", style: "margin-bottom:12px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Delivery location"),
+        addrIn,
+        el("div", { style: "display:flex;gap:8px;align-items:center;margin-top:8px" }, [useLocBtn, locStatus]),
+        picker
+          ? el("div", { style: "margin-top:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin or tap the map to set your exact spot"), picker])
+          : el("div", { class: "muted small", style: "margin-top:8px" }, "Tap “Use my current location” so your Saradhi finds you."),
+      ]));
+
       panelCart.appendChild(el("button", {
         class: "btn primary", style: "width:100%",
         onClick: () => placeOrder(),
@@ -654,6 +688,19 @@
     go("cart", { cartTab: "cart" });
   }
 
+  // Grab the customer's GPS so the rider gets an exact drop location. Resolves
+  // to null if unavailable/denied — the order still places (rider uses the address).
+  function getDeliveryLocation() {
+    return new Promise(function (resolve) {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        function (p) { resolve({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+        function () { resolve(null); },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+  }
+
   let _placing = false;
   async function placeOrder() {
     if (_placing) return; // guard against double-tap creating two orders
@@ -661,9 +708,12 @@
     const items = cartLines();
     if (state.paymentMethod === "ONLINE") return payOnlineThenPlace(vendorId, items);
     _placing = true;
+    const loc = state.deliverLoc || await getDeliveryLocation();   // chosen pin, else auto-GPS
     showPlacing();
     try {
-      const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD" });
+      const cust = BW.currentCustomer();
+      const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD",
+        deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: state.deliverAddr || (cust && cust.address) });
       state.cart = {};
       state.cartVendor = null;
       hidePlacing();
@@ -683,6 +733,7 @@
       return;
     }
     _placing = true;
+    const loc = state.deliverLoc || await getDeliveryLocation();   // chosen pin, else auto-GPS
     let pay;
     try {
       pay = await BW.createPaymentOrder({ vendorId, items });
@@ -711,6 +762,7 @@
             razorpay_payment_id: resp.razorpay_payment_id,
             razorpay_order_id: resp.razorpay_order_id,
             razorpay_signature: resp.razorpay_signature,
+            deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: state.deliverAddr || (cust && cust.address),
           });
           state.cart = {};
           state.cartVendor = null;

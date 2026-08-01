@@ -280,16 +280,23 @@
     return wrap;
   }
 
-  /* ── Map link helpers ───────────────────────────────── */
-  function mapsLink(lat, lng, label) {
-    if (!lat || !lng) return null;
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  /* ── Map link helpers (fall back to a text address when GPS coords are missing) ── */
+  function mapsLink(lat, lng, label, addressFallback) {
+    let query = null;
+    if (lat && lng) query = lat + "," + lng;
+    else if (addressFallback) query = encodeURIComponent(addressFallback);
+    if (!query) return null;
+    const url = "https://www.google.com/maps/search/?api=1&query=" + query;
     return el("a", { class: "rider-map-btn", href: url, target: "_blank", rel: "noopener" }, label);
   }
 
-  function directionsLink(fromLat, fromLng, toLat, toLng) {
-    if (!fromLat || !fromLng || !toLat || !toLng) return null;
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=driving`;
+  function directionsLink(fromLat, fromLng, toLat, toLng, toAddress) {
+    let dest = null;
+    if (toLat && toLng) dest = toLat + "," + toLng;
+    else if (toAddress) dest = encodeURIComponent(toAddress);
+    if (!dest) return null;
+    const origin = (fromLat && fromLng) ? (fromLat + "," + fromLng) : "";
+    const url = "https://www.google.com/maps/dir/?api=1" + (origin ? "&origin=" + origin : "") + "&destination=" + dest + "&travelmode=driving";
     return el("a", { class: "rider-map-btn rider-map-btn--nav", href: url, target: "_blank", rel: "noopener" }, "Navigate");
   }
 
@@ -314,10 +321,11 @@
     const custLat   = o.deliverLat;
     const custLng   = o.deliverLng;
 
+    const pickupAddr = isPartner ? (o.pickup && o.pickup.address) : (vendor && vendor.name);
     const mapBtns = [
-      mapsLink(vendorLat, vendorLng, "Pickup location"),
-      mapsLink(custLat, custLng, "Delivery location"),
-      directionsLink(vendorLat, vendorLng, custLat, custLng),
+      mapsLink(vendorLat, vendorLng, "Pickup location", pickupAddr),
+      mapsLink(custLat, custLng, "Delivery location", deliverTo),
+      directionsLink(vendorLat, vendorLng, custLat, custLng, deliverTo),
     ].filter(Boolean);
 
     return el("div", { class: "card rider-card" }, [

@@ -290,10 +290,12 @@
 
     /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items, paymentMethod,
-                         razorpay_payment_id, razorpay_order_id, razorpay_signature }) => {
+                         razorpay_payment_id, razorpay_order_id, razorpay_signature,
+                         deliverLat, deliverLng, deliverTo }) => {
       const order = await post("/api/orders", {
         vendorId, items, paymentMethod,
         razorpay_payment_id, razorpay_order_id, razorpay_signature,
+        deliverLat, deliverLng, deliverTo,
       });
       _cache.orders.unshift(order);
       emit();
