@@ -93,7 +93,7 @@ router.put("/:id", requireAuth, requireRole("merchant", "admin"), async (req, re
       return res.status(403).json({ error: "Not your store" });
     }
 
-    const allowed = ["name", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active", "status"];
+    const allowed = ["name", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active", "status", "requiresPrescription"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 

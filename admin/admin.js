@@ -371,18 +371,23 @@
     const nameEl = el("input", { value: v.name });
     const catEl  = el("input", { value: v.category });
     const areaEl = el("input", { value: v.area });
+    const rxEl   = el("input", { type: "checkbox" });
+    rxEl.checked = !!v.requiresPrescription;
     const close = UI.modal({
       title: "Edit Store",
       body: el("div", {}, [
         el("div", { class: "field" }, [el("label", {}, "Name"), nameEl]),
         el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
         el("div", { class: "field" }, [el("label", {}, "Area"), areaEl]),
+        el("label", { style: "display:flex;gap:8px;align-items:center;font-size:13px;margin-top:6px;cursor:pointer" }, [
+          rxEl, el("span", {}, "💊 Pharmacy — require prescription + selfie for orders"),
+        ]),
       ]),
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
         el("button", { class: "btn primary", onClick: async () => {
           try {
-            await BW.upsertVendor({ id: v.id, name: nameEl.value.trim(), category: catEl.value.trim(), area: areaEl.value.trim(), img: "", rating: v.rating, prepMins: v.prepMins, lat: v.lat, lng: v.lng });
+            await BW.upsertVendor({ id: v.id, name: nameEl.value.trim(), category: catEl.value.trim(), area: areaEl.value.trim(), img: "", rating: v.rating, prepMins: v.prepMins, lat: v.lat, lng: v.lng, requiresPrescription: rxEl.checked });
             toast("Store updated"); close(); go("vendors");
           } catch (err) { toast("Error: " + err.message); }
         }}, "Save"),
@@ -702,11 +707,13 @@
       tabBtn("orders",    "Orders"),
       tabBtn("payments",  "Payments"),
       tabBtn("support",   "Support"),
+      tabBtn("rx",        "Rx / Compliance"),
     ]);
 
     let body;
     if (monState.tab === "logins")         body = renderLoginLogs();
     else if (monState.tab === "behavior")  body = renderBehavior();
+    else if (monState.tab === "rx")        body = renderRx();
     else if (monState.tab === "support")   body = renderSupport();
     else if (monState.tab === "orders")    body = renderAllOrders();
     else if (monState.tab === "customers") body = renderAllCustomers();
@@ -792,6 +799,36 @@
         listCard("Top searches", topSearches),
         listCard("Most-viewed stores", topStores),
       ]),
+    ]);
+  }
+
+  /* ── Rx / Compliance: pharmacy orders with prescription + selfie + consent ── */
+  function renderRx() {
+    const rows = BW.rxOrders ? BW.rxOrders() : [];
+    if (!rows.length) return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No pharmacy orders yet. Prescriptions & selfies appear here for compliance.")]);
+    const thumb = (url, label) => url
+      ? el("a", { href: url, target: "_blank", rel: "noopener" }, el("img", { src: url, alt: label, style: "width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" }))
+      : el("span", { class: "muted small" }, "—");
+    return el("div", {}, [
+      el("p", { class: "page-sub", style: "margin:0 0 12px" }, "Prescription & selfie records — visible only to you, for legal/verification. " + rows.length + " on file."),
+      el("div", {}, rows.map((o) => {
+        const v = BW.vendor(o.vendorId);
+        const cust = BW.customers().find((c) => c.id === o.customerId);
+        return el("div", { class: "card", style: "margin-bottom:12px" }, [
+          el("div", { class: "row between", style: "margin-bottom:8px" }, [
+            el("div", {}, [
+              el("strong", {}, "#" + o.id.slice(-6).toUpperCase() + " · " + (v ? v.name : "Pharmacy")),
+              el("div", { class: "muted small" }, (o.dropName || (cust && cust.name) || "—") + " · " + (o.dropPhone || "—") + " · " + money(o.total || 0)),
+            ]),
+            statusBadge(o.status),
+          ]),
+          el("div", { class: "muted small", style: "margin-bottom:8px" }, "Deliver to: " + (o.deliverTo || "—") + " · " + clockTime(o.createdAt) + (o.rxConsentAt ? " · ✅ consent accepted" : " · ⚠️ no consent")),
+          el("div", { style: "display:flex;gap:14px" }, [
+            el("div", {}, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Prescription"), thumb(o.prescriptionUrl, "prescription")]),
+            el("div", {}, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Selfie"), thumb(o.selfieUrl, "selfie")]),
+          ]),
+        ]);
+      })),
     ]);
   }
 

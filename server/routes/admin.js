@@ -104,6 +104,26 @@ router.get("/logins", requireAuth, requireRole("admin"), async (req, res) => {
   }
 });
 
+/* ── GET /api/admin/rx-orders ── pharmacy compliance records (admin only) ──
+ * Prescription + selfie images are kept out of every other payload and only
+ * returned here, to the admin, for legal/compliance review.               */
+router.get("/rx-orders", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const snap = await db.collection("orders").where("requiresPrescription", "==", true).get();
+    const rows = snap.docs.map((d) => {
+      const o = d.data();
+      return {
+        id: d.id, vendorId: o.vendorId, customerId: o.customerId, total: o.total,
+        status: o.status, createdAt: o.createdAt, deliverTo: o.deliverTo || null,
+        dropName: o.dropName || null, dropPhone: o.dropPhone || null,
+        prescriptionUrl: o.prescriptionUrl || null, selfieUrl: o.selfieUrl || null,
+        rxConsentAt: o.rxConsentAt || null,
+      };
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 300);
+    res.json(rows);
+  } catch (err) { res.json([]); }
+});
+
 /* ── GET /api/admin/support ──── recent assistant/support transcripts ── */
 router.get("/support", requireAuth, requireRole("admin"), async (req, res) => {
   try {

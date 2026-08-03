@@ -99,7 +99,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
-    logins: [], allUsers: [], shops: [], events: [], support: [], partners: [],
+    logins: [], allUsers: [], shops: [], events: [], support: [], partners: [], rxOrders: [],
   };
 
   /* ââ Pub/sub ââââââââââââââââââââââââââââââââââââââââââââââââ */
@@ -182,6 +182,7 @@
         get("/api/events").then((e) => { _cache.events = e; }).catch(() => {}),
         get("/api/admin/support").then((s) => { _cache.support = s; }).catch(() => {}),
         get("/api/admin/partners").then((p) => { _cache.partners = p; }).catch(() => {}),
+        get("/api/admin/rx-orders").then((r) => { _cache.rxOrders = r; }).catch(() => {}),
       );
     } else if (role === "rider") {
       loads.push(
@@ -236,6 +237,7 @@
 
     // Delivery partners (admin)
     partners: () => [...(_cache.partners || [])],
+    rxOrders: () => [...(_cache.rxOrders || [])],
     createPartner: async (data) => { const r = await post("/api/admin/partners", data); if (r && r.partner) _cache.partners.push(r.partner); emit(); return r; },
     updatePartner: async (id, data) => { const p = await patch(`/api/admin/partners/${id}`, data); const i = _cache.partners.findIndex((x) => x.id === id); if (i >= 0) _cache.partners[i] = p; emit(); return p; },
     loginWithGoogle: (idToken, role) => post("/api/auth/google", { idToken, role }),
@@ -291,11 +293,13 @@
     /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items, paymentMethod,
                          razorpay_payment_id, razorpay_order_id, razorpay_signature,
-                         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName }) => {
+                         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName,
+                         prescriptionUrl, selfieUrl, rxConsent }) => {
       const order = await post("/api/orders", {
         vendorId, items, paymentMethod,
         razorpay_payment_id, razorpay_order_id, razorpay_signature,
         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName,
+        prescriptionUrl, selfieUrl, rxConsent,
       });
       _cache.orders.unshift(order);
       emit();

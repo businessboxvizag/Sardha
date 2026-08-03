@@ -256,6 +256,25 @@
   }
 
   /* ====================== MY STORES ====================== */
+  // Pilot / early-launch announcement banner with a scrolling note + feedback contact.
+  function pilotBanner() {
+    const num = "8688669816";
+    return el("div", { style: "background:linear-gradient(90deg,var(--brand),#ff6a5c);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:14px" }, [
+      el("div", { style: "display:flex;align-items:center;gap:8px" }, [
+        el("span", { style: "font-size:16px" }, "🚀"),
+        el("div", { style: "flex:1;min-width:0" }, [
+          el("div", { style: "font-weight:800;font-size:13px" }, "Pilot launch — thanks for trying Saardha!"),
+          el("div", { class: "marquee" }, el("span", { class: "marquee-in" },
+            "A new local delivery app by BusinessBOX, Vizag. We're in testing — your feedback shapes what we build. Spotted a bug or have an idea? Tell us at " + num + ".")),
+        ]),
+      ]),
+      el("div", { style: "display:flex;gap:8px;margin-top:8px" }, [
+        el("a", { class: "btn sm", style: "background:#fff;color:var(--brand);flex:1;text-align:center", href: "tel:" + num }, "📞 Call feedback"),
+        el("a", { class: "btn sm", style: "background:rgba(255,255,255,.22);color:#fff;flex:1;text-align:center", href: "https://wa.me/91" + num, target: "_blank", rel: "noopener" }, "💬 WhatsApp"),
+      ]),
+    ]);
+  }
+
   function viewStores() {
     const unlocked = getUnlockedVendors();
     const favs = BW.favorites();
@@ -263,6 +282,7 @@
     // Empty state — no QR scans yet
     if (!unlocked.length) {
       shell("stores", [
+        pilotBanner(),
         el("h1", { class: "page-title" }, "My Stores"),
         el("div", { class: "empty", style: "margin-top:40px" }, [
           el("div", { class: "e" }, ""),
@@ -299,6 +319,7 @@
 
     const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
     shell("stores", [
+      pilotBanner(),
       el("h1", { class: "page-title" }, "My Stores"),
       el("p", { class: "page-sub" }, "Stores you've added by scanning their QR code."),
       countHint,
@@ -625,6 +646,35 @@
         ]),
       ]));
 
+      // ---- Pharmacy verification (prescription + selfie + liability consent) ----
+      if (isMedicalVendor(BW.vendor(state.cartVendor))) {
+        const mkUpload = (labelText, key, accept, capture) => {
+          const inp = el("input", { type: "file", accept: accept });
+          if (capture) inp.setAttribute("capture", capture);
+          const st = el("span", { class: "muted small", style: "margin-left:8px" }, state[key] ? "✓ uploaded" : "required");
+          inp.addEventListener("change", async (e) => {
+            const f = e.target.files[0]; if (!f) return;
+            st.textContent = "uploading…";
+            try { state[key] = await uploadToCloudinary(f); st.textContent = "✓ uploaded"; }
+            catch (err) { st.textContent = "upload failed — try again"; }
+          });
+          return el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, labelText), el("div", { style: "display:flex;align-items:center" }, [inp, st])]);
+        };
+        const consentCb = el("input", { type: "checkbox" });
+        consentCb.checked = !!state.rxConsent;
+        consentCb.addEventListener("change", (e) => { state.rxConsent = e.target.checked; });
+        panelCart.appendChild(el("div", { class: "card", style: "margin-bottom:12px;border:1px solid var(--brand)" }, [
+          el("div", { style: "font-weight:800;color:var(--brand);margin-bottom:4px" }, "💊 Pharmacy order — verification required"),
+          el("div", { class: "muted small", style: "margin-bottom:10px" }, "This store sells medicines. A valid prescription and a selfie are mandatory."),
+          mkUpload("Upload prescription (photo / PDF)", "rxPrescriptionUrl", "image/*,application/pdf"),
+          mkUpload("Upload a selfie (identity check)", "rxSelfieUrl", "image/*", "user"),
+          el("label", { style: "display:flex;gap:8px;align-items:flex-start;font-size:11.5px;color:var(--muted);margin-top:6px;cursor:pointer" }, [
+            consentCb,
+            el("span", {}, "I confirm this prescription is genuine and issued to me, I take full responsibility for this medicine order and any legal consequences, and I authorise Saardha to securely store my prescription and selfie for verification and legal compliance."),
+          ]),
+        ]));
+      }
+
       panelCart.appendChild(el("button", {
         class: "btn primary", style: "width:100%",
         onClick: () => placeOrder(),
@@ -732,12 +782,38 @@
     return true;
   }
 
+  // A store that sells medicines needs a prescription + selfie + consent.
+  function isMedicalVendor(v) {
+    return !!(v && (v.requiresPrescription || /medical|pharma|chemist|clinic|drug/i.test(v.category || "")));
+  }
+  // Upload a file to Cloudinary (unsigned preset) → returns the secure URL.
+  async function uploadToCloudinary(file) {
+    const cfg = BW.config ? BW.config() : {};
+    if (!cfg.cloudinaryCloud || !cfg.cloudinaryPreset) throw new Error("Uploads are not configured");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("upload_preset", cfg.cloudinaryPreset);
+    const r = await fetch("https://api.cloudinary.com/v1_1/" + cfg.cloudinaryCloud + "/auto/upload", { method: "POST", body: fd });
+    const data = await r.json();
+    if (!data.secure_url) throw new Error("Upload failed");
+    return data.secure_url;
+  }
+  function ensureRx(vendorId) {
+    if (!isMedicalVendor(BW.vendor(vendorId))) return true;
+    if (!state.rxPrescriptionUrl || !state.rxSelfieUrl || !state.rxConsent) {
+      toast("Pharmacy order: upload prescription + selfie and accept the terms.");
+      return false;
+    }
+    return true;
+  }
+
   let _placing = false;
   async function placeOrder() {
     if (_placing) return; // guard against double-tap creating two orders
     const vendorId = state.cartVendor;
     const items = cartLines();
     if (!ensureDeliveryAddress()) return;
+    if (!ensureRx(vendorId)) return;
     if (state.paymentMethod === "ONLINE") return payOnlineThenPlace(vendorId, items);
     _placing = true;
     const loc = state.deliverLoc || await getDeliveryLocation();   // chosen pin, else auto-GPS
@@ -746,7 +822,8 @@
       const cust = BW.currentCustomer();
       const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD",
         deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
-        deliverPhone: state.deliverPhone, deliverName: state.deliverName });
+        deliverPhone: state.deliverPhone, deliverName: state.deliverName,
+        prescriptionUrl: state.rxPrescriptionUrl, selfieUrl: state.rxSelfieUrl, rxConsent: state.rxConsent });
       state.cart = {};
       state.cartVendor = null;
       hidePlacing();
@@ -797,6 +874,7 @@
             razorpay_signature: resp.razorpay_signature,
             deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
             deliverPhone: state.deliverPhone, deliverName: state.deliverName,
+            prescriptionUrl: state.rxPrescriptionUrl, selfieUrl: state.rxSelfieUrl, rxConsent: state.rxConsent,
           });
           state.cart = {};
           state.cartVendor = null;
@@ -870,6 +948,16 @@
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Live tracking"),
           mapFor(v, cust, rider),
+          // Always-works fallback: open the Saradhi's live position in Google Maps
+          // (no API key needed — handy when the embedded map can't load).
+          (rider && rider.lat && !["DELIVERED", "CANCELLED"].includes(o.status))
+            ? el("a", {
+                class: "btn primary sm", style: "width:100%;margin-top:8px;display:block;text-align:center",
+                target: "_blank", rel: "noopener",
+                href: "https://www.google.com/maps/dir/?api=1&origin=" + rider.lat + "," + rider.lng +
+                      "&destination=" + (cust && cust.lat ? cust.lat + "," + cust.lng : encodeURIComponent(o.deliverTo || "")) + "&travelmode=driving",
+              }, "🧭 See where your Saradhi is")
+            : document.createTextNode(""),
           rider
             ? el("div", {}, [
                 el("div", { class: "row between", style: "margin-top:12px" }, [

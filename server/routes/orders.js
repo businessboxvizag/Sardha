@@ -26,9 +26,13 @@ function canTransition(role, fromStatus, toStatus) {
   return (allowed[fromStatus] || []).includes(toStatus);
 }
 
-// Never expose the delivery OTP inside order payloads — the rider must get it
-// from the customer verbally. The customer reads theirs via GET /:id/otp.
-const toOrder = (doc) => { const { deliveryOtp, ...rest } = doc.data(); return { id: doc.id, ...rest }; };
+// Strip sensitive fields from order payloads: the delivery OTP (rider must get it
+// from the customer), and pharmacy prescription/selfie images (admin-only, via a
+// dedicated compliance endpoint — never in list/socket payloads).
+const toOrder = (doc) => {
+  const { deliveryOtp, prescriptionUrl, selfieUrl, ...rest } = doc.data();
+  return { id: doc.id, ...rest };
+};
 
 // COD cash-in-hand limit (admin-configurable in settings; default ₹2000)
 async function getCodLimit() {
@@ -140,6 +144,14 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       return res.status(400).json({ error: "This store is currently closed" });
     }
 
+    // Pharmacy orders require a prescription, a selfie, and liability consent (stored for compliance).
+    const isMedical = vendor.requiresPrescription === true || /medical|pharma|chemist|clinic|drug/i.test(vendor.category || "");
+    if (isMedical) {
+      if (!req.body.prescriptionUrl || !req.body.selfieUrl || !req.body.rxConsent) {
+        return res.status(400).json({ error: "This is a pharmacy order — upload a prescription and a selfie, and accept the terms to continue." });
+      }
+    }
+
     // Don't accept an order we can't deliver — require at least one available Saradhi (#10).
     // Online orders are pre-checked before payment, so we never reject an already-paid order here.
     if (pm !== "ONLINE") {
@@ -221,6 +233,11 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       deliverLng: req.body.deliverLng != null ? Number(req.body.deliverLng) : customer.lng,
       dropPhone: req.body.deliverPhone || customer.phone || null,
       dropName: req.body.deliverName || customer.name || null,
+      // Pharmacy compliance record (stored securely, visible only to admin).
+      requiresPrescription: isMedical,
+      prescriptionUrl: req.body.prescriptionUrl || null,
+      selfieUrl: req.body.selfieUrl || null,
+      rxConsentAt: req.body.rxConsent ? now : null,
       // Delivery OTP is issued at order time so the customer sees it from the start.
       deliveryOtp: String(Math.floor(1000 + Math.random() * 9000)),
       history: [{ status: "PLACED", at: now }],
@@ -241,10 +258,11 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.
 
-    // Emit via Socket.io (io attached to router by index.js)
-    emitOrderUpdate(req.app.get("io"), order);
+    // Emit / return a version WITHOUT the sensitive Rx images or OTP.
+    const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;
+    emitOrderUpdate(req.app.get("io"), safeOrder);
 
-    res.status(201).json(order);
+    res.status(201).json(safeOrder);
   } catch (err) {
     console.error("POST /orders:", err);
     res.status(500).json({ error: "Failed to place order" });
