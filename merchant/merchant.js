@@ -137,14 +137,24 @@
 
     let _lat = null, _lng = null, _mapsUrl = null;
     const gpsStatus = el("span", { class: "muted small" });
+    const setupAccWarn = el("div", { class: "small", style: "color:var(--red);display:none;margin-top:4px;line-height:1.5" });
+    const setupPreview = el("a", { class: "btn ghost sm", target: "_blank", rel: "noopener", style: "margin-top:6px;display:none" }, "🔍 Preview pin on Google Maps");
+    function setupRefreshPreview() { if (_lat != null && _lng != null) { setupPreview.href = "https://www.google.com/maps?q=" + _lat + "," + _lng; setupPreview.style.display = "inline-block"; } else setupPreview.style.display = "none"; }
     const gpsBtn = el("button", { class: "btn ghost sm", type: "button" }, "Use my location");
     gpsBtn.addEventListener("click", () => {
       if (!navigator.geolocation) { gpsStatus.textContent = "GPS not supported"; return; }
-      gpsBtn.disabled = true; gpsStatus.textContent = "Locating...";
+      if (!window.isSecureContext) { gpsStatus.textContent = "GPS needs https — paste a Maps link instead"; return; }
+      gpsBtn.disabled = true; gpsStatus.textContent = "Locating..."; setupAccWarn.style.display = "none";
       navigator.geolocation.getCurrentPosition(
-        (p) => { _lat = p.coords.latitude; _lng = p.coords.longitude; gpsStatus.textContent = `${_lat.toFixed(4)}, ${_lng.toFixed(4)}`; gpsBtn.disabled = false; },
-        ()  => { gpsStatus.textContent = "Unavailable"; gpsBtn.disabled = false; },
-        { enableHighAccuracy: true, timeout: 12000 }
+        (p) => {
+          _lat = p.coords.latitude; _lng = p.coords.longitude;
+          const acc = Math.round(p.coords.accuracy || 0);
+          gpsStatus.textContent = `${_lat.toFixed(5)}, ${_lng.toFixed(5)}` + (acc ? ` (±${acc}m)` : "");
+          if (acc > 100) { setupAccWarn.style.display = ""; setupAccWarn.textContent = "⚠️ Only accurate to ~" + acc + "m (common on laptops). Tap Preview — if it's wrong, paste your Google Maps link below or use your phone."; }
+          setupRefreshPreview(); gpsBtn.disabled = false;
+        },
+        () => { gpsStatus.textContent = "Unavailable — paste a Maps link"; gpsBtn.disabled = false; },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     });
 
@@ -189,9 +199,11 @@
         el("div", { class: "field" }, [el("label", {}, "Area / locality"), areaEl]),
         el("div", { class: "field" }, [
           el("label", {}, "Store location"),
-          el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:8px" }, [gpsBtn, gpsStatus]),
-          el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste your shop's Google Maps link (the Saradhi navigates here)"),
-          UI.mapsLinkField({ onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; gpsStatus.textContent = "📍 " + la.toFixed(4) + ", " + ln.toFixed(4); } } }),
+          el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [gpsBtn, gpsStatus]),
+          setupAccWarn,
+          el("div", {}, [setupPreview]),
+          el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Saradhi navigates here)"),
+          UI.mapsLinkField({ onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; gpsStatus.textContent = "📍 " + la.toFixed(5) + ", " + ln.toFixed(5) + " (from link)"; setupAccWarn.style.display = "none"; setupRefreshPreview(); } } }),
         ]),
         errEl,
         saveBtn,
@@ -895,21 +907,35 @@
     const prepEl = el("input", { type: "number", value: v.prepMins != null ? v.prepMins : 15, min: "1", placeholder: "15" });
     const discEl = el("input", { type: "number", value: v.storeDiscountPct || 0, min: "0", max: "90", placeholder: "0" });
 
-    // Location: GPS + Google Maps link
+    // Location: GPS + Google Maps link, with an accuracy read-out + preview so the
+    // merchant can catch a wrong (laptop-WiFi) location before saving.
     let _lat = v.lat != null ? v.lat : null, _lng = v.lng != null ? v.lng : null, _mapsUrl = v.mapsUrl || null;
-    const locStatus = el("span", { class: "muted small" }, (_lat != null) ? ("📍 " + Number(_lat).toFixed(4) + ", " + Number(_lng).toFixed(4)) : (_mapsUrl ? "📍 Maps link saved" : "Not set"));
+    const locStatus = el("span", { class: "muted small" }, (_lat != null) ? ("📍 " + Number(_lat).toFixed(5) + ", " + Number(_lng).toFixed(5)) : (_mapsUrl ? "📍 Maps link saved" : "Not set"));
+    const accWarn = el("div", { class: "small", style: "color:var(--red);display:none;margin-top:4px;line-height:1.5" });
+    const previewLink = el("a", { class: "btn ghost sm", target: "_blank", rel: "noopener", style: "margin-top:6px;display:" + (_lat != null ? "inline-block" : "none") }, "🔍 Preview this pin on Google Maps");
+    function refreshPreview() {
+      if (_lat != null && _lng != null) { previewLink.href = "https://www.google.com/maps?q=" + _lat + "," + _lng; previewLink.style.display = "inline-block"; }
+      else previewLink.style.display = "none";
+    }
+    refreshPreview();
     const gpsBtn = el("button", { class: "btn ghost sm", type: "button" }, "Use my location");
     gpsBtn.addEventListener("click", () => {
       if (!navigator.geolocation) { locStatus.textContent = "GPS not supported"; return; }
       if (!window.isSecureContext) { locStatus.textContent = "GPS needs https — paste a Maps link instead"; return; }
-      gpsBtn.disabled = true; locStatus.textContent = "Locating…";
+      gpsBtn.disabled = true; locStatus.textContent = "Locating…"; accWarn.style.display = "none";
       navigator.geolocation.getCurrentPosition(
-        (p) => { _lat = p.coords.latitude; _lng = p.coords.longitude; locStatus.textContent = "📍 " + _lat.toFixed(4) + ", " + _lng.toFixed(4); gpsBtn.disabled = false; },
+        (p) => {
+          _lat = p.coords.latitude; _lng = p.coords.longitude;
+          const acc = Math.round(p.coords.accuracy || 0);
+          locStatus.textContent = "📍 " + _lat.toFixed(5) + ", " + _lng.toFixed(5) + (acc ? " (±" + acc + "m)" : "");
+          if (acc > 100) { accWarn.style.display = ""; accWarn.textContent = "⚠️ This reading is only accurate to about " + acc + "m — common on laptops/desktops. Tap Preview to check; if it's not your shop, paste your Google Maps link below or use GPS on your phone."; }
+          refreshPreview(); gpsBtn.disabled = false;
+        },
         () => { locStatus.textContent = "Couldn't get GPS — paste a Maps link"; gpsBtn.disabled = false; },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     });
-    const linkField = UI.mapsLinkField ? UI.mapsLinkField({ value: v.mapsUrl || "", onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; locStatus.textContent = "📍 " + la.toFixed(4) + ", " + ln.toFixed(4); } } }) : document.createTextNode("");
+    const linkField = UI.mapsLinkField ? UI.mapsLinkField({ value: v.mapsUrl || "", onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; locStatus.textContent = "📍 " + la.toFixed(5) + ", " + ln.toFixed(5) + " (from link)"; accWarn.style.display = "none"; refreshPreview(); } } }) : document.createTextNode("");
 
     // Open / closed toggle
     const isOpen = v.active !== false;
@@ -922,6 +948,32 @@
     // Pharmacy prescription toggle
     const rxCb = el("input", { type: "checkbox" });
     rxCb.checked = !!v.requiresPrescription;
+
+    // Store photos: a cover image + a small gallery customers can browse.
+    let _photoUrl = v.photoUrl || (typeof v.img === "string" && /^https?:/.test(v.img) ? v.img : null);
+    let _gallery = Array.isArray(v.gallery) ? v.gallery.slice() : [];
+    function pickImage(cb) {
+      const inp = el("input", { type: "file", accept: "image/*" });
+      inp.addEventListener("change", async () => {
+        const f = inp.files && inp.files[0]; if (!f) return;
+        toast("Uploading photo…");
+        try { const data = await resizeImage(f, 1000, 0.72); const url = await uploadToCloudinary(data); cb(url); }
+        catch (e) { toast("Upload failed: " + (e.message || "")); }
+      });
+      inp.click();
+    }
+    const coverWrap = el("div", { style: "width:100%;height:130px;border-radius:10px;background:var(--surface-2);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px" });
+    function renderCover() { coverWrap.innerHTML = ""; if (_photoUrl) coverWrap.appendChild(el("img", { src: _photoUrl, alt: "", style: "width:100%;height:100%;object-fit:cover" })); else coverWrap.appendChild(document.createTextNode("No cover photo yet")); }
+    renderCover();
+    const galleryWrap = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" });
+    function renderGallery() {
+      galleryWrap.innerHTML = "";
+      _gallery.forEach((url, i) => galleryWrap.appendChild(el("div", { style: "position:relative;width:66px;height:66px;border-radius:8px;overflow:hidden" }, [
+        el("img", { src: url, alt: "", style: "width:100%;height:100%;object-fit:cover" }),
+        el("button", { class: "btn danger sm", style: "position:absolute;top:2px;right:2px;padding:0 6px;line-height:1.5", onClick: () => { _gallery.splice(i, 1); renderGallery(); } }, "✕"),
+      ])));
+    }
+    renderGallery();
 
     const saveBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Save store details");
     saveBtn.addEventListener("click", async () => {
@@ -940,6 +992,7 @@
           storeDiscountPct: Math.max(0, Math.min(90, Number(discEl.value) || 0)),
           requiresPrescription: rxCb.checked,
           lat: _lat, lng: _lng, mapsUrl: _mapsUrl,
+          photoUrl: _photoUrl, gallery: _gallery,
         });
         toast("Store details saved ✓");
         render();
@@ -972,9 +1025,20 @@
         el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [rxCb, el("span", { class: "small" }, "This is a pharmacy — require prescription + selfie at checkout")]),
       ]),
       el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store photos"),
+        el("div", { class: "muted small", style: "margin-bottom:6px" }, "A cover photo and a few shop pictures customers will see on your store page."),
+        coverWrap,
+        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _photoUrl = url; renderCover(); toast("Cover photo set"); }) }, "Upload / change cover photo"),
+        el("div", { style: "font-weight:600;margin-top:12px;font-size:13px" }, "Gallery"),
+        galleryWrap,
+        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _gallery.push(url); renderGallery(); toast("Photo added"); }) }, "+ Add photo"),
+      ]),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store location"),
-        el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:8px" }, [gpsBtn, locStatus]),
-        el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste your shop's Google Maps link (the Saradhi navigates here)"),
+        el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [gpsBtn, locStatus]),
+        accWarn,
+        el("div", {}, [previewLink]),
+        el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Saradhi navigates here)"),
         linkField,
       ]),
       saveBtn,

@@ -349,10 +349,14 @@
   }
 
   function vendorCard(v) {
-    return el("div", { class: "vcard", onClick: () => openVendor(v.id) }, [
-      el("div", { class: "vcard-img" }, v.img || (v.name || "?")[0].toUpperCase()),
+    const closed = v.active === false || v.status === "inactive";
+    const img = v.photoUrl
+      ? el("div", { class: "vcard-img", style: "padding:0;overflow:hidden" }, el("img", { src: v.photoUrl, alt: v.name, style: "width:100%;height:100%;object-fit:cover" }))
+      : el("div", { class: "vcard-img" }, v.img || (v.name || "?")[0].toUpperCase());
+    return el("div", { class: "vcard", style: closed ? "opacity:.6" : "", onClick: () => openVendor(v.id) }, [
+      img,
       el("div", { class: "vcard-body" }, [
-        el("div", { class: "vcard-name" }, v.name),
+        el("div", { class: "vcard-name" }, [v.name, closed ? el("span", { style: "background:#fdeaea;color:#c0392b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:6px" }, "CLOSED") : document.createTextNode("")]),
         el("div", { class: "vcard-meta" }, v.category + " · " + v.area),
         el("div", { class: "vcard-tags" }, [
           el("span", { class: "vcard-rating" }, "★ " + v.rating),
@@ -439,19 +443,38 @@
       ]));
     });
 
-    const body = [
-      el("div", { class: "store-hero" }, [
-        el("button", { class: "store-back", onClick: () => go("stores"), "aria-label": "Back" }, "‹"),
-        el("div", { class: "store-hero-logo" }, v.img || (v.name || "?")[0].toUpperCase()),
-        el("div", { class: "store-hero-info" }, [
-          el("div", { class: "store-hero-name" }, v.name),
-          el("div", { class: "store-hero-meta" }, v.category + " · " + v.area),
-        ]),
-        el("div", { class: "store-hero-rating" }, "★ " + v.rating),
+    const closed = v.active === false || v.status === "inactive";
+    const gallery = Array.isArray(v.gallery) ? v.gallery : [];
+    const heroLogo = v.photoUrl
+      ? el("div", { class: "store-hero-logo", style: "padding:0;overflow:hidden" }, el("img", { src: v.photoUrl, alt: v.name, style: "width:100%;height:100%;object-fit:cover" }))
+      : el("div", { class: "store-hero-logo" }, v.img || (v.name || "?")[0].toUpperCase());
+
+    const body = [];
+    // Cover photo banner
+    if (v.photoUrl) {
+      body.push(el("div", { style: "position:relative;width:100%;height:150px;border-radius:0 0 16px 16px;overflow:hidden;margin-bottom:10px" }, [
+        el("img", { src: v.photoUrl, alt: v.name, style: "width:100%;height:100%;object-fit:cover" }),
+        el("button", { class: "store-back", style: "position:absolute;top:10px;left:10px;background:rgba(0,0,0,.5);color:#fff", onClick: () => go("stores"), "aria-label": "Back" }, "‹"),
+      ]));
+    }
+    body.push(el("div", { class: "store-hero" }, [
+      v.photoUrl ? document.createTextNode("") : el("button", { class: "store-back", onClick: () => go("stores"), "aria-label": "Back" }, "‹"),
+      heroLogo,
+      el("div", { class: "store-hero-info" }, [
+        el("div", { class: "store-hero-name" }, v.name),
+        el("div", { class: "store-hero-meta" }, v.category + " · " + v.area),
       ]),
-      el("div", { class: "store-time-strip" }, "🛵 " + v.prepMins + "–" + (v.prepMins + 15) + " min  ·  Delivery " + money(fee)),
-      listEl,
-    ];
+      el("div", { class: "store-hero-rating" }, "★ " + v.rating),
+    ]));
+    if (v.description) body.push(el("div", { class: "muted small", style: "padding:0 4px 8px;line-height:1.5" }, v.description));
+    if (closed) body.push(el("div", { class: "card", style: "border:1px solid var(--red);color:var(--red);text-align:center;margin-bottom:8px" }, "This store is currently closed and isn't taking orders right now."));
+    // Photo gallery strip
+    if (gallery.length) {
+      body.push(el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding:0 2px 10px;-webkit-overflow-scrolling:touch" },
+        gallery.map((url) => el("img", { src: url, alt: "", loading: "lazy", style: "width:120px;height:90px;object-fit:cover;border-radius:10px;flex:none" }))));
+    }
+    body.push(el("div", { class: "store-time-strip" }, "🛵 " + v.prepMins + "–" + (v.prepMins + 15) + " min  ·  Delivery " + money(fee)));
+    body.push(listEl);
     shell("stores", body);
   }
 
