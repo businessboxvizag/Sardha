@@ -141,6 +141,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       shopLat: vendor.lat != null ? Number(vendor.lat) : null,
       shopLng: vendor.lng != null ? Number(vendor.lng) : null,
       shopArea: vendor.area || "",
+      shopMapsUrl: vendor.mapsUrl || null,
       customerId: cust.id,
       pattern: "pickup_drop",
       status: B.REQUESTED,
@@ -154,6 +155,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       addressPhone: req.body.addressPhone || cust.phone || null,
       lat: req.body.lat != null ? Number(req.body.lat) : cust.lat,
       lng: req.body.lng != null ? Number(req.body.lng) : cust.lng,
+      mapsUrl: req.body.mapsUrl || cust.mapsUrl || null,
       // Scheduling
       slot: req.body.slot || null,          // { date, window } or null = ASAP
       note: (req.body.note || "").slice(0, 300),

@@ -327,6 +327,12 @@
     return el("a", { class: "btn accent", href: url, target: "_blank", rel: "noopener", style: "width:100%;display:block;text-align:center;margin-bottom:8px" }, label);
   }
 
+  // Big "navigate" button that opens a raw pasted Google Maps link directly.
+  function linkBtn(url, label) {
+    if (!url) return null;
+    return el("a", { class: "btn accent", href: url, target: "_blank", rel: "noopener", style: "width:100%;display:block;text-align:center;margin-bottom:8px" }, label);
+  }
+
   function directionsLink(fromLat, fromLng, toLat, toLng, toAddress) {
     let dest = null;
     if (toLat && toLng) dest = toLat + "," + toLng;
@@ -362,9 +368,13 @@
     // Context-aware navigation: head to the store until picked up, then to the customer.
     // The customer's delivery location stays hidden until the parcel is actually picked up.
     const pickedUp = [S.PICKED_UP, S.OUT_FOR_DELIVERY].includes(o.status);
+    const pickupMapsUrl = isPartner ? (o.pickup && o.pickup.mapsUrl) : (vendor && vendor.mapsUrl);
+    // Prefer exact coordinates; otherwise open the customer's / shop's pasted Google Maps link.
     const nav = pickedUp
-      ? navigateBtn(custLat, custLng, deliverTo, "🧭 Navigate to customer")
-      : navigateBtn(vendorLat, vendorLng, pickupAddr, "🧭 Navigate to pickup");
+      ? ((custLat && custLng) ? navigateBtn(custLat, custLng, deliverTo, "🧭 Navigate to customer")
+          : (o.deliverMapsUrl ? linkBtn(o.deliverMapsUrl, "🧭 Open customer's Maps location") : navigateBtn(null, null, deliverTo, "🧭 Navigate to customer")))
+      : ((vendorLat && vendorLng) ? navigateBtn(vendorLat, vendorLng, pickupAddr, "🧭 Navigate to pickup")
+          : (pickupMapsUrl ? linkBtn(pickupMapsUrl, "🧭 Open pickup Maps location") : navigateBtn(null, null, pickupAddr, "🧭 Navigate to pickup")));
     // Before pickup show only the pickup map; after pickup, only the customer's.
     const mapBtns = (pickedUp
       ? [mapsLink(custLat, custLng, "Delivery", deliverTo)]
@@ -443,8 +453,10 @@
     else { dest = { lat: b.lat, lng: b.lng }; destAddr = custLabel; navLabel = "🧭 Navigate to customer (return)"; actionLabel = "Complete return (OTP)"; actionCls = "success"; }
 
     const legText = collecting ? "Leg 1 · Collect from customer" : toShop ? "Leg 1 · Drop at shop" : "Leg 2 · Return to customer";
-    const nav = navigateBtn(dest.lat, dest.lng, destAddr, navLabel);
-    const map = mapsLink(dest.lat, dest.lng, "Open map", destAddr);
+    const destMapsUrl = toShop ? b.shopMapsUrl : b.mapsUrl;
+    const nav = (dest.lat && dest.lng) ? navigateBtn(dest.lat, dest.lng, destAddr, navLabel)
+              : (destMapsUrl ? linkBtn(destMapsUrl, navLabel) : navigateBtn(null, null, destAddr, navLabel));
+    const map = (dest.lat && dest.lng) ? mapsLink(dest.lat, dest.lng, "Open map", destAddr) : null;
     const phone = b.addressPhone;
     const contact = phone ? el("div", { class: "rider-map-row" }, [
       el("a", { class: "rider-map-btn", href: "tel:" + phone }, "📞 Call"),

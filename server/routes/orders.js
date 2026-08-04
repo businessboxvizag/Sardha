@@ -251,6 +251,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       deliverTo: req.body.deliverTo || customer.address,
       deliverLat: req.body.deliverLat != null ? Number(req.body.deliverLat) : customer.lat,
       deliverLng: req.body.deliverLng != null ? Number(req.body.deliverLng) : customer.lng,
+      deliverMapsUrl: req.body.deliverMapsUrl || customer.mapsUrl || null,
       dropPhone: req.body.deliverPhone || customer.phone || null,
       dropName: req.body.deliverName || customer.name || null,
       // Pharmacy compliance record (stored securely, visible only to admin).
@@ -272,7 +273,10 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       db.collection("customers").doc(customer.id).update({
         lat: Number(req.body.deliverLat), lng: Number(req.body.deliverLng),
         address: req.body.deliverTo || customer.address || null,
+        ...(req.body.deliverMapsUrl ? { mapsUrl: req.body.deliverMapsUrl } : {}),
       }).catch(() => {});
+    } else if (req.body.deliverMapsUrl) {
+      db.collection("customers").doc(customer.id).update({ mapsUrl: req.body.deliverMapsUrl }).catch(() => {});
     }
 
     // Order stays PLACED in the merchant's New queue until they accept it,

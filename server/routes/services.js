@@ -101,7 +101,7 @@ router.patch("/vendors/:id", requireAuth, requireRole("service", "admin"), async
     if (req.user.role === "service" && doc.data().ownerUserId !== req.user.uid) {
       return res.status(403).json({ error: "Not your business" });
     }
-    const allowed = ["name", "categoryKey", "patterns", "area", "img", "lat", "lng", "active", "status"];
+    const allowed = ["name", "categoryKey", "patterns", "area", "img", "lat", "lng", "mapsUrl", "active", "status"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     ["lat", "lng"].forEach((k) => { if (updates[k] !== undefined && updates[k] !== null) updates[k] = Number(updates[k]); });

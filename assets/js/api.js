@@ -334,12 +334,12 @@
     /* ââ Async mutations ââ */
     placeOrder: async ({ vendorId, items, paymentMethod,
                          razorpay_payment_id, razorpay_order_id, razorpay_signature,
-                         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName,
+                         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName, deliverMapsUrl,
                          prescriptionUrl, selfieUrl, rxConsent }) => {
       const order = await post("/api/orders", {
         vendorId, items, paymentMethod,
         razorpay_payment_id, razorpay_order_id, razorpay_signature,
-        deliverLat, deliverLng, deliverTo, deliverPhone, deliverName,
+        deliverLat, deliverLng, deliverTo, deliverPhone, deliverName, deliverMapsUrl,
         prescriptionUrl, selfieUrl, rxConsent,
       });
       _cache.orders.unshift(order);
@@ -400,6 +400,9 @@
 
     // Customer reads their own delivery OTP (rider never receives it)
     deliveryOtp: (orderId) => get(`/api/orders/${orderId}/otp`),
+
+    // Resolve a pasted Google Maps link → { lat, lng, url } (coords may be null; link still navigates)
+    resolveMapsLink: (url) => post("/api/geo/resolve", { url }),
 
     /* ââ Services module (local services / Pickup & Drop) ââ */
     // Reads from cache

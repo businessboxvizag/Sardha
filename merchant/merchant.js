@@ -135,7 +135,7 @@
     const areaEl = el("input", { placeholder: "e.g. Dwaraka Nagar, Vizag" });
     const errEl  = el("div", { class: "auth-err", style: "margin-top:8px" });
 
-    let _lat = null, _lng = null;
+    let _lat = null, _lng = null, _mapsUrl = null;
     const gpsStatus = el("span", { class: "muted small" });
     const gpsBtn = el("button", { class: "btn ghost sm", type: "button" }, "Use my location");
     gpsBtn.addEventListener("click", () => {
@@ -163,6 +163,7 @@
           area: areaEl.value.trim(),
           lat: _lat,
           lng: _lng,
+          mapsUrl: _mapsUrl,
           active: true,
           status: "active",
         });
@@ -187,8 +188,10 @@
         el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
         el("div", { class: "field" }, [el("label", {}, "Area / locality"), areaEl]),
         el("div", { class: "field" }, [
-          el("label", {}, "Store location (optional)"),
-          el("div", { style: "display:flex;align-items:center;gap:10px" }, [gpsBtn, gpsStatus]),
+          el("label", {}, "Store location"),
+          el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:8px" }, [gpsBtn, gpsStatus]),
+          el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste your shop's Google Maps link (the Saradhi navigates here)"),
+          UI.mapsLinkField({ onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; gpsStatus.textContent = "📍 " + la.toFixed(4) + ", " + ln.toFixed(4); } } }),
         ]),
         errEl,
         saveBtn,

@@ -228,11 +228,14 @@
       );
     });
     const picker = UI.mapPicker ? UI.mapPicker({ height: 180, lat: picked && picked.lat, lng: picked && picked.lng, onPick: (la, ln) => { picked = { lat: la, lng: ln }; locStatus.textContent = "📍 Location set"; } }) : null;
+    let mapsUrl = vendor.mapsUrl || null;
+    const linkField = UI.mapsLinkField ? UI.mapsLinkField({ value: vendor.mapsUrl || "", onResolved: (la, ln, url) => { mapsUrl = url; if (la != null) { picked = { lat: la, lng: ln }; locStatus.textContent = "📍 Location set"; } } }) : document.createTextNode("");
 
     const save = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Save business details");
     save.addEventListener("click", async () => {
       const data = { name: nameI.value.trim(), area: areaI.value.trim() };
       if (picked) { data.lat = picked.lat; data.lng = picked.lng; }
+      if (mapsUrl) data.mapsUrl = mapsUrl;
       try { await BW.updateServiceVendor(vendor.id, data); toast("Saved"); }
       catch (e) { toast(e.message || "Could not save"); }
     });
@@ -243,6 +246,7 @@
       el("label", { class: "small muted" }, "Area"), areaI,
       el("div", { style: "display:flex;gap:8px;align-items:center;margin:6px 0" }, [locBtn, locStatus]),
       picker ? el("div", { style: "margin-bottom:8px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your shop — the Saradhi navigates here."), picker]) : document.createTextNode(""),
+      el("div", { style: "margin-bottom:8px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste your shop's Google Maps link"), linkField]),
       save,
     ]);
   }

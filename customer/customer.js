@@ -650,6 +650,10 @@
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Delivery address"),
         el("div", { style: "display:flex;gap:8px;align-items:center;margin-bottom:8px" }, [useLocBtn, locStatus]),
         picker ? el("div", { style: "margin-bottom:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your exact door"), picker]) : document.createTextNode(""),
+        el("div", { style: "margin-bottom:10px" }, [
+          el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste a Google Maps link to your home"),
+          UI.mapsLinkField({ value: state.deliverMapsUrl || "", onResolved: (la, ln, url) => { state.deliverMapsUrl = url; if (la != null) { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; } } }),
+        ]),
         field("Flat / House no. & building", "deliverFlat", "e.g. Flat 3B, Sunrise Apartments"),
         field("Area / street / colony", "deliverArea", "e.g. MG Road, Dwaraka Nagar"),
         field("Landmark", "deliverLandmark", "e.g. near Reliance Fresh"),
@@ -783,9 +787,11 @@
   }
   // Require a usable address (a pin, or enough typed detail) before ordering.
   function ensureDeliveryAddress() {
+    // A saved Google Maps link is enough on its own — the Saradhi navigates straight to it.
+    if (state.deliverMapsUrl) return true;
     const addr = composedDeliverTo();
     if (!state.deliverLoc && addr.length < 6) {
-      toast("Please set your delivery address — drop a pin or fill the address.");
+      toast("Please set your address — paste a Google Maps link, drop a pin, or fill the address.");
       return false;
     }
     if (!state.deliverArea || state.deliverArea.trim().length < 3) {
@@ -835,7 +841,7 @@
       const cust = BW.currentCustomer();
       const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD",
         deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
-        deliverPhone: state.deliverPhone, deliverName: state.deliverName,
+        deliverPhone: state.deliverPhone, deliverName: state.deliverName, deliverMapsUrl: state.deliverMapsUrl || null,
         prescriptionUrl: state.rxPrescriptionUrl, selfieUrl: state.rxSelfieUrl, rxConsent: state.rxConsent });
       state.cart = {};
       state.cartVendor = null;
@@ -886,7 +892,7 @@
             razorpay_order_id: resp.razorpay_order_id,
             razorpay_signature: resp.razorpay_signature,
             deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
-            deliverPhone: state.deliverPhone, deliverName: state.deliverName,
+            deliverPhone: state.deliverPhone, deliverName: state.deliverName, deliverMapsUrl: state.deliverMapsUrl || null,
             prescriptionUrl: state.rxPrescriptionUrl, selfieUrl: state.rxSelfieUrl, rxConsent: state.rxConsent,
           });
           state.cart = {};
@@ -1851,6 +1857,10 @@
           el("div", { style: "font-weight:800;margin-bottom:8px" }, "Pickup & return address"),
           el("div", { style: "display:flex;gap:8px;align-items:center;margin-bottom:8px" }, [useLocBtn, locStatus]),
           picker ? el("div", { style: "margin-bottom:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your door"), picker]) : document.createTextNode(""),
+          el("div", { style: "margin-bottom:10px" }, [
+            el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste a Google Maps link"),
+            UI.mapsLinkField({ value: state.deliverMapsUrl || "", onResolved: (la, ln, url) => { state.deliverMapsUrl = url; if (la != null) { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; } } }),
+          ]),
           field("Flat / House no. & building", "deliverFlat", "e.g. Flat 3B, Sunrise Apartments"),
           field("Area / street / colony", "deliverArea", "e.g. MG Road, Dwaraka Nagar"),
           field("Landmark", "deliverLandmark", "e.g. near Reliance Fresh"),
@@ -1889,6 +1899,7 @@
       address: composedDeliverTo(),
       addressName: state.deliverName, addressPhone: state.deliverPhone,
       lat: state.deliverLoc && state.deliverLoc.lat, lng: state.deliverLoc && state.deliverLoc.lng,
+      mapsUrl: state.deliverMapsUrl || null,
       slot: { window: state.bookingSlot || "ASAP" },
       note: state.bookingNote || "",
       paymentMethod: state.bookingPay || "COD",

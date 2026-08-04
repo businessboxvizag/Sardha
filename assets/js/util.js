@@ -262,5 +262,48 @@
     return container;
   }
 
-  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap, mapPicker };
+  /* ── Google Maps link → coordinates (no paid API needed) ──────────
+   * Long links carry coords in the URL (parsed instantly here); short
+   * "share" links are resolved by the backend, which follows the
+   * redirect. The raw link is always kept for navigation. */
+  function parseMapsLink(url) {
+    if (!url) return null;
+    var m;
+    m = url.match(/@(-?\d{1,3}\.\d{3,}),(-?\d{1,3}\.\d{3,})/);      if (m) return { lat: +m[1], lng: +m[2] };
+    m = url.match(/!3d(-?\d{1,3}\.\d{3,})!4d(-?\d{1,3}\.\d{3,})/);  if (m) return { lat: +m[1], lng: +m[2] };
+    m = url.match(/[?&](?:q|query|ll|daddr|destination|center)=(-?\d{1,3}\.\d{3,}),\s*(-?\d{1,3}\.\d{3,})/);
+    if (m) return { lat: +m[1], lng: +m[2] };
+    return null;
+  }
+
+  // A paste-a-Google-Maps-link row. opts.onResolved(lat|null, lng|null, url) fires on save.
+  function mapsLinkField(opts) {
+    opts = opts || {};
+    var input = el("input", { type: "url", placeholder: "Paste Google Maps link", value: opts.value || "" });
+    var status = el("span", { class: "muted small" }, opts.value ? "📍 Link saved" : "");
+    var btn = el("button", { class: "btn ghost sm", type: "button" }, "Save link");
+    btn.addEventListener("click", async function () {
+      var url = (input.value || "").trim();
+      if (!url) { status.textContent = "Paste a link first"; return; }
+      status.textContent = "Reading link…"; btn.disabled = true;
+      var c = parseMapsLink(url);
+      try {
+        if (!c && global.BW && BW.resolveMapsLink) {
+          var r = await BW.resolveMapsLink(url);
+          if (r && r.lat != null) c = { lat: r.lat, lng: r.lng };
+          if (r && r.url) url = r.url;
+        }
+      } catch (e) {}
+      if (c) { status.textContent = "📍 Pin set from link"; }
+      else { status.textContent = "✓ Link saved — navigation will open it"; }
+      if (opts.onResolved) opts.onResolved(c ? c.lat : null, c ? c.lng : null, url);
+      btn.disabled = false;
+    });
+    return el("div", {}, [
+      el("div", { style: "display:flex;gap:8px;align-items:center" }, [input, btn]),
+      el("div", { style: "margin-top:4px" }, status),
+    ]);
+  }
+
+  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap, mapPicker, parseMapsLink, mapsLinkField };
 })(window);
