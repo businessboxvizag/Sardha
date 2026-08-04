@@ -120,6 +120,20 @@
      Lazy-loads the Maps JS API using the key from BW.config().
      gmap(opts) returns a populated container, or null when no key
      is configured so the caller can fall back to the simple map. */
+  // Google calls this globally when the Maps key/billing is invalid. Instead of
+  // leaving the ugly "can't load Google Maps" box, swap every embed for a note.
+  function gmapFallbackNote(el) {
+    el.innerHTML = "";
+    var note = document.createElement("div");
+    note.style.cssText = "display:flex;align-items:center;justify-content:center;height:100%;min-height:120px;padding:12px;text-align:center;color:var(--muted);font-size:12.5px";
+    note.textContent = "Map preview unavailable right now — your location is still set from GPS / the address you typed.";
+    el.appendChild(note);
+  }
+  window.gm_authFailure = function () {
+    window.__gmapsFailed = true;
+    try { document.querySelectorAll(".gmap-embed").forEach(gmapFallbackNote); } catch (e) {}
+  };
+
   var _gmapsPromise = null;
   function loadGoogleMaps(key) {
     if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
@@ -153,7 +167,8 @@
     opts = opts || {};
     var key = mapsKey();
     if (!key) return null; // caller falls back to the built-in map
-    var container = el("div", { style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    if (window.__gmapsFailed) { gmapFallbackNote(container); return container; }
     loadGoogleMaps(key).then(function (maps) {
       var pts = (opts.markers || []).filter(function (m) { return m && m.lat != null && m.lng != null; });
       var center = opts.center || (pts[0] ? { lat: Number(pts[0].lat), lng: Number(pts[0].lng) } : { lat: 17.385, lng: 78.4867 });
@@ -234,7 +249,8 @@
     opts = opts || {};
     var key = mapsKey();
     if (!key) return null;
-    var container = el("div", { style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    if (window.__gmapsFailed) { gmapFallbackNote(container); return container; }
     loadGoogleMaps(key).then(function (maps) {
       var start = { lat: Number(opts.lat) || 17.6868, lng: Number(opts.lng) || 83.2185 }; // default Visakhapatnam
       var map = new maps.Map(container, { center: start, zoom: (opts.lat ? 16 : 12), disableDefaultUI: true, zoomControl: true });

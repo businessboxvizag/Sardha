@@ -93,7 +93,7 @@ router.put("/:id", requireAuth, requireRole("merchant", "admin"), async (req, re
       return res.status(403).json({ error: "Not your store" });
     }
 
-    const allowed = ["name", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active", "status", "requiresPrescription"];
+    const allowed = ["name", "description", "category", "area", "img", "lat", "lng", "prepMins", "rating", "active", "status", "requiresPrescription", "ownerName", "ownerPhone", "businessPhone", "storeDiscountPct", "promos"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
@@ -130,7 +130,7 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       }
     }
 
-    const { name, price, unit, qty, photoUrl } = req.body;
+    const { name, price, mrp, unit, qty, photoUrl } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
 
     const ref = db.collection("products").doc();
@@ -139,6 +139,8 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       vendorId: req.params.id,
       name,
       price: price !== undefined ? Number(price) : 0,
+      // Optional MRP for a strike-through sale price. Only stored if higher than the sale price.
+      mrp: (mrp !== undefined && Number(mrp) > Number(price || 0)) ? Number(mrp) : null,
       unit: unit || "item",
       ...(qty !== undefined ? { qty: Number(qty) } : {}),
       ...(photoUrl ? { photoUrl } : {}),
@@ -171,11 +173,16 @@ router.put("/:vid/products/:pid", requireAuth, requireRole("merchant", "admin"),
       return res.status(403).json({ error: "Product does not belong to this vendor" });
     }
 
-    const allowed = ["name", "price", "unit", "qty", "available", "photoUrl"];
+    const allowed = ["name", "price", "mrp", "unit", "qty", "available", "photoUrl"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.price !== undefined) updates.price = Number(updates.price);
     if (updates.qty   !== undefined) updates.qty   = Number(updates.qty);
+    // MRP only kept when it's above the sale price; otherwise cleared.
+    if (updates.mrp !== undefined) {
+      const salePrice = updates.price !== undefined ? updates.price : Number(doc.data().price || 0);
+      updates.mrp = (Number(updates.mrp) > salePrice) ? Number(updates.mrp) : null;
+    }
 
     await ref.update(updates);
     const updated = await ref.get();

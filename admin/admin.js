@@ -41,6 +41,7 @@
       navItem("customers", "Cu", "Customers"),
       navItem("vendors",   "Ve", "Stores"),
       navItem("partners",  "Pa", "Partners"),
+      navItem("services",  "Sv", "Services"),
       navItem("fleet",     "Fl", "Fleet"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
@@ -95,7 +96,7 @@
       const cust = BW.customers().find((c) => c.id === o.customerId);
       const rider = o.riderId ? BW.riders().find((r) => r.id === o.riderId) : null;
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", {}, el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()))),
         el("td", {}, v ? v.img + " " + v.name : "—"),
         el("td", {}, cust ? cust.name : "—"),
         el("td", {}, money(o.total)),
@@ -170,7 +171,7 @@
         el("td", {}, "⭐ " + r.rating),
         el("td", {}, r.deliveriesToday + " today"),
         el("td", { style: (r.cashInHand || 0) >= (BW.codCashLimit ? BW.codCashLimit() : 2000) ? "color:var(--red);font-weight:700" : "" }, money(r.cashInHand || 0)),
-        el("td", {}, active ? "#" + active.id.slice(-6).toUpperCase() : el("span", { class: "muted" }, "—")),
+        el("td", {}, active ? "#" + (active.orderNo || active.id.slice(-6).toUpperCase()) : el("span", { class: "muted" }, "—")),
         el("td", {}, statusSel),
       ]);
     });
@@ -279,14 +280,22 @@
   }
 
   function createStore() {
-    const nameEl  = el("input", { placeholder: "e.g. Ravi (merchant's name)" });
+    const ownerEl = el("input", { placeholder: "e.g. Ravi Kumar (owner's name)" });
+    const nameEl  = el("input", { placeholder: "e.g. Ravi Kirana Store (business name)" });
+    const ownerPhoneEl = el("input", { type: "tel", placeholder: "Owner mobile (10-digit)" });
+    const bizPhoneEl   = el("input", { type: "tel", placeholder: "Business/shop phone (optional)" });
     const emailEl = el("input", { type: "email", placeholder: "merchant@example.com" });
     const passEl  = el("input", { type: "text", value: genPass(), placeholder: "Set a password" });
     const errEl   = el("div", { class: "auth-err" });
 
     const body = el("div", {}, [
-      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a merchant account. The merchant will set up their store name, location and products after logging in."),
-      el("div", { class: "field" }, [el("label", {}, "Merchant name"), nameEl]),
+      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a merchant account. The merchant sets up store description, location, products and discounts after logging in."),
+      el("div", { class: "field" }, [el("label", {}, "Owner name"), ownerEl]),
+      el("div", { class: "field" }, [el("label", {}, "Business name"), nameEl]),
+      el("div", { style: "display:flex;gap:10px" }, [
+        el("div", { class: "field", style: "flex:1" }, [el("label", {}, "Owner phone"), ownerPhoneEl]),
+        el("div", { class: "field", style: "flex:1" }, [el("label", {}, "Business phone"), bizPhoneEl]),
+      ]),
       el("div", { class: "field" }, [el("label", {}, "Login email"), emailEl]),
       el("div", { class: "field" }, [
         el("label", {}, "Password"),
@@ -305,12 +314,15 @@
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
         el("button", { class: "btn primary", onClick: async () => {
           errEl.textContent = "";
-          if (!nameEl.value.trim()) { errEl.textContent = "Merchant name required."; return; }
+          if (!nameEl.value.trim()) { errEl.textContent = "Business name required."; return; }
           if (!emailEl.value.trim()) { errEl.textContent = "Login email required."; return; }
           if (passEl.value.length < 6) { errEl.textContent = "Password must be at least 6 characters."; return; }
           try {
             const result = await BW.createMerchant({
-              merchantName: nameEl.value.trim(),
+              businessName: nameEl.value.trim(),
+              ownerName: ownerEl.value.trim(),
+              ownerPhone: ownerPhoneEl.value.trim(),
+              businessPhone: bizPhoneEl.value.trim(),
               email: emailEl.value.trim().toLowerCase(),
               password: passEl.value,
             });
@@ -681,6 +693,7 @@
       case "analytics": return viewAnalytics();
       case "customers": return viewCustomers();
       case "partners":  return viewPartners();
+      case "services":  return viewServices();
       case "settings":  return viewSettings();
       case "monitor":   return viewMonitor();
       default:          return viewOverview();
@@ -817,7 +830,7 @@
         return el("div", { class: "card", style: "margin-bottom:12px" }, [
           el("div", { class: "row between", style: "margin-bottom:8px" }, [
             el("div", {}, [
-              el("strong", {}, "#" + o.id.slice(-6).toUpperCase() + " · " + (v ? v.name : "Pharmacy")),
+              el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()) + " · " + (v ? v.name : "Pharmacy")),
               el("div", { class: "muted small" }, (o.dropName || (cust && cust.name) || "—") + " · " + (o.dropPhone || "—") + " · " + money(o.total || 0)),
             ]),
             statusBadge(o.status),
@@ -859,7 +872,7 @@
         ? Math.round((last - first) / 60000) + " min"
         : "—";
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", {}, el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()))),
         el("td", { class: "muted small" }, clockTime(o.createdAt)),
         el("td", {}, v ? v.name : "—"),
         el("td", {}, cust ? cust.name : "—"),
@@ -929,7 +942,7 @@
         o.paymentMethod === "ONLINE"     ? "Online · Pending" :
                                            "COD · Pending";
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", {}, el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()))),
         el("td", { class: "muted small" }, clockTime(o.createdAt)),
         el("td", {}, cust ? cust.name : "—"),
         el("td", {}, v ? v.name : "—"),
@@ -1017,6 +1030,109 @@
         el("table", {}, [
           el("thead", {}, el("tr", {}, ["Partner", "Status", "Pricing", "API key", "Deliveries", ""].map((h) => el("th", {}, h)))),
           el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: "6", class: "muted", style: "text-align:center;padding:20px" }, "No partners yet."))]),
+        ]),
+      ]),
+    ]);
+  }
+
+  /* ====================== SERVICES ====================== */
+  const SERVICE_CATS = [
+    ["laundry", "Laundry & Ironing"], ["tailoring", "Tailoring"], ["printing", "Print & Xerox"],
+    ["courier", "Courier"], ["repair", "Repairs"], ["salon", "Salon & Care"], ["scrap", "Scrap (Raddi)"], ["other", "Other"],
+  ];
+  function catName(k) { const c = SERVICE_CATS.find((x) => x[0] === k); return c ? c[1] : (k || "—"); }
+
+  function viewServices() {
+    const vendors = BW.serviceVendors ? BW.serviceVendors() : [];
+    const bookings = BW.bookings ? BW.bookings() : [];
+    const statCard = (k, v) => el("div", { class: "card stat" }, [el("span", { class: "k" }, k), el("span", { class: "v" }, v)]);
+
+    const nameEl = el("input", { placeholder: "Business name (e.g. Sparkle Laundry)" });
+    const emailEl = el("input", { placeholder: "Login email", type: "email" });
+    const passEl = el("input", { placeholder: "Temp password (min 6 chars)" });
+    const areaEl = el("input", { placeholder: "Area / locality" });
+    const catEl = el("select", {}, SERVICE_CATS.map(([v, l]) => el("option", { value: v }, l)));
+
+    const createBtn = el("button", { class: "btn primary" }, "Onboard business + create login");
+    createBtn.addEventListener("click", async () => {
+      if (!nameEl.value.trim() || !emailEl.value.trim() || passEl.value.length < 6) { toast("Name, email and a 6+ char password are required"); return; }
+      createBtn.disabled = true; createBtn.textContent = "Creating…";
+      try {
+        const r = await BW.createServiceVendor({ name: nameEl.value.trim(), email: emailEl.value.trim(), password: passEl.value, categoryKey: catEl.value, area: areaEl.value.trim(), patterns: ["pickup_drop"] });
+        UI.modal({ title: "Service partner created", body: el("div", {}, [
+          el("p", { class: "muted small" }, "Share these credentials with the business. They sign in at the /service portal."),
+          el("div", { style: "font-family:monospace;background:var(--surface-2);padding:10px;border-radius:8px;margin:8px 0" }, [
+            el("div", {}, "Portal: /service/"), el("div", {}, "Email: " + r.email), el("div", {}, "Password: " + r.password),
+          ]),
+        ]) });
+        nameEl.value = emailEl.value = passEl.value = areaEl.value = "";
+        // Refresh the list
+        if (BW.refreshLogins) { try { await BW.refreshLogins(); } catch {} }
+        render();
+      } catch (e) { toast("Error: " + (e.message || "failed")); }
+      createBtn.disabled = false; createBtn.textContent = "Onboard business + create login";
+    });
+
+    const rows = vendors.map((v) => {
+      const bCount = bookings.filter((b) => b.serviceVendorId === v.id).length;
+      const active = v.active !== false && v.status !== "inactive";
+      const toggle = el("button", { class: "btn ghost sm", onClick: async () => {
+        try { await BW.updateServiceVendor(v.id, { active: !active, status: active ? "inactive" : "active" }); toast("Updated"); render(); } catch (e) { toast(e.message); }
+      } }, active ? "Deactivate" : "Activate");
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, v.name)),
+        el("td", { class: "muted small" }, catName(v.categoryKey)),
+        el("td", { class: "muted small" }, v.area || "—"),
+        el("td", {}, el("span", { class: "badge " + (active ? "DELIVERED" : "") }, active ? "active" : "inactive")),
+        el("td", {}, "★ " + (v.rating || 5)),
+        el("td", {}, String(bCount)),
+        el("td", {}, toggle),
+      ]);
+    });
+
+    // Live booking snapshot
+    const active = bookings.filter((b) => !["RETURNED", "CANCELLED"].includes(b.status));
+    const bookingRows = active.slice(0, 30).map((b) => el("tr", {}, [
+      el("td", {}, "#" + b.id.slice(-6).toUpperCase()),
+      el("td", { class: "muted small" }, b.serviceVendorName || "—"),
+      el("td", { class: "muted small" }, b.addressName || "—"),
+      el("td", {}, el("span", { class: "badge" }, (BW.BOOKING_LABEL && BW.BOOKING_LABEL[b.status]) || b.status)),
+      el("td", { class: "muted small" }, (b.paymentMethod === "ONLINE" ? "Online" : "COD")),
+    ]));
+
+    shell("services", [
+      el("h1", { class: "page-title" }, "Local Services"),
+      el("p", { class: "page-sub" }, "Pickup & Drop businesses (laundry, tailoring, xerox, courier…). Onboard one to give them a partner login."),
+      el("div", { class: "grid cols-4", style: "margin-bottom:16px" }, [
+        statCard("Businesses", String(vendors.length)),
+        statCard("Active bookings", String(active.length)),
+        statCard("Total bookings", String(bookings.length)),
+        statCard("Returned", String(bookings.filter((b) => b.status === "RETURNED").length)),
+      ]),
+      el("div", { class: "card", style: "max-width:640px;margin-bottom:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Onboard a service business"),
+        el("div", { class: "field" }, [el("label", {}, "Business name"), nameEl]),
+        el("div", { style: "display:flex;gap:12px;flex-wrap:wrap" }, [
+          el("div", { class: "field", style: "flex:1;min-width:180px" }, [el("label", {}, "Login email"), emailEl]),
+          el("div", { class: "field", style: "flex:1;min-width:140px" }, [el("label", {}, "Temp password"), passEl]),
+        ]),
+        el("div", { style: "display:flex;gap:12px;flex-wrap:wrap" }, [
+          el("div", { class: "field", style: "flex:1;min-width:160px" }, [el("label", {}, "Category"), catEl]),
+          el("div", { class: "field", style: "flex:1;min-width:160px" }, [el("label", {}, "Area"), areaEl]),
+        ]),
+        createBtn,
+      ]),
+      el("div", { class: "card", style: "padding:0;overflow:hidden;margin-bottom:16px" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Business", "Category", "Area", "Status", "Rating", "Bookings", ""].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: "7", class: "muted", style: "text-align:center;padding:20px" }, "No service businesses yet."))]),
+        ]),
+      ]),
+      el("h3", { style: "margin:0 0 8px" }, "Live bookings"),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Booking", "Business", "Customer", "Status", "Pay"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, bookingRows.length ? bookingRows : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:20px" }, "No active bookings."))]),
         ]),
       ]),
     ]);

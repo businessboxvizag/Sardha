@@ -66,7 +66,7 @@
   }
 
   function renderLoginScreen(role, resolve) {
-    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Saradhi" }[role] || role;
+    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Saradhi", service: "Service Partner" }[role] || role;
     const canSelfRegister = role === "customer";   // only customers self-register
     const showGoogle = role === "customer";
     const root = document.getElementById("root");
@@ -141,8 +141,8 @@
           ${pwField("suPwd", "Choose a password (min 6)", "new-password")}
           <div id="recaptcha-container"></div>
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted);margin:4px 0 12px;cursor:pointer">
-            <input type="checkbox" id="suConsent" style="margin-top:2px;flex-shrink:0" />
-            <span>I agree to Saardha's <a href="/privacy/" target="_blank" style="color:var(--brand)">Privacy Policy</a> and consent to my data being used to provide and improve the service.</span>
+            <input type="checkbox" id="suConsent" style="margin-top:2px;flex:0 0 18px;width:18px;height:18px" />
+            <span style="flex:1;min-width:0;line-height:1.5">I agree to Saardha's <a href="/privacy/" target="_blank" style="color:var(--brand)">Privacy Policy</a> and consent to my data being used to provide and improve the service.</span>
           </label>
           <div class="auth-err" id="suErr"></div>
           <button class="btn primary" id="signupBtn" style="width:100%">Create account</button>

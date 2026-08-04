@@ -71,6 +71,19 @@ function setupSocket(io) {
       }
     }
 
+    if (role === "service") {
+      // Service partner joins only their own service-vendor room
+      try {
+        const svSnap = await db.collection("serviceVendors").where("ownerUserId", "==", uid).limit(1).get();
+        if (!svSnap.empty) {
+          socket.serviceVendorId = svSnap.docs[0].id;
+          socket.join(`serviceVendor:${socket.serviceVendorId}`);
+        }
+      } catch (e) {
+        console.warn("[WS] Could not resolve service-vendor room:", e.message);
+      }
+    }
+
     // ── join:order — customer or rider subscribes to a specific order ──
     // Verify the caller actually has access to this order
     socket.on("join:order", async (orderId) => {

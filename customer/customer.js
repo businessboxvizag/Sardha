@@ -39,8 +39,8 @@
         (c ? BW.orders({ customerId: c.id }) : BW.orders()).forEach((o) => {
           const prev = _lastStatus[o.id];
           if (prev && prev !== o.status) {
-            if (o.status === "CANCELLED") toast("Order " + o.id.slice(-6).toUpperCase() + " was declined by the store");
-            else if (o.status === "ACCEPTED" && prev === "PLACED") toast("Order " + o.id.slice(-6).toUpperCase() + " accepted! Preparing now.");
+            if (o.status === "CANCELLED") toast("Order " + (o.orderNo || o.id.slice(-6).toUpperCase()) + " was declined by the store");
+            else if (o.status === "ACCEPTED" && prev === "PLACED") toast("Order " + (o.orderNo || o.id.slice(-6).toUpperCase()) + " accepted! Preparing now.");
           }
           _lastStatus[o.id] = o.status;
         });
@@ -284,11 +284,12 @@
       shell("stores", [
         pilotBanner(),
         el("h1", { class: "page-title" }, "My Stores"),
-        el("div", { class: "empty", style: "margin-top:40px" }, [
+        servicesEntry(),
+        el("div", { class: "empty", style: "margin-top:24px" }, [
           el("div", { class: "e" }, ""),
           el("p", { style: "margin:12px 0 6px;font-size:15px;font-weight:600;color:#f0f0f0" }, "No stores yet"),
           el("p", { class: "muted small", style: "max-width:240px;margin:0 auto;line-height:1.6" },
-            "Scan a merchant's QR code to add their store to your app."),
+            "Scan a merchant's QR code to add their store — or explore local Services above."),
         ]),
       ]);
       return;
@@ -322,6 +323,7 @@
       pilotBanner(),
       el("h1", { class: "page-title" }, "My Stores"),
       el("p", { class: "page-sub" }, "Stores you've added by scanning their QR code."),
+      servicesEntry(),
       countHint,
       searchBar,
       grid,
@@ -419,7 +421,13 @@
         el("span", { class: "veg-dot" }, el("span", {})),
         el("div", { class: "item-info" }, [
           el("div", { class: "item-name" }, p.name),
-          el("div", { class: "item-price" }, money(p.price)),
+          (p.mrp && p.mrp > p.price)
+            ? el("div", { class: "item-price", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+                el("span", {}, money(p.price)),
+                el("span", { style: "text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12px" }, money(p.mrp)),
+                el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
+              ])
+            : el("div", { class: "item-price" }, money(p.price)),
           el("div", { class: "item-unit" }, "per " + p.unit),
         ]),
         el("div", { class: "item-thumb-wrap" }, [
@@ -616,14 +624,19 @@
         return el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), inp]);
       };
 
-      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "⚠️ No pin — please set your location");
+      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "Optional — typed address is enough");
       const useLocBtn = el("button", { class: "btn ghost sm", type: "button" }, "📍 Use my current location");
       useLocBtn.addEventListener("click", () => {
-        if (!navigator.geolocation) { toast("Location not available"); return; }
+        if (!navigator.geolocation) { toast("Location not available on this device"); return; }
+        if (!window.isSecureContext) { toast("GPS needs a secure (https) link. Just type your address below — that works fine."); return; }
         useLocBtn.disabled = true; useLocBtn.textContent = "Locating…";
         navigator.geolocation.getCurrentPosition(
           (p) => { state.deliverLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; toast("Location pinned"); renderCartPanel(); },
-          () => { toast("Couldn't get location — allow GPS or drop a pin."); useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location"; }
+          (err) => {
+            toast(err && err.code === 1 ? "Location permission blocked — type your address below instead." : "Couldn't get GPS — type your address below instead.");
+            useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location";
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
         );
       });
       const picker = UI.mapPicker ? UI.mapPicker({
@@ -690,7 +703,7 @@
         el("div", { class: "oc-top" }, [
           el("span", { class: terminal ? "oc-done" : "oc-live" },
             terminal ? (BW.STATUS_LABEL[o.status] || o.status).toUpperCase() : "● " + (BW.STATUS_LABEL[o.status] || o.status).toUpperCase()),
-          el("span", { class: "oc-id" }, "#" + o.id.slice(-6).toUpperCase()),
+          el("span", { class: "oc-id" }, "#" + (o.orderNo || o.id.slice(-6).toUpperCase())),
         ]),
         el("div", { class: "oc-items" }, (v ? v.name + " · " : "") + itemsTxt),
         el("div", { class: "oc-meta" }, timeAgo(o.createdAt) + " · " + money(o.total)),
@@ -929,7 +942,7 @@
       el("button", { class: "btn ghost sm", onClick: () => go("history") }, "← My Orders"),
       el("div", { class: "row between", style: "margin:14px 0" }, [
         el("div", {}, [
-          el("h1", { class: "page-title", style: "margin:0" }, "Order " + o.id.slice(-6).toUpperCase()),
+          el("h1", { class: "page-title", style: "margin:0" }, "Order " + (o.orderNo || o.id.slice(-6).toUpperCase())),
           el("div", { class: "muted" }, v.name + " · placed " + timeAgo(o.createdAt)),
         ]),
         statusBadge(o.status),
@@ -1144,7 +1157,7 @@
       const rows = orders.map((o) => {
         const v = BW.vendor(o.vendorId);
         return el("tr", { class: "clickable", onClick: () => go("track", { trackOrderId: o.id }) }, [
-          el("td", {}, el("strong", {}, o.id.slice(-6).toUpperCase())),
+          el("td", {}, el("strong", {}, (o.orderNo || o.id.slice(-6).toUpperCase()))),
           el("td", {}, v ? v.name : "—"),
           el("td", {}, o.items.reduce((s, l) => s + l.qty, 0) + " items"),
           el("td", {}, money(o.total)),
@@ -1649,15 +1662,346 @@
   }
 
   /* ====================== ROUTER ====================== */
+  /* ====================== SERVICES (Pickup & Drop) ====================== */
+  const SERVICE_CATEGORIES = [
+    { key: "laundry",   label: "Laundry & Ironing", icon: "🧺" },
+    { key: "tailoring", label: "Tailoring",         icon: "🧵" },
+    { key: "printing",  label: "Print & Xerox",     icon: "🖨️" },
+    { key: "courier",   label: "Courier",           icon: "📦" },
+    { key: "repair",    label: "Repairs",           icon: "🔧" },
+    { key: "salon",     label: "Salon & Care",      icon: "💇" },
+    { key: "scrap",     label: "Scrap (Raddi)",     icon: "♻️" },
+    { key: "other",     label: "More",              icon: "🛠️" },
+  ];
+  function catLabel(k) { const c = SERVICE_CATEGORIES.find((x) => x.key === k); return c ? c.label : (k || "Service"); }
+
+  // Entry tile shown on the My Stores home.
+  function servicesEntry() {
+    return el("div", {
+      class: "card", style: "margin-bottom:16px;cursor:pointer;background:linear-gradient(90deg,#0C447C,#3C3489);color:#fff;border:none",
+      onClick: () => go("services"),
+    }, [
+      el("div", { style: "display:flex;align-items:center;gap:12px" }, [
+        el("div", { style: "font-size:26px" }, "🛠️"),
+        el("div", { style: "flex:1" }, [
+          el("div", { style: "font-weight:800;font-size:15px" }, "Local Services — Pickup & Drop"),
+          el("div", { style: "font-size:12px;opacity:.85" }, "Laundry, tailoring, xerox, courier & more. We collect, they do it, we return it."),
+        ]),
+        el("div", { style: "font-size:20px" }, "→"),
+      ]),
+    ]);
+  }
+
+  function serviceCart() { if (!state.serviceCart) state.serviceCart = {}; return state.serviceCart; }
+  function serviceCartCount() { return Object.values(serviceCart()).reduce((a, b) => a + b, 0); }
+
+  function viewServices() {
+    const cat = state.serviceCat || null;
+    let vendors = BW.serviceVendors ? BW.serviceVendors({ pattern: "pickup_drop" }) : [];
+    if (cat) vendors = vendors.filter((v) => v.categoryKey === cat);
+
+    const chips = el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;-webkit-overflow-scrolling:touch" },
+      [el("button", { class: "btn " + (!cat ? "primary" : "ghost") + " sm", onClick: () => go("services", { serviceCat: null }) }, "All")]
+        .concat(SERVICE_CATEGORIES.map((c) => el("button", {
+          class: "btn " + (cat === c.key ? "primary" : "ghost") + " sm", style: "white-space:nowrap",
+          onClick: () => go("services", { serviceCat: c.key }),
+        }, c.icon + " " + c.label)))
+    );
+
+    const list = vendors.length
+      ? el("div", { class: "grid cols-2" }, vendors.map(serviceVendorCard))
+      : el("div", { class: "empty", style: "margin-top:24px" }, [el("div", { class: "e" }, "🛠️"),
+          el("p", { class: "muted small", style: "max-width:260px;margin:8px auto;line-height:1.6" },
+            "No service businesses here yet. We're onboarding local shops — check back soon.")]);
+
+    shell("stores", [
+      el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "← Back"),
+        el("h1", { class: "page-title", style: "margin:0" }, "Local Services"),
+      ]),
+      el("p", { class: "page-sub" }, "Pickup & Drop — a Saradhi collects your item, the shop does the work, we return it to your door."),
+      chips,
+      list,
+    ]);
+  }
+
+  function serviceVendorCard(v) {
+    return el("div", { class: "vcard", onClick: () => openServiceVendor(v.id) }, [
+      el("div", { class: "vcard-img" }, v.img || (SERVICE_CATEGORIES.find((c) => c.key === v.categoryKey) || {}).icon || "🛠️"),
+      el("div", { class: "vcard-body" }, [
+        el("div", { class: "vcard-name" }, v.name),
+        el("div", { class: "vcard-meta" }, catLabel(v.categoryKey) + (v.area ? " · " + v.area : "")),
+        el("div", { class: "vcard-tags" }, [el("span", { class: "vcard-rating" }, "★ " + (v.rating || 5))]),
+      ]),
+    ]);
+  }
+
+  async function openServiceVendor(id) {
+    // Switching business clears the in-progress service cart.
+    if (state.serviceVendorId !== id) state.serviceCart = {};
+    go("serviceVendor", { serviceVendorId: id, serviceLoading: true });
+    try { await BW.loadServiceVendor(id); } catch (e) {}
+    if (state.route === "serviceVendor" && state.serviceVendorId === id) { state.serviceLoading = false; viewServiceVendor(); }
+  }
+
+  function serviceItemPriceText(s) {
+    if (s.priceType === "quote") return "Price on inspection";
+    if (s.priceType === "from") return "From " + money(s.price) + (s.unitLabel ? " · " + s.unitLabel : "");
+    if (s.priceType === "per_unit") return money(s.price) + " " + (s.unitLabel || "per unit");
+    return money(s.price);
+  }
+
+  function viewServiceVendor() {
+    const v = BW.serviceVendor(state.serviceVendorId);
+    if (!v) { shell("stores", [el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Services"), el("div", { class: "muted", style: "margin-top:20px" }, "Loading business…")]); return; }
+    const items = BW.serviceItems(v.id) || [];
+
+    const rows = items.length ? items.map((s) => {
+      const qty = serviceCart()[s.id] || 0;
+      const ctrl = qty
+        ? el("div", { class: "add-stepper" }, [
+            el("button", { onClick: () => { serviceCart()[s.id] = Math.max(0, qty - 1); if (!serviceCart()[s.id]) delete serviceCart()[s.id]; viewServiceVendor(); } }, "−"),
+            el("span", {}, String(qty)),
+            el("button", { onClick: () => { serviceCart()[s.id] = qty + 1; viewServiceVendor(); } }, "+"),
+          ])
+        : el("button", { class: "add-btn", onClick: () => { serviceCart()[s.id] = 1; viewServiceVendor(); } }, "ADD");
+      return el("div", { class: "card", style: "display:flex;gap:12px;align-items:center;margin-bottom:10px" }, [
+        el("div", { style: "flex:1" }, [
+          el("div", { style: "font-weight:700" }, s.name),
+          s.description ? el("div", { class: "muted small" }, s.description) : document.createTextNode(""),
+          el("div", { class: "small", style: "color:var(--brand);margin-top:2px" }, serviceItemPriceText(s)),
+        ]),
+        ctrl,
+      ]);
+    }) : [el("div", { class: "muted", style: "padding:16px" }, "This business hasn't listed services yet.")];
+
+    const body = [
+      el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:8px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Back"),
+        el("h1", { class: "page-title", style: "margin:0" }, v.name),
+      ]),
+      el("p", { class: "page-sub" }, catLabel(v.categoryKey) + (v.area ? " · " + v.area : "") + " · ★ " + (v.rating || 5)),
+      el("div", { class: "card", style: "background:var(--brand-lt);border:1px solid var(--border);margin-bottom:12px" },
+        el("div", { class: "small" }, "🛵 A Saardha Saradhi collects your item and returns it after the work is done. Final price may be confirmed after inspection (e.g. by weight/count).")),
+      el("div", {}, rows),
+    ];
+
+    // Sticky schedule button when the cart has items
+    if (serviceCartCount() > 0) {
+      body.push(el("button", { class: "btn primary", style: "width:100%;position:sticky;bottom:12px;margin-top:8px", onClick: () => openBookingComposer(v) },
+        "Schedule pickup (" + serviceCartCount() + ") →"));
+    }
+    shell("stores", body);
+  }
+
+  function openBookingComposer(v) {
+    const cust0 = BW.currentCustomer();
+    if (state.deliverFlat == null) state.deliverFlat = "";
+    if (state.deliverArea == null) state.deliverArea = (cust0 && cust0.address) || "";
+    if (state.deliverLandmark == null) state.deliverLandmark = "";
+    if (state.deliverPhone == null) state.deliverPhone = (cust0 && cust0.phone) || "";
+    if (state.deliverName == null) state.deliverName = (cust0 && cust0.name) || "";
+    if (!state.deliverLoc && cust0 && cust0.lat) state.deliverLoc = { lat: cust0.lat, lng: cust0.lng };
+    if (!state.bookingSlot) state.bookingSlot = "ASAP";
+    if (!state.bookingPay) state.bookingPay = "COD";
+
+    const field = (label, valKey, ph, inputmode) => {
+      const inp = el("input", { type: "text", value: state[valKey] || "", placeholder: ph, inputmode: inputmode || "text" });
+      inp.addEventListener("input", (e) => { state[valKey] = e.target.value; });
+      return el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), inp]);
+    };
+    const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "Optional — typed address is enough");
+    const useLocBtn = el("button", { class: "btn ghost sm", type: "button" }, "📍 Use my current location");
+    useLocBtn.addEventListener("click", () => {
+      if (!navigator.geolocation) { toast("Location not available on this device"); return; }
+      if (!window.isSecureContext) { toast("GPS needs a secure (https) link. Just type your address below — that works fine."); return; }
+      useLocBtn.disabled = true; useLocBtn.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(
+        (p) => { state.deliverLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; locStatus.textContent = "📍 Pin set"; useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location"; toast("Location pinned"); },
+        (err) => { toast(err && err.code === 1 ? "Location permission blocked — type your address below." : "Couldn't get GPS — type your address below."); useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location"; },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+    const picker = UI.mapPicker ? UI.mapPicker({ height: 170, lat: state.deliverLoc && state.deliverLoc.lat, lng: state.deliverLoc && state.deliverLoc.lng,
+      onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; } }) : null;
+
+    const slots = ["ASAP", "Today evening", "Tomorrow morning", "Tomorrow evening"];
+    const slotSel = el("select", {}, slots.map((s) => el("option", { value: s, selected: state.bookingSlot === s ? "selected" : null }, s)));
+    slotSel.addEventListener("change", (e) => { state.bookingSlot = e.target.value; });
+
+    const payWrap = el("div", { style: "display:flex;gap:8px" }, ["COD", "ONLINE"].map((m) =>
+      el("button", { class: "btn " + (state.bookingPay === m ? "primary" : "ghost") + " sm", style: "flex:1", type: "button",
+        onClick: () => { state.bookingPay = m; toast(m === "COD" ? "Pay cash on return" : "Pay online"); document.querySelectorAll(".svc-pay-btn").forEach(() => {}); reopen(); } },
+        m === "COD" ? "💵 Cash on return" : "💳 Pay online")));
+
+    const noteInp = el("textarea", { placeholder: "Any instructions (e.g. 3 shirts + 2 trousers, starch light)", style: "width:100%;min-height:56px", value: state.bookingNote || "" });
+    noteInp.addEventListener("input", (e) => { state.bookingNote = e.target.value; });
+
+    const est = serviceEstTotal(v);
+    let close;
+    function reopen() { if (close) close(); openBookingComposer(v); }
+
+    const submit = el("button", { class: "btn primary", style: "width:100%" }, "Confirm booking · " + (est > 0 ? money(est) : "price on inspection"));
+    submit.addEventListener("click", () => submitBooking(v, () => { if (close) close(); }));
+
+    close = UI.modal({
+      title: "Schedule pickup",
+      body: el("div", {}, [
+        el("div", { class: "card", style: "margin-bottom:10px" }, [
+          el("div", { style: "font-weight:800;margin-bottom:8px" }, "Pickup & return address"),
+          el("div", { style: "display:flex;gap:8px;align-items:center;margin-bottom:8px" }, [useLocBtn, locStatus]),
+          picker ? el("div", { style: "margin-bottom:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your door"), picker]) : document.createTextNode(""),
+          field("Flat / House no. & building", "deliverFlat", "e.g. Flat 3B, Sunrise Apartments"),
+          field("Area / street / colony", "deliverArea", "e.g. MG Road, Dwaraka Nagar"),
+          field("Landmark", "deliverLandmark", "e.g. near Reliance Fresh"),
+          el("div", { style: "display:flex;gap:8px" }, [
+            el("div", { style: "flex:1" }, [field("Name", "deliverName", "Name")]),
+            el("div", { style: "flex:1" }, [field("Phone", "deliverPhone", "10-digit mobile", "tel")]),
+          ]),
+        ]),
+        el("div", { class: "field", style: "margin-bottom:10px" }, [el("label", {}, "Pickup time"), slotSel]),
+        el("div", { style: "margin-bottom:10px" }, [el("label", { class: "small muted", style: "display:block;margin-bottom:6px" }, "Payment"), payWrap]),
+        el("div", { class: "field", style: "margin-bottom:6px" }, [el("label", {}, "Notes"), noteInp]),
+        est > 0 ? el("div", { class: "muted small", style: "margin-bottom:6px" }, "Estimated " + money(est) + " (incl. two-way pickup fee). Final amount may change after inspection.")
+                : el("div", { class: "muted small", style: "margin-bottom:6px" }, "Price will be confirmed by the shop after inspection."),
+      ]),
+      footer: [submit],
+    });
+  }
+
+  function serviceEstTotal(v) {
+    const items = BW.serviceItems(v.id) || [];
+    let est = 0;
+    Object.entries(serviceCart()).forEach(([sid, qty]) => {
+      const s = items.find((x) => x.id === sid);
+      if (s && (s.priceType === "fixed" || s.priceType === "from" || s.priceType === "per_unit")) est += (Number(s.price) || 0) * qty;
+    });
+    if (est > 0) est += Number(v.deliveryFee) || 30;
+    return est;
+  }
+
+  async function submitBooking(v, onDone) {
+    if (!serviceCartCount()) { toast("Add at least one service."); return; }
+    if (!ensureDeliveryAddress()) return;
+    const items = Object.entries(serviceCart()).map(([serviceId, qty]) => ({ serviceId, qty }));
+    const payload = {
+      serviceVendorId: v.id, items,
+      address: composedDeliverTo(),
+      addressName: state.deliverName, addressPhone: state.deliverPhone,
+      lat: state.deliverLoc && state.deliverLoc.lat, lng: state.deliverLoc && state.deliverLoc.lng,
+      slot: { window: state.bookingSlot || "ASAP" },
+      note: state.bookingNote || "",
+      paymentMethod: state.bookingPay || "COD",
+    };
+    try {
+      const b = await BW.createBooking(payload);
+      state.serviceCart = {}; state.bookingNote = "";
+      if (onDone) onDone();
+      toast("Booking placed ✓");
+      go("bookingTrack", { bookingId: b.id });
+    } catch (err) { toast(err.message || "Could not place booking"); }
+  }
+
+  const BOOKING_STEPS = ["REQUESTED", "ACCEPTED", "RIDER_ASSIGNED", "PICKED_FROM_CUSTOMER", "AT_SHOP", "READY", "OUT_FOR_RETURN", "RETURNED"];
+
+  function viewBookingTrack() {
+    const b = BW.booking(state.bookingId);
+    if (!b) { shell("stores", [el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Services"), el("div", { class: "muted", style: "margin-top:20px" }, "Loading booking…")]); return; }
+    const v = BW.serviceVendor(b.serviceVendorId);
+    const label = (s) => (BW.BOOKING_LABEL && BW.BOOKING_LABEL[s]) || s;
+    const cancelled = b.status === "CANCELLED";
+    const done = b.status === "RETURNED";
+    const curIdx = BOOKING_STEPS.indexOf(b.status);
+
+    // Vertical step tracker
+    const steps = el("div", { class: "card" }, BOOKING_STEPS.map((s, i) => {
+      const reached = curIdx >= i;
+      return el("div", { style: "display:flex;align-items:center;gap:10px;padding:7px 0" }, [
+        el("div", { style: "width:18px;height:18px;border-radius:50%;flex:none;background:" + (reached ? "var(--brand)" : "var(--surface-2)") + ";border:2px solid " + (reached ? "var(--brand)" : "var(--border)") }),
+        el("div", { style: "font-weight:" + (curIdx === i ? "800" : "500") + ";color:" + (reached ? "var(--text)" : "var(--muted)") }, label(s)),
+      ]);
+    }));
+
+    // Return OTP (fetch async, customer-only)
+    const otpBox = el("div", { class: "card", style: "text-align:center;margin-bottom:12px" }, el("div", { class: "muted small" }, "Loading return code…"));
+    if (!cancelled && !done) {
+      BW.bookingOtp(b.id).then((r) => {
+        if (!r || !r.otp) { otpBox.innerHTML = ""; otpBox.appendChild(el("div", { class: "muted small" }, "Return code appears once assigned.")); return; }
+        otpBox.innerHTML = "";
+        otpBox.appendChild(el("div", { class: "muted small", style: "margin-bottom:4px" }, "Show this code to the Saradhi on return"));
+        otpBox.appendChild(el("div", { style: "font-size:30px;font-weight:800;letter-spacing:6px;color:var(--brand)" }, r.otp));
+      }).catch(() => { otpBox.remove(); });
+    } else { otpBox.remove(); }
+
+    // Rider contact + map (if assigned)
+    const contact = [];
+    if (b.riderId) {
+      const r = BW.rider(b.riderId);
+      if (r) {
+        contact.push(el("div", { class: "card", style: "margin-bottom:12px" }, [
+          el("div", { style: "font-weight:700;margin-bottom:6px" }, "Your Saradhi: " + r.name),
+          el("div", { style: "display:flex;gap:8px" }, [
+            r.phone ? el("a", { class: "btn ghost sm", style: "flex:1;text-align:center", href: "tel:" + r.phone }, "📞 Call") : document.createTextNode(""),
+            r.phone ? el("a", { class: "btn ghost sm", style: "flex:1;text-align:center", href: waLink(r.phone), target: "_blank", rel: "noopener" }, "💬 WhatsApp") : document.createTextNode(""),
+          ].filter((x) => x.nodeType !== 3 || x.textContent)),
+          (r.lat && r.lng) ? el("a", { class: "btn ghost sm", style: "width:100%;text-align:center;margin-top:8px", href: "https://www.google.com/maps/search/?api=1&query=" + r.lat + "," + r.lng, target: "_blank", rel: "noopener" }, "🗺️ See Saradhi on Google Maps") : document.createTextNode(""),
+        ]));
+      }
+    }
+
+    const priceRow = el("div", { class: "card", style: "margin-bottom:12px" }, [
+      el("div", { class: "row between" }, [el("span", { class: "muted small" }, b.finalTotal != null ? "Final amount" : "Estimated"), el("strong", {}, (b.finalTotal != null ? money(b.finalTotal) : (b.estTotal ? money(b.estTotal + (b.deliveryFee || 0)) : "On inspection")))]),
+      el("div", { class: "row between", style: "margin-top:4px" }, [el("span", { class: "muted small" }, "Payment"), el("span", { class: "small" }, (b.paymentMethod === "ONLINE" ? "Online" : "Cash on return") + " · " + (b.paymentStatus === "COLLECTED" ? "paid" : "due"))]),
+    ]);
+
+    const items = el("div", { class: "card", style: "margin-bottom:12px" }, (b.items || []).map((it) =>
+      el("div", { class: "row between small", style: "padding:4px 0" }, [el("span", {}, it.qty + "× " + it.name), el("span", { class: "muted" }, it.priceType === "quote" ? "on inspection" : money((it.price || 0) * it.qty))])));
+
+    // Rate when returned
+    const rateCard = (done && !b.rating) ? bookingRateCard(b) : (b.rating ? el("div", { class: "card", style: "margin-bottom:12px" }, el("div", { class: "small" }, "You rated this ★ " + b.rating.store)) : document.createTextNode(""));
+
+    shell("stores", [
+      el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Services"),
+        el("h1", { class: "page-title", style: "margin:0" }, "#" + b.id.slice(-6).toUpperCase()),
+      ]),
+      el("p", { class: "page-sub" }, (v ? v.name : "Service") + " · " + label(b.status) + (b.slot && b.slot.window ? " · " + b.slot.window : "")),
+      cancelled ? el("div", { class: "card", style: "border:1px solid var(--red);color:var(--red)" }, "This booking was cancelled.") : otpBox,
+      contact.length ? contact[0] : document.createTextNode(""),
+      steps,
+      priceRow,
+      items,
+      rateCard,
+    ]);
+  }
+
+  function bookingRateCard(b) {
+    let stars = 0;
+    const starRow = el("div", { style: "font-size:26px;letter-spacing:4px;cursor:pointer;text-align:center" });
+    function paint() { starRow.innerHTML = ""; for (let i = 1; i <= 5; i++) { const on = i <= stars; const s = el("span", { style: "color:" + (on ? "#f5a623" : "var(--border)") }, "★"); s.addEventListener("click", () => { stars = i; paint(); }); starRow.appendChild(s); } }
+    paint();
+    const cmt = el("textarea", { placeholder: "How was the service?", style: "width:100%;min-height:48px;margin-top:8px" });
+    const btn = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Submit rating");
+    btn.addEventListener("click", async () => {
+      if (!stars) { toast("Tap the stars to rate."); return; }
+      try { await BW.rateBooking(b.id, { storeRating: stars, comment: cmt.value }); toast("Thanks for the feedback!"); viewBookingTrack(); }
+      catch (e) { toast(e.message || "Could not submit"); }
+    });
+    return el("div", { class: "card", style: "margin-bottom:12px" }, [el("div", { style: "font-weight:700;margin-bottom:6px;text-align:center" }, "Rate this service"), starRow, cmt, btn]);
+  }
+
   function render() {
     switch (state.route) {
-      case "vendor":    return viewVendor();
-      case "track":     return viewTrack();
-      case "cart":      return viewCart(state.cartTab);
-      case "history":   return viewCart("orders");   // Orders now live inside Cart
-      case "profile":   return viewProfile();
-      case "scan":      return viewScan();
-      default:          return viewStores();
+      case "vendor":        return viewVendor();
+      case "track":         return viewTrack();
+      case "cart":          return viewCart(state.cartTab);
+      case "history":       return viewCart("orders");   // Orders now live inside Cart
+      case "profile":       return viewProfile();
+      case "scan":          return viewScan();
+      case "services":      return viewServices();
+      case "serviceVendor": return viewServiceVendor();
+      case "bookingTrack":  return viewBookingTrack();
+      default:              return viewStores();
     }
   }
 

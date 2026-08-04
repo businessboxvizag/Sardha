@@ -15,6 +15,7 @@
   let gpsActive = false;
   let gpsError = null;
   let _seenOrderIds = new Set();
+  let _seenBookingIds = new Set();
 
   /* ── Boot ─────────────────────────────────────────────── */
   async function boot() {
@@ -32,18 +33,32 @@
     _seenOrderIds = new Set(
       BW.orders().filter((o) => o.riderId === me.uid && o.status === S.ASSIGNED).map((o) => o.id)
     );
+    _seenBookingIds = new Set(
+      (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && b.status === (BW.BOOKING_STATUS || {}).RIDER_ASSIGNED).map((b) => b.id)
+    );
+    if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
     BW.subscribe(() => { syncRider(); checkNewOrders(); render(); });
     render();
   }
 
-  /* ── New-assignment alarm ─────────────────────────────── */
+  /* ── New-assignment alarm (buzzer + system notification) ─ */
   function checkNewOrders() {
     const assigned = BW.orders().filter((o) => o.riderId === me.uid && o.status === S.ASSIGNED);
     const fresh = assigned.filter((o) => !_seenOrderIds.has(o.id));
-    if (!fresh.length) return;
-    fresh.forEach((o) => _seenOrderIds.add(o.id));
-    if (window.Buzzer) window.Buzzer.play();
-    toast("🔔 New delivery assigned to you");
+    if (fresh.length) {
+      fresh.forEach((o) => _seenOrderIds.add(o.id));
+      const o = fresh[0];
+      const label = "#" + (o.orderNo || o.id.slice(-6).toUpperCase());
+      if (window.Buzzer) window.Buzzer.alert("New delivery assigned", "Order " + label + " — tap to open Saardha");
+      toast("🔔 New delivery assigned to you");
+    }
+    // Also alert on new service pickups (Pickup & Drop collect leg)
+    const freshB = (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && b.status === BS.RIDER_ASSIGNED && !_seenBookingIds.has(b.id));
+    if (freshB.length) {
+      freshB.forEach((b) => _seenBookingIds.add(b.id));
+      if (window.Buzzer) window.Buzzer.alert("New service pickup", "#" + (b.orderNo || b.id.slice(-6).toUpperCase()) + " — tap to open Saardha");
+      toast("🔔 New service pickup assigned");
+    }
   }
 
   function syncRider() {
@@ -107,6 +122,15 @@
     root.appendChild(renderCashCard());
     root.appendChild(renderRatingsCard());
     root.appendChild(renderOrderList(orders));
+    const bookings = myBookings();
+    if (bookings.length) root.appendChild(renderBookingList(bookings));
+  }
+
+  /* ── Services bookings (Pickup & Drop, two legs) ──────── */
+  const BS = (BW.BOOKING_STATUS || {});
+  function myBookings() {
+    const active = [BS.RIDER_ASSIGNED, BS.PICKED_FROM_CUSTOMER, BS.OUT_FOR_RETURN];
+    return (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && active.includes(b.status));
   }
 
   /* ── Cash-in-hand (COD floating balance) ───────────────── */
@@ -198,7 +222,7 @@
       catch (e) { err.textContent = e.message || "Could not complete delivery."; submit.disabled = false; submit.textContent = "Mark Delivered"; }
     });
     close = modal({
-      title: "Complete delivery · #" + order.id.slice(-6).toUpperCase(),
+      title: "Complete delivery · #" + (order.orderNo || order.id.slice(-6).toUpperCase()),
       body: el("div", {}, [
         el("p", { class: "muted small", style: "margin:0 0 10px" }, "Ask the customer for their 4-digit delivery OTP" + (isCod ? " and collect the cash." : ".")),
         otpIn, cashIn, err,
@@ -336,30 +360,34 @@
 
     const pickupAddr = isPartner ? (o.pickup && o.pickup.address) : (vendor && vendor.name);
     // Context-aware navigation: head to the store until picked up, then to the customer.
+    // The customer's delivery location stays hidden until the parcel is actually picked up.
     const pickedUp = [S.PICKED_UP, S.OUT_FOR_DELIVERY].includes(o.status);
     const nav = pickedUp
       ? navigateBtn(custLat, custLng, deliverTo, "🧭 Navigate to customer")
       : navigateBtn(vendorLat, vendorLng, pickupAddr, "🧭 Navigate to pickup");
-    const mapBtns = [
-      mapsLink(vendorLat, vendorLng, "Pickup", pickupAddr),
-      mapsLink(custLat, custLng, "Delivery", deliverTo),
-    ].filter(Boolean);
+    // Before pickup show only the pickup map; after pickup, only the customer's.
+    const mapBtns = (pickedUp
+      ? [mapsLink(custLat, custLng, "Delivery", deliverTo)]
+      : [mapsLink(vendorLat, vendorLng, "Pickup", pickupAddr)]
+    ).filter(Boolean);
+
+    const orderLabel = "#" + (o.orderNo || o.id.slice(-6).toUpperCase());
 
     return el("div", { class: "card rider-card" }, [
       el("div", { class: "order-card-head" }, [
-        el("span", { class: "order-id" }, (taskNo ? "Task " + taskNo + " · " : "") + "#" + o.id.slice(-6).toUpperCase()),
+        el("span", { class: "order-id" }, (taskNo ? "Task " + taskNo + " · " : "") + orderLabel),
         el("span", { class: "badge " + o.status }, BW.STATUS_LABEL[o.status] || o.status),
       ]),
       el("div", { class: "rider-card-body" }, [
         row("From",       fromName),
-        row("Deliver to", deliverTo),
+        row("Deliver to", pickedUp ? deliverTo : "🔒 Revealed after pickup"),
         row("Items",      itemsLabel),
         isPartner ? row("Via",  o.partnerName || "Partner") : null,
         row("Placed",     timeAgo(o.createdAt)),
       ].filter(Boolean)),
       nav,
       mapBtns.length ? el("div", { class: "rider-map-row" }, mapBtns) : null,
-      contactRow(o),
+      pickedUp ? contactRow(o) : null,
       next ? el("button", {
         class: "btn " + next.cls + " rider-advance-btn",
         onclick: () => doAdvance(o.id),
@@ -393,6 +421,90 @@
     const wa = waLink(phone);
     if (wa) btns.push(el("a", { class: "rider-map-btn", href: wa, target: "_blank", rel: "noopener" }, "💬 Chat"));
     return el("div", { class: "rider-map-row" }, btns);
+  }
+
+  /* ── Services booking list (two-leg Pickup & Drop) ────── */
+  function renderBookingList(bookings) {
+    const wrap = el("div", { class: "rider-orders", style: "margin-top:16px" });
+    wrap.appendChild(el("h3", { class: "page-title" }, "Service pickups (" + bookings.length + ")"));
+    bookings.forEach((b, i) => wrap.appendChild(renderBookingCard(b, i + 1)));
+    return wrap;
+  }
+
+  function renderBookingCard(b, taskNo) {
+    const collecting = b.status === BS.RIDER_ASSIGNED;        // go to customer, collect
+    const toShop     = b.status === BS.PICKED_FROM_CUSTOMER;  // go to shop, drop
+    const returning  = b.status === BS.OUT_FOR_RETURN;        // go to customer, return
+
+    const custLabel = b.address || b.addressName || "Customer";
+    let dest, destAddr, navLabel, actionLabel, actionCls;
+    if (collecting) { dest = { lat: b.lat, lng: b.lng }; destAddr = custLabel; navLabel = "🧭 Navigate to customer (collect)"; actionLabel = "Confirm pickup from customer"; actionCls = "primary"; }
+    else if (toShop) { dest = { lat: b.shopLat, lng: b.shopLng }; destAddr = b.serviceVendorName + (b.shopArea ? ", " + b.shopArea : ""); navLabel = "🧭 Navigate to shop (drop)"; actionLabel = "Dropped at " + b.serviceVendorName; actionCls = "accent"; }
+    else { dest = { lat: b.lat, lng: b.lng }; destAddr = custLabel; navLabel = "🧭 Navigate to customer (return)"; actionLabel = "Complete return (OTP)"; actionCls = "success"; }
+
+    const legText = collecting ? "Leg 1 · Collect from customer" : toShop ? "Leg 1 · Drop at shop" : "Leg 2 · Return to customer";
+    const nav = navigateBtn(dest.lat, dest.lng, destAddr, navLabel);
+    const map = mapsLink(dest.lat, dest.lng, "Open map", destAddr);
+    const phone = b.addressPhone;
+    const contact = phone ? el("div", { class: "rider-map-row" }, [
+      el("a", { class: "rider-map-btn", href: "tel:" + phone }, "📞 Call"),
+      waLink(phone) ? el("a", { class: "rider-map-btn", href: waLink(phone), target: "_blank", rel: "noopener" }, "💬 Chat") : null,
+    ].filter(Boolean)) : null;
+
+    const itemsTxt = (b.items || []).reduce((s, i) => s + (i.qty || 1), 0) + " item(s) · " + (b.serviceVendorName || "Service");
+
+    const act = el("button", { class: "btn " + actionCls + " rider-advance-btn" }, actionLabel);
+    act.addEventListener("click", async () => {
+      if (returning) { promptBookingComplete(b); return; }
+      try { await BW.advanceBooking(b.id); toast("Updated ✓"); await syncRider(); render(); }
+      catch (e) { toast(e.message || "Could not update"); }
+    });
+
+    return el("div", { class: "card rider-card" }, [
+      el("div", { class: "order-card-head" }, [
+        el("span", { class: "order-id" }, (taskNo ? "Pickup " + taskNo + " · " : "") + "#" + b.id.slice(-6).toUpperCase()),
+        el("span", { class: "badge" }, (BW.BOOKING_LABEL && BW.BOOKING_LABEL[b.status]) || b.status),
+      ]),
+      el("div", { class: "rider-card-body" }, [
+        row("Task", legText),
+        row("Customer", custLabel),
+        row("Shop", b.serviceVendorName || "—"),
+        row("Items", itemsTxt),
+        row("Pay", (b.paymentMethod === "ONLINE" ? "Prepaid online" : "Collect cash on return · " + money((b.finalTotal != null ? b.finalTotal : b.estTotal) + (b.deliveryFee || 0)))),
+      ]),
+      nav,
+      map ? el("div", { class: "rider-map-row" }, [map]) : null,
+      contact,
+      act,
+    ].filter(Boolean));
+  }
+
+  // Return leg completion — OTP (+ COD cash) just like an order delivery.
+  function promptBookingComplete(b) {
+    const isCod = b.paymentMethod !== "ONLINE";
+    const due = (b.finalTotal != null ? b.finalTotal : b.estTotal) + (b.deliveryFee || 0);
+    const otpIn = el("input", { inputmode: "numeric", maxlength: "4", placeholder: "4-digit return OTP", style: "width:100%;margin-bottom:10px" });
+    const cashIn = isCod ? el("input", { inputmode: "numeric", placeholder: "Cash collected (₹)", value: String(due || ""), style: "width:100%;margin-bottom:10px" }) : null;
+    const err = el("div", { class: "auth-err", style: "text-align:left" });
+    let close;
+    const submit = el("button", { class: "btn success" }, "Mark returned");
+    submit.addEventListener("click", async () => {
+      const otp = otpIn.value.trim();
+      if (otp.length !== 4) { err.textContent = "Enter the 4-digit OTP the customer shows you."; return; }
+      const body = { otp: otp };
+      if (isCod) { const c = Number(cashIn.value); if (!c || c <= 0) { err.textContent = "Enter the cash collected."; return; } body.cashCollected = c; }
+      submit.disabled = true; submit.textContent = "Confirming…";
+      try { await BW.advanceBooking(b.id, body); if (close) close(); toast("Returned ✓"); await syncRider(); render(); }
+      catch (e) { err.textContent = e.message || "Could not complete."; submit.disabled = false; submit.textContent = "Mark returned"; }
+    });
+    close = modal({
+      title: "Complete return · #" + b.id.slice(-6).toUpperCase(),
+      body: el("div", {}, [
+        el("p", { class: "muted small", style: "margin:0 0 10px" }, "Ask the customer for their 4-digit return OTP" + (isCod ? " and collect the cash." : ".")),
+        otpIn, cashIn, err,
+      ].filter(Boolean)),
+      footer: [submit],
+    });
   }
 
   /* ── Go ─────────────────────────────────────────────── */

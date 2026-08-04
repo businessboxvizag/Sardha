@@ -60,9 +60,32 @@
     if (global.navigator && navigator.vibrate) navigator.vibrate(0);
   }
 
+  /* ── Browser notifications (pull the user back from another app) ── */
+  function requestNotify() {
+    try {
+      if ("Notification" in global && Notification.permission === "default") {
+        Notification.requestPermission().catch(function () {});
+      }
+    } catch (e) {}
+  }
+  // Show a system notification (title + body). Clicking it focuses the app.
+  function notify(title, body) {
+    try {
+      if (!("Notification" in global) || Notification.permission !== "granted") return;
+      var n = new Notification(title, { body: body || "", icon: "../assets/img/icon.png", tag: "saardha", renotify: true });
+      n.onclick = function () { try { global.focus(); } catch (e) {} n.close(); };
+    } catch (e) {}
+  }
+  // Buzzer + vibrate + system notification together — the full "new task" alert.
+  function alert(title, body, durationMs) {
+    play(durationMs);
+    notify(title, body);
+  }
+
   /* Unlock audio on the first user gesture (login click counts) */
   function unlock() {
     ensureCtx();
+    requestNotify();
     ["click", "keydown", "touchstart"].forEach(function (ev) {
       global.removeEventListener(ev, unlock);
     });
@@ -71,5 +94,5 @@
     global.addEventListener(ev, unlock);
   });
 
-  global.Buzzer = { play: play, stop: stop, beep: beep };
+  global.Buzzer = { play: play, stop: stop, beep: beep, notify: notify, requestNotify: requestNotify, alert: alert };
 })(window);

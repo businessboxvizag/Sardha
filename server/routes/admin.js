@@ -160,10 +160,16 @@ router.get("/users", requireAuth, requireRole("admin"), async (req, res) => {
  * credentials to the merchant and display the store QR.       */
 router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const { merchantName, email, password } = req.body;
+    // Accept the richer onboarding fields; keep merchantName as a fallback for older callers.
+    const email = req.body.email;
+    const password = req.body.password;
+    const ownerName = (req.body.ownerName || "").trim();
+    const businessName = (req.body.businessName || req.body.merchantName || "").trim();
+    const ownerPhone = (req.body.ownerPhone || "").trim() || null;
+    const businessPhone = (req.body.businessPhone || "").trim() || null;
 
-    if (!merchantName || !email || !password) {
-      return res.status(400).json({ error: "merchantName, email and password are required" });
+    if (!businessName || !email || !password) {
+      return res.status(400).json({ error: "businessName, email and password are required" });
     }
     if (password.length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
@@ -183,22 +189,29 @@ router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) =>
     const uid = userRef.id;
     const now = new Date().toISOString();
 
-    // Create merchant user
+    // Create merchant user (owner details live on the account)
     await userRef.set({
       uid, email, passwordHash,
       role: "merchant",
-      name: merchantName,
+      name: ownerName || businessName,
+      ownerName: ownerName || null,
+      phone: ownerPhone,
       authProvider: "email",
       createdAt: now,
       createdBy: "admin",
     });
 
-    // Create stub vendor doc (merchant completes setup on first login)
+    // Create stub vendor doc pre-filled with the business name/phone.
+    // The merchant completes the rest (description, category, location) on first login.
     await db.collection("vendors").doc(uid).set({
       id: uid,
-      name: "",
+      name: businessName,
+      description: "",
       merchantId: uid,
       userId: uid,
+      ownerName: ownerName || null,
+      ownerPhone: ownerPhone,
+      businessPhone: businessPhone,
       category: "",
       area: "",
       img: "",
@@ -206,6 +219,8 @@ router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) =>
       prepMins: 15,
       lat: null,
       lng: null,
+      storeDiscountPct: 0,
+      promos: [],
       active: false,
       status: "pending_setup",
       createdAt: now,
@@ -216,7 +231,8 @@ router.post("/merchants", requireAuth, requireRole("admin"), async (req, res) =>
       vendorId: uid,
       email,
       password,
-      merchantName,
+      merchantName: businessName,
+      ownerName,
     });
   } catch (err) {
     console.error("POST /admin/merchants:", err);

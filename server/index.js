@@ -61,6 +61,8 @@ app.use("/api/auth",      authLimiter, require("./routes/auth"));
 app.use("/api/auth",      authLimiter, require("./routes/reset"));
 app.use("/api/vendors",   apiLimiter,  require("./routes/vendors"));
 app.use("/api/orders",    orderLimiter, require("./routes/orders"));
+app.use("/api/services",  apiLimiter,  require("./routes/services"));   // local-services catalog
+app.use("/api/bookings",  orderLimiter, require("./routes/bookings"));  // services booking engine
 app.use("/api/payments",  require("./routes/payments"));
 app.use("/api/assistant", require("./routes/assistant"));
 app.use("/api/events",    require("./routes/events"));

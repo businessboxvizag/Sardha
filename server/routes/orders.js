@@ -34,6 +34,24 @@ const toOrder = (doc) => {
   return { id: doc.id, ...rest };
 };
 
+// Short, human-friendly, sequential order number (easy to read out to a rider/merchant).
+// Starts at 1001 and increments atomically via a counter doc.
+async function nextOrderNo() {
+  const ref = db.collection("counters").doc("orders");
+  try {
+    return await db.runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      const cur = doc.exists ? (doc.data().seq || 1000) : 1000;
+      const next = cur + 1;
+      tx.set(ref, { seq: next }, { merge: true });
+      return next;
+    });
+  } catch (e) {
+    // Fallback: time-based 4-digit number if the counter transaction fails.
+    return 1000 + (Date.now() % 9000);
+  }
+}
+
 // COD cash-in-hand limit (admin-configurable in settings; default ₹2000)
 async function getCodLimit() {
   try { const s = await db.collection("settings").doc("global").get(); const d = s.exists ? s.data() : {}; return Number(d.codCashLimit) || 2000; }
@@ -211,9 +229,11 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     }
     const now = new Date().toISOString();
 
+    const orderNo = await nextOrderNo();
     const ref = db.collection("orders").doc();
     const order = {
       id: ref.id,
+      orderNo,               // short sequential number shown across all apps
       customerId: customer.id,
       vendorId,
       riderId: null,
@@ -369,6 +389,25 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
       if (order.vendorId !== vendorId) return res.status(403).json({ error: "Not your vendor\'s order" });
     }
     // admin: unrestricted
+
+    // Role-based advance guard — a merchant dispatches a rider and must NOT be able to
+    // push the order through the rider-owned steps (pickup → out for delivery → delivered).
+    // Only the assigned rider (or an admin) may advance those. This is what prevents an
+    // order showing "picked up" while the Saradhi never actually received a pickup task.
+    const ADVANCE_FROM = {
+      merchant: ["PLACED"],                                    // → ACCEPTED only (then Dispatch assigns a rider)
+      rider:    ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"], // pickup → out for delivery → delivered
+    };
+    if (role !== "admin") {
+      const allowedFrom = ADVANCE_FROM[role] || [];
+      if (!allowedFrom.includes(order.status)) {
+        return res.status(403).json({
+          error: role === "merchant"
+            ? "Once a rider is dispatched, only the Saradhi can update pickup and delivery."
+            : `A ${role} cannot advance an order from ${order.status}.`,
+        });
+      }
+    }
 
     const i = STATUS_FLOW.indexOf(order.status);
     if (i < 0 || i >= STATUS_FLOW.length - 1) {

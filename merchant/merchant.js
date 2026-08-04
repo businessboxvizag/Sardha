@@ -105,17 +105,20 @@
     _seenOrderIds = new Set(
       BW.orders({ vendorId: state.vendorId, status: S.PLACED }).map((o) => o.id)
     );
+    if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
     BW.subscribe(() => { checkNewOrders(); render(); });
     render();
   }
 
-  /* ----- new-order alarm ----- */
+  /* ----- new-order alarm (buzzer + system notification) ----- */
   function checkNewOrders() {
     const placed = BW.orders({ vendorId: state.vendorId, status: S.PLACED });
     const fresh = placed.filter((o) => !_seenOrderIds.has(o.id));
     if (!fresh.length) return;
     fresh.forEach((o) => _seenOrderIds.add(o.id));
-    if (window.Buzzer) window.Buzzer.play();
+    const o = fresh[0];
+    const label = "#" + (o.orderNo || o.id.slice(-6).toUpperCase());
+    if (window.Buzzer) window.Buzzer.alert("New order " + label, placed.length + " order(s) waiting to accept — tap to open");
     toast("🔔 New order received — " + placed.length + " waiting to accept");
   }
 
@@ -126,6 +129,7 @@
     ]));
 
     const nameEl = el("input", { placeholder: "e.g. Ravi Kirana Store", style: "font-size:16px" });
+    const descEl = el("textarea", { placeholder: "Short description customers see (e.g. Fresh groceries, daily essentials & home delivery)", style: "min-height:60px" });
     const catEl  = el("select", { style: "font-size:16px" });
     CATEGORY_OPTIONS.forEach((c) => catEl.appendChild(el("option", { value: c.value }, c.label)));
     const areaEl = el("input", { placeholder: "e.g. Dwaraka Nagar, Vizag" });
@@ -154,6 +158,7 @@
         await BW.upsertVendor({
           id: vendorId,
           name: nameEl.value.trim(),
+          description: descEl.value.trim(),
           category: catEl.value,
           area: areaEl.value.trim(),
           lat: _lat,
@@ -178,6 +183,7 @@
       el("p", { class: "muted", style: "margin:0 0 28px" }, "Fill in your store details. You can update these any time from your profile."),
       el("div", { class: "card" }, [
         el("div", { class: "field" }, [el("label", {}, "Store name"), nameEl]),
+        el("div", { class: "field" }, [el("label", {}, "Store description"), descEl]),
         el("div", { class: "field" }, [el("label", {}, "Category"), catEl]),
         el("div", { class: "field" }, [el("label", {}, "Area / locality"), areaEl]),
         el("div", { class: "field" }, [
@@ -295,7 +301,7 @@
 
     return el("div", { class: "card", style: "margin-bottom:12px;cursor:pointer", onClick: () => openOrderDetail(o.id) }, [
       el("div", { class: "row between" }, [
-        el("strong", {}, "#" + o.id.slice(-6).toUpperCase()),
+        el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase())),
         statusBadge(o.status),
       ]),
       el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " · " + itemCount + " items · " + money(o.total)),
@@ -327,16 +333,24 @@
         ])),
       ]),
     ]);
+    // The merchant's actions end at dispatch. Accept from the PLACED card; dispatch a
+    // rider once ACCEPTED. After a rider is assigned, pickup & delivery belong to the
+    // Saradhi — the merchant only monitors here.
     const footer = [];
-    const statusFlow = BW.STATUS_FLOW;
-    const i = statusFlow.indexOf(o.status);
-    if (o.status !== S.DELIVERED && o.status !== S.CANCELLED && i >= 0 && i < statusFlow.length - 1) {
+    if (o.status === S.PLACED) {
       footer.push(el("button", { class: "btn primary", onClick: async () => {
-        try { await BW.advanceOrder(o.id); toast("Status advanced"); close(); }
+        try { await BW.setOrderStatus(o.id, S.ACCEPTED); toast("Order accepted"); close(); }
         catch (err) { toast("Error: " + err.message); }
-      } }, "Advance → " + BW.STATUS_LABEL[statusFlow[i + 1]]));
+      } }, "Accept order"));
+    } else if (o.status === S.ACCEPTED && !o.riderId) {
+      footer.push(el("button", { class: "btn accent", onClick: async () => {
+        try { await autoDispatch(o); close(); } catch (err) { toast("Error: " + err.message); }
+      } }, "Dispatch rider"));
+    } else if (![S.DELIVERED, S.CANCELLED].includes(o.status)) {
+      footer.push(el("div", { class: "muted small", style: "padding:4px 2px" },
+        "Rider is handling pickup & delivery — track progress in the timeline above."));
     }
-    const close = UI.modal({ title: "Order #" + o.id.slice(-6).toUpperCase(), body, footer });
+    const close = UI.modal({ title: "Order #" + (o.orderNo || o.id.slice(-6).toUpperCase()), body, footer });
   }
 
   /* ====================== DISPATCH ====================== */
@@ -390,14 +404,12 @@
           try { const { rider } = await BW.autoAssignRider(o.id); toast("Assigned to " + rider.name); }
           catch (err) { toast(err.message || "No available riders"); }
         } }, "Auto-assign"));
-      } else if (o.status !== S.DELIVERED) {
-        act.push(el("button", { class: "btn primary sm", onClick: async () => {
-          try { await BW.advanceOrder(o.id); }
-          catch (err) { toast("Error: " + err.message); }
-        } }, "Advance"));
+      } else if (r && ![S.DELIVERED, S.CANCELLED].includes(o.status)) {
+        // Rider assigned — pickup & delivery are the Saradhi's to advance, not the merchant's.
+        act.push(el("span", { class: "muted small" }, "Rider en route"));
       }
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, "#" + o.id.slice(-6).toUpperCase())),
+        el("td", {}, el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()))),
         el("td", {}, cust ? cust.name : "—"),
         el("td", {}, statusBadge(o.status)),
         el("td", {}, r ? r.name : el("span", { class: "muted" }, "—")),
@@ -521,6 +533,7 @@
 
     const nameEl  = el("input", { value: p ? p.name : "", placeholder: namePlaceholder });
     const priceEl = el("input", { type: "number", value: p ? p.price : "", placeholder: "0", min: "0" });
+    const mrpEl   = el("input", { type: "number", value: p && p.mrp ? p.mrp : "", placeholder: "optional", min: "0" });
 
     const fields = [
       el("div", { class: "field" }, [el("label", {}, "Item name"), nameEl]),
@@ -585,6 +598,13 @@
       }
     }
 
+    // MRP for a strike-through discount (shown to customers when higher than the sale price).
+    fields.push(el("div", { class: "field" }, [
+      el("label", {}, "MRP (₹) — for discount, optional"),
+      mrpEl,
+      el("div", { class: "muted small", style: "margin-top:4px" }, "Set higher than the price above to show customers a struck-through MRP and a % off."),
+    ]));
+
     let photoData = null;
     const photoPreview = el("div", { class: "prod-photo-prev" }, (p && p.photoUrl) ? el("img", { src: p.photoUrl, alt: "" }) : document.createTextNode("📷"));
     const fileEl = el("input", { type: "file", accept: "image/*", style: "display:none" });
@@ -617,6 +637,7 @@
               vendorId: state.vendorId,
               name: nameEl.value.trim(),
               price: priceEl.value ? Number(priceEl.value) : 0,
+              mrp: mrpEl.value ? Number(mrpEl.value) : null,
             };
             if (pharma) {
               payload.unit = unitEl.value;
