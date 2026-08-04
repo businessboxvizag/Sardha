@@ -217,6 +217,7 @@
       navItem("orders",    "Orders",    pending),
       navItem("inventory", "Inventory"),
       navItem("analytics", "Analytics"),
+      navItem("profile",   "Store"),
     ]);
 
     root.appendChild(el("div", { class: "app" }, [nav, el("div", { class: "content" }, body)]));
@@ -226,6 +227,7 @@
       bnItem("orders",    "Or", "Orders",    pending || null),
       bnItem("inventory", "In", "Inventory"),
       bnItem("analytics", "An", "Analytics"),
+      bnItem("profile",   "St", "Store"),
     ]));
 
     function navItem(route, label, count) {
@@ -437,61 +439,97 @@
 
   /* ====================== INVENTORY ====================== */
   function viewInventory() {
-    const vendor   = BW.vendor(state.vendorId);
-    const products = BW.products(state.vendorId);
-    const food    = isFoodVendor(vendor);
-    const pharma  = isPharmacyVendor(vendor);
-    const general = isGeneralVendor(vendor);
+    const vendor = BW.vendor(state.vendorId);
+    const allProducts = () => BW.products(state.vendorId);
 
-    let headers;
-    if (food)         headers = ["Item", "Price (₹)", "Qty available", ""];
-    else if (pharma)  headers = ["Item", "Price (₹)", "Pack size", ""];
-    else if (general) headers = ["Item", "Price (₹)", "Unit / sold per", ""];
-    else              headers = ["Item", "Price (₹)", ""];
+    // Unit / stock sub-line per item.
+    function metaLine(p) {
+      const bits = [];
+      if (p.unit) bits.push("per " + p.unit);
+      if (p.qty !== undefined && p.qty !== null) bits.push(p.qty + " in stock");
+      return bits.join(" · ");
+    }
 
-    const rows = products.map((p) => {
-      const cells = [
-        el("td", {}, el("strong", {}, p.name)),
-        el("td", {}, p.price ? money(p.price) : el("span", { class: "muted" }, "—")),
-      ];
-
-      if (food) {
-        cells.push(el("td", {}, p.qty !== undefined ? String(p.qty) : el("span", { class: "muted" }, "—")));
-      } else if (pharma) {
-        const label = (p.qty !== undefined && p.unit) ? `${p.qty} ${p.unit}`
-                    : p.unit ? p.unit : null;
-        cells.push(el("td", {}, label ? label : el("span", { class: "muted" }, "—")));
-      } else if (general) {
-        cells.push(el("td", {}, p.unit ? "per " + p.unit : el("span", { class: "muted" }, "—")));
+    function priceNode(p) {
+      if (p.mrp && p.mrp > p.price) {
+        return el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+          el("strong", {}, money(p.price)),
+          el("span", { style: "text-decoration:line-through;color:var(--muted);font-size:12px" }, money(p.mrp)),
+          el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
+        ]);
       }
+      return el("strong", {}, p.price ? money(p.price) : "—");
+    }
 
-      cells.push(el("td", {}, el("div", { class: "row", style: "gap:6px" }, [
-        el("button", { class: "btn ghost sm", onClick: () => editProduct(p) }, "Edit"),
-        el("button", { class: "btn danger sm", onClick: async () => {
-          if (confirm("Delete " + p.name + "?")) {
-            try { await BW.deleteProduct(state.vendorId, p.id); toast("Deleted"); }
-            catch (err) { toast("Error: " + err.message); }
-          }
-        } }, "Delete"),
-      ])));
-      return el("tr", {}, cells);
-    });
+    async function toggleStock(p) {
+      try { await BW.upsertProduct({ id: p.id, vendorId: state.vendorId, available: p.available === false }); toast(p.available === false ? "Back in stock" : "Marked out of stock"); }
+      catch (e) { toast("Error: " + e.message); }
+    }
+
+    function itemCard(p) {
+      const out = p.available === false;
+      const thumb = p.photoUrl
+        ? el("div", { style: "width:48px;height:48px;border-radius:10px;overflow:hidden;flex:none" }, el("img", { src: p.photoUrl, alt: "", style: "width:100%;height:100%;object-fit:cover" }))
+        : el("div", { style: "width:48px;height:48px;border-radius:10px;flex:none;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:20px" }, (vendor && vendor.img) || "🛍");
+      return el("div", { class: "card", style: "display:flex;gap:12px;align-items:center;margin-bottom:8px;padding:10px 12px" + (out ? ";opacity:.6" : "") }, [
+        thumb,
+        el("div", { style: "flex:1;min-width:0" }, [
+          el("div", { style: "font-weight:700;display:flex;align-items:center;gap:6px" }, [
+            el("span", { style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, p.name),
+            out ? el("span", { style: "background:#fdeaea;color:#c0392b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;flex:none" }, "OUT OF STOCK") : document.createTextNode(""),
+          ]),
+          priceNode(p),
+          metaLine(p) ? el("div", { class: "muted small" }, metaLine(p)) : document.createTextNode(""),
+        ]),
+        el("div", { style: "display:flex;flex-direction:column;gap:6px;flex:none" }, [
+          el("button", { class: "btn " + (out ? "success" : "ghost") + " sm", onClick: () => toggleStock(p) }, out ? "In stock" : "Out of stock"),
+          el("div", { style: "display:flex;gap:6px" }, [
+            el("button", { class: "btn ghost sm", onClick: () => editProduct(p) }, "Edit"),
+            el("button", { class: "btn danger sm", onClick: async () => { if (confirm("Delete " + p.name + "?")) { try { await BW.deleteProduct(state.vendorId, p.id); toast("Deleted"); } catch (e) { toast("Error: " + e.message); } } } }, "✕"),
+          ]),
+        ]),
+      ]);
+    }
+
+    const listWrap = el("div", {});
+    function renderRows() {
+      const q = (state.invSearch || "").toLowerCase().trim();
+      const list = allProducts().filter((p) => !q || (p.name || "").toLowerCase().includes(q));
+      listWrap.innerHTML = "";
+      if (!list.length) {
+        listWrap.appendChild(el("div", { class: "muted", style: "text-align:center;padding:24px" }, allProducts().length ? "No items match your search." : "No items yet — tap “+ Add items” to get started."));
+        return;
+      }
+      list.forEach((p) => listWrap.appendChild(itemCard(p)));
+    }
+
+    const search = el("input", { placeholder: "Search your items…", value: state.invSearch || "" });
+    search.addEventListener("input", (e) => { state.invSearch = e.target.value; renderRows(); });
+
+    const total = allProducts().length;
+    const outCount = allProducts().filter((p) => p.available === false).length;
+    const chip = (label, val, danger) => el("div", { class: "card", style: "flex:1;text-align:center;padding:10px" }, [
+      el("div", { style: "font-size:20px;font-weight:800;color:" + (danger && val > 0 ? "var(--red)" : "var(--text)") }, String(val)),
+      el("div", { class: "muted small" }, label),
+    ]);
 
     shell("inventory", [
-      el("div", { class: "row between" }, [
+      el("div", { class: "row between", style: "align-items:center" }, [
         el("div", {}, [
           el("h1", { class: "page-title" }, "Inventory"),
-          el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " · " + products.length + " items"),
+          el("p", { class: "page-sub" }, (vendor ? vendor.name : "") + " · manage your items"),
         ]),
-        el("button", { class: "btn primary", onClick: () => editProduct(null) }, "+ Add item"),
+        el("button", { class: "btn primary", onClick: () => editProduct(null, true) }, "+ Add items"),
       ]),
-      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
-        el("table", {}, [
-          el("thead", {}, el("tr", {}, headers.map((h) => el("th", {}, h)))),
-          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: String(headers.length), class: "muted", style: "text-align:center;padding:24px" }, "No items yet. Click \"+ Add item\" to get started."))]),
-        ]),
+      el("div", { style: "display:flex;gap:10px;margin-bottom:12px" }, [
+        chip("Total items", total),
+        chip("In stock", total - outCount),
+        chip("Out of stock", outCount, true),
       ]),
+      el("div", { class: "field", style: "margin-bottom:12px" }, [search]),
+      listWrap,
     ]);
+    renderRows();
   }
 
   function resizeImage(file, maxDim, quality) {
@@ -523,12 +561,13 @@
     return d.secure_url;
   }
 
-  function editProduct(p) {
+  function editProduct(p, quickAdd) {
     const vendor  = BW.vendor(state.vendorId);
     const food    = isFoodVendor(vendor);
     const pharma  = isPharmacyVendor(vendor);
     const general = isGeneralVendor(vendor);
     const isNew   = !p;
+    let addedCount = 0;
 
     const namePlaceholder = pharma  ? "e.g. Paracetamol, Cough Syrup, Vitamin C…"
                           : general ? "e.g. Toor Dal, Surf Excel, Colgate…"
@@ -627,42 +666,56 @@
       ]),
     ]));
 
+    // In quick-add mode, adding one item keeps the form open (reset) so the
+    // merchant can add many items in a row — much faster to stock a store.
+    const counter = el("div", { class: "muted small", style: "text-align:center;margin-bottom:6px;display:none" });
+
+    async function saveItem(keepOpen) {
+      if (!nameEl.value.trim()) { toast("Item name is required"); return; }
+      try {
+        const payload = {
+          id: p ? p.id : undefined,
+          vendorId: state.vendorId,
+          name: nameEl.value.trim(),
+          price: priceEl.value ? Number(priceEl.value) : 0,
+          mrp: mrpEl.value ? Number(mrpEl.value) : null,
+        };
+        if (pharma) { payload.unit = unitEl.value; if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value); }
+        else if (general) { payload.unit = unitEl.value || "piece"; if (stockEl.value !== "") payload.qty = Number(stockEl.value); }
+        else if (food && qtyEl && qtyEl.value !== "") { payload.qty = Number(qtyEl.value); }
+        if (photoData) { try { payload.photoUrl = await uploadToCloudinary(photoData); } catch (e) { toast("Photo upload failed: " + (e.message || "")); } }
+        else if (p && p.photoUrl) { payload.photoUrl = p.photoUrl; }
+        await BW.upsertProduct(payload);
+        if (keepOpen && isNew) {
+          addedCount++;
+          toast("Added ✓ — add the next one");
+          counter.style.display = ""; counter.textContent = addedCount + " item" + (addedCount === 1 ? "" : "s") + " added this session";
+          nameEl.value = ""; priceEl.value = ""; mrpEl.value = "";
+          if (packQtyEl) packQtyEl.value = ""; if (stockEl) stockEl.value = ""; if (qtyEl) qtyEl.value = "";
+          photoData = null; photoPreview.innerHTML = ""; photoPreview.appendChild(document.createTextNode("📷"));
+          nameEl.focus();
+        } else {
+          toast(isNew ? "Item added" : "Item updated");
+          close();
+        }
+      } catch (err) { toast("Error: " + err.message); }
+    }
+
+    const footer = isNew
+      ? [
+          el("button", { class: "btn ghost", onClick: () => close() }, "Done"),
+          el("button", { class: "btn accent", onClick: () => saveItem(true) }, "Save & add another"),
+          el("button", { class: "btn primary", onClick: () => saveItem(false) }, "Save & close"),
+        ]
+      : [
+          el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+          el("button", { class: "btn primary", onClick: () => saveItem(false) }, "Save"),
+        ];
+
     const close = UI.modal({
-      title: isNew ? "Add item" : "Edit item",
-      body: el("div", {}, fields),
-      footer: [
-        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
-        el("button", { class: "btn primary", onClick: async () => {
-          if (!nameEl.value.trim()) { toast("Item name is required"); return; }
-          try {
-            const payload = {
-              id: p ? p.id : undefined,
-              vendorId: state.vendorId,
-              name: nameEl.value.trim(),
-              price: priceEl.value ? Number(priceEl.value) : 0,
-              mrp: mrpEl.value ? Number(mrpEl.value) : null,
-            };
-            if (pharma) {
-              payload.unit = unitEl.value;
-              if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value);
-            } else if (general) {
-              payload.unit = unitEl.value || "piece";
-              if (stockEl.value !== "") payload.qty = Number(stockEl.value);
-            } else if (food && qtyEl && qtyEl.value !== "") {
-              payload.qty = Number(qtyEl.value);
-            }
-            if (photoData) {
-              try { payload.photoUrl = await uploadToCloudinary(photoData); }
-              catch (e) { toast("Photo upload failed: " + (e.message || "")); }
-            } else if (p && p.photoUrl) {
-              payload.photoUrl = p.photoUrl;
-            }
-            await BW.upsertProduct(payload);
-            toast(isNew ? "Item added" : "Item updated");
-            close();
-          } catch (err) { toast("Error: " + err.message); }
-        } }, "Save"),
-      ],
+      title: isNew ? "Add items" : "Edit item",
+      body: el("div", {}, [counter].concat(fields)),
+      footer: footer,
     });
   }
 
@@ -829,10 +882,110 @@
   }
   viewAnalytics._period = "7d";
 
+  /* ====================== STORE PROFILE ====================== */
+  function viewStoreProfile() {
+    const v = BW.vendor(state.vendorId) || {};
+    const nameEl = el("input", { value: v.name || "" });
+    const descEl = el("textarea", { value: v.description || "", placeholder: "Short description customers see", style: "min-height:60px" });
+    const catEl  = el("select", {});
+    CATEGORY_OPTIONS.forEach((c) => catEl.appendChild(el("option", { value: c.value, ...(v.category === c.value ? { selected: "" } : {}) }, c.label)));
+    const areaEl = el("input", { value: v.area || "", placeholder: "Area / locality" });
+    const ownerPhoneEl = el("input", { type: "tel", value: v.ownerPhone || "", placeholder: "Owner mobile" });
+    const bizPhoneEl   = el("input", { type: "tel", value: v.businessPhone || "", placeholder: "Business phone" });
+    const prepEl = el("input", { type: "number", value: v.prepMins != null ? v.prepMins : 15, min: "1", placeholder: "15" });
+    const discEl = el("input", { type: "number", value: v.storeDiscountPct || 0, min: "0", max: "90", placeholder: "0" });
+
+    // Location: GPS + Google Maps link
+    let _lat = v.lat != null ? v.lat : null, _lng = v.lng != null ? v.lng : null, _mapsUrl = v.mapsUrl || null;
+    const locStatus = el("span", { class: "muted small" }, (_lat != null) ? ("📍 " + Number(_lat).toFixed(4) + ", " + Number(_lng).toFixed(4)) : (_mapsUrl ? "📍 Maps link saved" : "Not set"));
+    const gpsBtn = el("button", { class: "btn ghost sm", type: "button" }, "Use my location");
+    gpsBtn.addEventListener("click", () => {
+      if (!navigator.geolocation) { locStatus.textContent = "GPS not supported"; return; }
+      if (!window.isSecureContext) { locStatus.textContent = "GPS needs https — paste a Maps link instead"; return; }
+      gpsBtn.disabled = true; locStatus.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(
+        (p) => { _lat = p.coords.latitude; _lng = p.coords.longitude; locStatus.textContent = "📍 " + _lat.toFixed(4) + ", " + _lng.toFixed(4); gpsBtn.disabled = false; },
+        () => { locStatus.textContent = "Couldn't get GPS — paste a Maps link"; gpsBtn.disabled = false; },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+    const linkField = UI.mapsLinkField ? UI.mapsLinkField({ value: v.mapsUrl || "", onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; locStatus.textContent = "📍 " + la.toFixed(4) + ", " + ln.toFixed(4); } } }) : document.createTextNode("");
+
+    // Open / closed toggle
+    const isOpen = v.active !== false;
+    const openBtn = el("button", { class: "btn " + (isOpen ? "success" : "danger") + " sm" }, isOpen ? "🟢 Store is OPEN — tap to close" : "🔴 Store is CLOSED — tap to open");
+    openBtn.addEventListener("click", async () => {
+      try { await BW.upsertVendor({ id: v.id, active: !isOpen, status: !isOpen ? "active" : "inactive" }); toast(!isOpen ? "Store opened" : "Store closed"); render(); }
+      catch (e) { toast("Error: " + e.message); }
+    });
+
+    // Pharmacy prescription toggle
+    const rxCb = el("input", { type: "checkbox" });
+    rxCb.checked = !!v.requiresPrescription;
+
+    const saveBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Save store details");
+    saveBtn.addEventListener("click", async () => {
+      if (!nameEl.value.trim()) { toast("Store name is required"); return; }
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      try {
+        await BW.upsertVendor({
+          id: v.id,
+          name: nameEl.value.trim(),
+          description: descEl.value.trim(),
+          category: catEl.value,
+          area: areaEl.value.trim(),
+          ownerPhone: ownerPhoneEl.value.trim(),
+          businessPhone: bizPhoneEl.value.trim(),
+          prepMins: Number(prepEl.value) || 15,
+          storeDiscountPct: Math.max(0, Math.min(90, Number(discEl.value) || 0)),
+          requiresPrescription: rxCb.checked,
+          lat: _lat, lng: _lng, mapsUrl: _mapsUrl,
+        });
+        toast("Store details saved ✓");
+        render();
+      } catch (e) { toast("Error: " + e.message); saveBtn.disabled = false; saveBtn.textContent = "Save store details"; }
+    });
+
+    const fieldRow = (label, node, hint) => el("div", { class: "field" }, [el("label", {}, label), node, hint ? el("div", { class: "muted small", style: "margin-top:4px" }, hint) : document.createTextNode("")]);
+
+    shell("profile", [
+      el("h1", { class: "page-title" }, "Store profile"),
+      el("p", { class: "page-sub" }, "Update your store details any time. Changes show to customers immediately."),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Availability"),
+        openBtn,
+        el("div", { class: "muted small", style: "margin-top:6px" }, "Closed stores stay listed but can't take new orders."),
+      ]),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        fieldRow("Store name", nameEl),
+        fieldRow("Description", descEl),
+        fieldRow("Category", catEl),
+        fieldRow("Area / locality", areaEl),
+        el("div", { style: "display:flex;gap:10px" }, [
+          el("div", { style: "flex:1" }, [fieldRow("Owner phone", ownerPhoneEl)]),
+          el("div", { style: "flex:1" }, [fieldRow("Business phone", bizPhoneEl)]),
+        ]),
+        el("div", { style: "display:flex;gap:10px" }, [
+          el("div", { style: "flex:1" }, [fieldRow("Prep time (mins)", prepEl)]),
+          el("div", { style: "flex:1" }, [fieldRow("Store-wide discount %", discEl, "Optional. Shown on your storefront.")]),
+        ]),
+        el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [rxCb, el("span", { class: "small" }, "This is a pharmacy — require prescription + selfie at checkout")]),
+      ]),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store location"),
+        el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:8px" }, [gpsBtn, locStatus]),
+        el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste your shop's Google Maps link (the Saradhi navigates here)"),
+        linkField,
+      ]),
+      saveBtn,
+    ]);
+  }
+
   function render() {
     switch (state.route) {
       case "inventory": return viewInventory();
       case "analytics": return viewAnalytics();
+      case "profile":   return viewStoreProfile();
       default:          return viewOrders();
     }
   }
