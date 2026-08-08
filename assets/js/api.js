@@ -332,12 +332,17 @@
     allUsers:      ()   => [..._cache.allUsers],
 
     /* ââ Async mutations ââ */
-    placeOrder: async ({ vendorId, items, paymentMethod,
+    // Price a cart + validate a promo without placing an order. Returns the
+    // authoritative server breakdown: { subtotal, discount, promoError, gst, deliveryFee, total }.
+    quoteOrder: ({ vendorId, items, promoCode }) =>
+      post("/api/orders/quote", { vendorId, items, promoCode: promoCode || undefined }),
+
+    placeOrder: async ({ vendorId, items, paymentMethod, promoCode,
                          razorpay_payment_id, razorpay_order_id, razorpay_signature,
                          deliverLat, deliverLng, deliverTo, deliverPhone, deliverName, deliverMapsUrl,
                          prescriptionUrl, selfieUrl, rxConsent }) => {
       const order = await post("/api/orders", {
-        vendorId, items, paymentMethod,
+        vendorId, items, paymentMethod, promoCode: promoCode || undefined,
         razorpay_payment_id, razorpay_order_id, razorpay_signature,
         deliverLat, deliverLng, deliverTo, deliverPhone, deliverName, deliverMapsUrl,
         prescriptionUrl, selfieUrl, rxConsent,
@@ -347,9 +352,10 @@
       return order;
     },
 
-    // Create a Razorpay order for the server-computed amount (online checkout)
-    createPaymentOrder: ({ vendorId, items }) =>
-      post("/api/payments/create-order", { vendorId, items }),
+    // Create a Razorpay order for the server-computed amount (online checkout).
+    // promoCode is passed so the charged amount already reflects the discount.
+    createPaymentOrder: ({ vendorId, items, promoCode }) =>
+      post("/api/payments/create-order", { vendorId, items, promoCode: promoCode || undefined }),
 
     config: () => _config,
 

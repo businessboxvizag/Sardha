@@ -10,10 +10,20 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 
-/* ── CORS ────────────────────────────────────────────────────── */
+// Behind Render's (and Firebase Hosting's) reverse proxy the real client IP arrives
+// in X-Forwarded-For. Trust one proxy hop so rate limiting keys on the actual client,
+// not the shared proxy IP (without this, express-rate-limit also throws in v7+).
+app.set("trust proxy", 1);
+
+/* ── Startup safety checks ───────────────────────────────────── */
 // In production, CORS_ORIGINS must be set explicitly — never allow wildcard (#25)
 if (process.env.NODE_ENV === "production" && !process.env.CORS_ORIGINS) {
   console.error("FATAL: CORS_ORIGINS must be set in production. Refusing to start.");
+  process.exit(1);
+}
+// JWT_SECRET signs every session token — refuse to boot prod without it.
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET must be set in production. Refusing to start.");
   process.exit(1);
 }
 const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -39,6 +49,9 @@ const authLimiter = rateLimit({ ...limiterDefaults, windowMs: 15 * 60 * 1000, ma
 const orderLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 10 });
 // General API calls
 const apiLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 120 });
+// Costly endpoints: payments (hits Razorpay) and the AI assistant (hits Gemini).
+const paymentLimiter   = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 20 });
+const assistantLimiter = rateLimit({ ...limiterDefaults, windowMs: 60 * 1000, max: 20 });
 
 app.use(express.json({ limit: "512kb" }));
 app.use(helmet()); // Security headers: CSP, HSTS, X-Content-Type-Options, etc. (#23)
@@ -64,15 +77,15 @@ app.use("/api/orders",    orderLimiter, require("./routes/orders"));
 app.use("/api/services",  apiLimiter,  require("./routes/services"));   // local-services catalog
 app.use("/api/bookings",  orderLimiter, require("./routes/bookings"));  // services booking engine
 app.use("/api/geo",       apiLimiter,  require("./routes/geo"));        // Google Maps link → coords
-app.use("/api/payments",  require("./routes/payments"));
-app.use("/api/assistant", require("./routes/assistant"));
-app.use("/api/events",    require("./routes/events"));
-app.use("/api/partner",   require("./routes/partner"));
-app.use("/api/riders",    require("./routes/riders"));
-app.use("/api/customers", require("./routes/customers"));
-app.use("/api/analytics", require("./routes/analytics"));
-app.use("/api/admin",    require("./routes/admin"));
-app.use("/api/settings",  require("./routes/settings"));
+app.use("/api/payments",  paymentLimiter,   require("./routes/payments"));
+app.use("/api/assistant", assistantLimiter, require("./routes/assistant"));
+app.use("/api/events",    apiLimiter, require("./routes/events"));
+app.use("/api/partner",   apiLimiter, require("./routes/partner"));
+app.use("/api/riders",    apiLimiter, require("./routes/riders"));
+app.use("/api/customers", apiLimiter, require("./routes/customers"));
+app.use("/api/analytics", apiLimiter, require("./routes/analytics"));
+app.use("/api/admin",     apiLimiter, require("./routes/admin"));
+app.use("/api/settings",  apiLimiter, require("./routes/settings"));
 
 /* ── Expose Mapbox token safely ──────────────────────────────── */
 app.get("/api/config", (req, res) => {
@@ -84,6 +97,11 @@ app.get("/api/config", (req, res) => {
     cloudinaryPreset: process.env.CLOUDINARY_UPLOAD_PRESET || "",
     // When true, customer signup requires verified email OTP + phone OTP.
     requireSignupOtp: process.env.REQUIRE_SIGNUP_OTP === "true",
+    // Feature flags. v1 ships products-only; Local Services (Pickup & Drop) is built
+    // but hidden until v2. Set FEATURES_SERVICES=true to switch the whole module on.
+    features: {
+      services: process.env.FEATURES_SERVICES === "true",
+    },
   });
 });
 

@@ -506,10 +506,61 @@
         ]));
       });
       const sub = cartTotal();
-      const gst = Math.round(sub * 0.18);
       const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
+      // Discount = bigger of (store-wide %) or (applied promo %), mirroring the server.
+      // Store % comes from the cached vendor; promo % is set only after a server-validated Apply.
+      const storePct = Math.max(0, Math.min(90, Number(v.storeDiscountPct) || 0));
+      const storeDisc = Math.round(sub * storePct / 100);
+      const promoPct  = state.appliedPromoCode ? (Number(state.appliedPromoPct) || 0) : 0;
+      const promoDisc = Math.round(sub * promoPct / 100);
+      let disc = 0, discLabel = "";
+      if (promoDisc > 0 && promoDisc >= storeDisc) { disc = promoDisc; discLabel = "Discount (" + state.appliedPromoCode + ")"; }
+      else if (storeDisc > 0)                       { disc = storeDisc; discLabel = "Store discount (" + storePct + "%)"; }
+      const discountedSub = Math.max(0, sub - disc);
+      const gst = Math.round(discountedSub * 0.18);
+      const total = discountedSub + gst + fee;
+
+      // ── Promo code row ──
+      const promoInput = el("input", { type: "text", value: state.appliedPromoCode || "",
+        placeholder: "Promo code", autocapitalize: "characters",
+        style: "flex:1;text-transform:uppercase;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px" });
+      const applyBtn = el("button", { type: "button", class: "btn ghost sm" }, state.appliedPromoCode ? "Remove" : "Apply");
+      applyBtn.onclick = async () => {
+        if (state.appliedPromoCode) {  // acts as "Remove"
+          state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null; rebuild(); return;
+        }
+        const code = (promoInput.value || "").trim().toUpperCase();
+        if (!code) return;
+        applyBtn.disabled = true; applyBtn.textContent = "…";
+        try {
+          const qi = cartLines().map((l) => ({ productId: l.productId, qty: l.qty }));
+          const r = await BW.quoteOrder({ vendorId: v.id, items: qi, promoCode: code });
+          if (r.promoError) {
+            state.appliedPromoCode = null; state.appliedPromoPct = 0;
+            state.promoMsg = { ok: false, text: r.promoError };
+          } else if (r.discount && r.discount.source === "promo") {
+            state.appliedPromoCode = code; state.appliedPromoPct = r.discount.pct;
+            state.promoMsg = { ok: true, text: "Code " + code + " applied — you save " + money(r.discount.amount) };
+          } else {
+            // Valid code, but the store-wide discount is equal or better — that one applies.
+            state.appliedPromoCode = null; state.appliedPromoPct = 0;
+            state.promoMsg = { ok: true, text: r.discount && r.discount.amount
+              ? "Your store discount (" + money(r.discount.amount) + ") already beats that code."
+              : "That code gives no extra discount on this order." };
+          }
+        } catch (e) {
+          state.promoMsg = { ok: false, text: e.message || "Couldn't apply that code" };
+        }
+        rebuild();
+      };
+      linesWrap.appendChild(el("div", { class: "line", style: "border:none;gap:8px" }, [promoInput, applyBtn]));
+      if (state.promoMsg) linesWrap.appendChild(el("div", { class: "small", style: "margin:-2px 0 6px;color:" + (state.promoMsg.ok ? "var(--brand)" : "#c0392b") }, state.promoMsg.text));
+
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, "Subtotal"), el("span", {}, money(sub)),
+      ]));
+      if (disc > 0) linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
+        el("span", { class: "muted" }, discLabel), el("span", { style: "color:var(--brand)" }, "− " + money(disc)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst)),
@@ -518,7 +569,7 @@
         el("span", { class: "muted" }, "Delivery fee"), el("span", {}, money(fee)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
-        el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(sub + gst + fee)),
+        el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(total)),
       ]));
 
       // Payment method selector
@@ -608,14 +659,46 @@
       panelCart.appendChild(lines);
 
       const sub = cartTotal();
-      const gst = Math.round(sub * 0.18);
       const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
+      const pv = BW.vendor(state.cartVendor) || {};
+      const storePct = Math.max(0, Math.min(90, Number(pv.storeDiscountPct) || 0));
+      const storeDisc = Math.round(sub * storePct / 100);
+      const promoPct  = state.appliedPromoCode ? (Number(state.appliedPromoPct) || 0) : 0;
+      const promoDisc = Math.round(sub * promoPct / 100);
+      let disc = 0, discLabel = "";
+      if (promoDisc > 0 && promoDisc >= storeDisc) { disc = promoDisc; discLabel = "Discount (" + state.appliedPromoCode + ")"; }
+      else if (storeDisc > 0)                       { disc = storeDisc; discLabel = "Store discount (" + storePct + "%)"; }
+      const discountedSub = Math.max(0, sub - disc);
+      const gst = Math.round(discountedSub * 0.18);
+
+      // Promo code entry
+      const pInput = el("input", { type: "text", value: state.appliedPromoCode || "", placeholder: "Promo code",
+        autocapitalize: "characters", style: "flex:1;text-transform:uppercase;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px" });
+      const pBtn = el("button", { type: "button", class: "btn ghost sm" }, state.appliedPromoCode ? "Remove" : "Apply");
+      pBtn.onclick = async () => {
+        if (state.appliedPromoCode) { state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null; renderCartPanel(); return; }
+        const code = (pInput.value || "").trim().toUpperCase();
+        if (!code) return;
+        pBtn.disabled = true; pBtn.textContent = "…";
+        try {
+          const qi = cartLines().map((l) => ({ productId: l.productId, qty: l.qty }));
+          const r = await BW.quoteOrder({ vendorId: state.cartVendor, items: qi, promoCode: code });
+          if (r.promoError) { state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = { ok: false, text: r.promoError }; }
+          else if (r.discount && r.discount.source === "promo") { state.appliedPromoCode = code; state.appliedPromoPct = r.discount.pct; state.promoMsg = { ok: true, text: "Code " + code + " applied — you save " + money(r.discount.amount) }; }
+          else { state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = { ok: true, text: r.discount && r.discount.amount ? "Your store discount already beats that code." : "That code gives no extra discount." }; }
+        } catch (e) { state.promoMsg = { ok: false, text: e.message || "Couldn't apply that code" }; }
+        renderCartPanel();
+      };
+
       const bill = el("div", { class: "card", style: "margin-bottom:12px" }, [
+        el("div", { class: "line", style: "border:none;gap:8px" }, [pInput, pBtn]),
+        state.promoMsg ? el("div", { class: "small", style: "margin:-2px 0 6px;color:" + (state.promoMsg.ok ? "var(--brand)" : "#c0392b") }, state.promoMsg.text) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Subtotal"), el("span", {}, money(sub))]),
+        disc > 0 ? el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, discLabel), el("span", { style: "color:var(--brand)" }, "− " + money(disc))]) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst))]),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Delivery fee"), el("span", {}, money(fee))]),
         el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
-          el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(sub + gst + fee)),
+          el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(discountedSub + gst + fee)),
         ]),
       ]);
       panelCart.appendChild(bill);
@@ -862,12 +945,13 @@
     showPlacing();
     try {
       const cust = BW.currentCustomer();
-      const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD",
+      const order = await BW.placeOrder({ vendorId, items, paymentMethod: "COD", promoCode: state.appliedPromoCode || null,
         deliverLat: loc && loc.lat, deliverLng: loc && loc.lng, deliverTo: composedDeliverTo() || (cust && cust.address),
         deliverPhone: state.deliverPhone, deliverName: state.deliverName, deliverMapsUrl: state.deliverMapsUrl || null,
         prescriptionUrl: state.rxPrescriptionUrl, selfieUrl: state.rxSelfieUrl, rxConsent: state.rxConsent });
       state.cart = {};
       state.cartVendor = null;
+      state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null;
       hidePlacing();
       showOrderConfirmation(order);
     } catch (err) {
@@ -888,7 +972,7 @@
     const loc = state.deliverLoc || await getDeliveryLocation();   // chosen pin, else auto-GPS
     let pay;
     try {
-      pay = await BW.createPaymentOrder({ vendorId, items });
+      pay = await BW.createPaymentOrder({ vendorId, items, promoCode: state.appliedPromoCode || null });
     } catch (err) {
       toast(err.message || "Could not start payment");
       _placing = false;
@@ -910,7 +994,7 @@
         showPlacing();
         try {
           const order = await BW.placeOrder({
-            vendorId, items, paymentMethod: "ONLINE",
+            vendorId, items, paymentMethod: "ONLINE", promoCode: state.appliedPromoCode || null,
             razorpay_payment_id: resp.razorpay_payment_id,
             razorpay_order_id: resp.razorpay_order_id,
             razorpay_signature: resp.razorpay_signature,
@@ -1704,8 +1788,16 @@
   ];
   function catLabel(k) { const c = SERVICE_CATEGORIES.find((x) => x.key === k); return c ? c.label : (k || "Service"); }
 
+  // v1 ships products-only. Local Services is hidden behind a server feature flag
+  // (/api/config → features.services) so it can be switched on for v2 without a code change.
+  function servicesOn() {
+    const cfg = (BW.config && BW.config()) || {};
+    return !!(cfg.features && cfg.features.services);
+  }
+
   // Entry tile shown on the My Stores home.
   function servicesEntry() {
+    if (!servicesOn()) return document.createTextNode("");
     return el("div", {
       class: "card", style: "margin-bottom:16px;cursor:pointer;background:linear-gradient(90deg,#0C447C,#3C3489);color:#fff;border:none",
       onClick: () => go("services"),
@@ -1725,6 +1817,7 @@
   function serviceCartCount() { return Object.values(serviceCart()).reduce((a, b) => a + b, 0); }
 
   function viewServices() {
+    if (!servicesOn()) return go("stores");   // module disabled in v1 — bounce home
     const cat = state.serviceCat || null;
     let vendors = BW.serviceVendors ? BW.serviceVendors({ pattern: "pickup_drop" }) : [];
     if (cat) vendors = vendors.filter((v) => v.categoryKey === cat);
@@ -1781,6 +1874,7 @@
   }
 
   function viewServiceVendor() {
+    if (!servicesOn()) return go("stores");
     const v = BW.serviceVendor(state.serviceVendorId);
     if (!v) { shell("stores", [el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Services"), el("div", { class: "muted", style: "margin-top:20px" }, "Loading business…")]); return; }
     const items = BW.serviceItems(v.id) || [];
@@ -1939,6 +2033,7 @@
   const BOOKING_STEPS = ["REQUESTED", "ACCEPTED", "RIDER_ASSIGNED", "PICKED_FROM_CUSTOMER", "AT_SHOP", "READY", "OUT_FOR_RETURN", "RETURNED"];
 
   function viewBookingTrack() {
+    if (!servicesOn()) return go("stores");
     const b = BW.booking(state.bookingId);
     if (!b) { shell("stores", [el("button", { class: "btn ghost sm", onClick: () => go("services") }, "← Services"), el("div", { class: "muted", style: "margin-top:20px" }, "Loading booking…")]); return; }
     const v = BW.serviceVendor(b.serviceVendorId);

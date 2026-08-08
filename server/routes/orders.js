@@ -3,6 +3,7 @@ const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { verifySignature, instance: razorpayInstance } = require("../config/razorpay");
 const { notifyPartner } = require("../lib/webhooks");
+const { priceOrder } = require("../lib/pricing");
 
 const router = express.Router();
 
@@ -134,6 +135,27 @@ router.get("/:id", requireAuth, async (req, res) => {
 });
 
 /* ââ POST /api/orders  (customer places order) ââââââââââââââââ */
+// POST /api/orders/quote — price a cart and validate a promo without creating an order.
+// The customer app calls this at checkout and whenever a promo code is applied, so the
+// breakdown it shows is always the authoritative server figure.
+router.post("/quote", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const { vendorId, items, promoCode } = req.body;
+    const p = await priceOrder({ vendorId, items, promoCode });
+    res.json({
+      subtotal: p.subtotal,
+      discount: p.discount,
+      promoError: p.promoError,
+      discountedSubtotal: p.discountedSubtotal,
+      gst: p.gst,
+      deliveryFee: p.deliveryFee,
+      total: p.total,
+    });
+  } catch (e) {
+    res.status(e.code || 400).json({ error: e.message || "Could not price this order" });
+  }
+});
+
 router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
   try {
     const { vendorId, items, paymentMethod,
@@ -154,13 +176,15 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     if (custSnap.empty) return res.status(400).json({ error: "Customer profile not found" });
     const customer = { id: custSnap.docs[0].id, ...custSnap.docs[0].data() };
 
-    // Validate vendor — must exist and be active (#15)
-    const vendorDoc = await db.collection("vendors").doc(vendorId).get();
-    if (!vendorDoc.exists) return res.status(404).json({ error: "Vendor not found" });
-    const vendor = vendorDoc.data();
-    if (vendor.active === false || vendor.status === "inactive") {
-      return res.status(400).json({ error: "This store is currently closed" });
+    // SERVER-SIDE PRICING (#3) — resolve items, validate the store, apply any discount,
+    // and compute totals in ONE place (server/lib/pricing.js). Client prices are ignored.
+    let priced;
+    try {
+      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode });
+    } catch (e) {
+      return res.status(e.code || 400).json({ error: e.message || "Could not price this order" });
     }
+    const { vendor, resolvedItems, subtotal, discount, discountedSubtotal, gst, deliveryFee, total } = priced;
 
     // Pharmacy orders require a prescription, a selfie, and liability consent (stored for compliance).
     const isMedical = vendor.requiresPrescription === true || /medical|pharma|chemist|clinic|drug/i.test(vendor.category || "");
@@ -179,33 +203,6 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       }
     }
 
-    // SERVER-SIDE PRICING (#3) — never trust prices from the client
-    // Items must contain { productId, qty } only; price is read from Firestore
-    const resolvedItems = [];
-    let subtotal = 0;
-    for (const line of items) {
-      const { productId, qty } = line;
-      if (!productId || !qty || Number(qty) < 1) {
-        return res.status(400).json({ error: "Each item needs productId and qty >= 1" });
-      }
-      const prodDoc = await db.collection("products").doc(productId).get();
-      if (!prodDoc.exists || prodDoc.data().available === false) {
-        return res.status(400).json({ error: `Product ${productId} is unavailable` });
-      }
-      const prod = prodDoc.data();
-      if (prod.vendorId !== vendorId) {
-        return res.status(400).json({ error: `Product ${productId} does not belong to this vendor` });
-      }
-      const lineQty = Math.floor(Number(qty));
-      const lineTotal = prod.price * lineQty;
-      resolvedItems.push({ productId, name: prod.name, price: prod.price, qty: lineQty, lineTotal });
-      subtotal += lineTotal;
-    }
-
-    const settingsDoc = await db.collection("settings").doc("global").get();
-    const deliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
-    const gst = Math.round(subtotal * 0.18); // 18% GST on items
-
     // Online payment: authenticate the Razorpay callback BEFORE creating the order.
     let paymentStatus = "PENDING";
     if (pm === "ONLINE") {
@@ -219,7 +216,9 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       // (stops a client paying for a cheap cart then submitting an expensive one).
       try {
         const rzpOrder = await razorpayInstance.orders.fetch(razorpay_order_id);
-        if (Number(rzpOrder.amount) !== (subtotal + deliveryFee) * 100) {
+        // Compare against the FULL server-computed total (items − discount + GST + delivery),
+        // the exact same figure payments.js charged. Fixes the old GST-omission mismatch.
+        if (Number(rzpOrder.amount) !== total * 100) {
           return res.status(400).json({ error: "Payment amount mismatch" });
         }
       } catch (e) {
@@ -240,9 +239,11 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       status: "PLACED",
       items: resolvedItems,
       subtotal,
+      discount,               // { amount, source: 'store'|'promo'|'none', code, pct }
+      discountedSubtotal,     // subtotal − discount.amount (basis for GST)
       gst,
       deliveryFee,
-      total: subtotal + gst + deliveryFee,
+      total,                  // discountedSubtotal + gst + deliveryFee (server-computed)
       paymentMethod: pm,
       paymentStatus, // COD -> PENDING then COLLECTED on delivery; ONLINE -> PAID here
       razorpayOrderId: pm === "ONLINE" ? razorpay_order_id : null,

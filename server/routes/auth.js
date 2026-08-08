@@ -365,4 +365,30 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ user: req.user });
 });
 
+/* ── POST /api/auth/reauth ──────────────────────────────────────
+ * Re-authentication primitive: confirms the CURRENTLY signed-in user's own
+ * password. Front-ends call this to gate sensitive actions (deleting an account,
+ * changing critical settings) so a walk-up attacker on an unlocked session can't
+ * perform them. Rate-limited by the auth limiter mounted on /api/auth.        */
+router.post("/reauth", requireAuth, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "Password required" });
+
+    const doc = await db.collection("users").doc(req.user.uid).get();
+    const u = doc.exists ? doc.data() : null;
+    if (!u || !u.passwordHash) {
+      // Google-only accounts have no password to confirm.
+      return res.status(400).json({ error: "This account has no password to confirm." });
+    }
+    const ok = await bcrypt.compare(password, u.passwordHash);
+    if (!ok) return res.status(401).json({ error: "Incorrect password" });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("reauth:", err);
+    res.status(500).json({ error: "Re-authentication failed" });
+  }
+});
+
 module.exports = router;

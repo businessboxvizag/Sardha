@@ -975,6 +975,42 @@
     }
     renderGallery();
 
+    // Promo codes (percent-only). Each: { code, pct, active, minSubtotal }.
+    // At checkout the customer gets the BIGGER of the store-wide % or a matching code.
+    let _promos = Array.isArray(v.promos)
+      ? v.promos.map((p) => ({ code: String(p.code || "").toUpperCase(), pct: Number(p.pct) || 0, active: p.active !== false, minSubtotal: Number(p.minSubtotal) || 0 }))
+      : [];
+    const promoList = el("div", {});
+    function renderPromos() {
+      promoList.innerHTML = "";
+      if (!_promos.length) { promoList.appendChild(el("div", { class: "muted small" }, "No promo codes yet.")); return; }
+      _promos.forEach((p, i) => {
+        promoList.appendChild(el("div", { class: "line", style: "gap:8px;align-items:center" }, [
+          el("div", { style: "flex:1" }, [
+            el("span", { style: "font-weight:700;letter-spacing:.5px" }, p.code),
+            el("span", { class: "muted small", style: "margin-left:8px" }, p.pct + "% off" + (p.minSubtotal ? " · min ₹" + p.minSubtotal : "")),
+          ]),
+          el("button", { type: "button", class: "btn " + (p.active ? "success" : "ghost") + " sm", onClick: () => { p.active = !p.active; renderPromos(); } }, p.active ? "Active" : "Off"),
+          el("button", { type: "button", class: "btn danger sm", onClick: () => { _promos.splice(i, 1); renderPromos(); } }, "✕"),
+        ]));
+      });
+    }
+    renderPromos();
+    const newCode = el("input", { placeholder: "CODE", autocapitalize: "characters", style: "flex:2;text-transform:uppercase" });
+    const newPct  = el("input", { type: "number", min: "1", max: "90", placeholder: "% off", style: "flex:1" });
+    const newMin  = el("input", { type: "number", min: "0", placeholder: "Min ₹ (optional)", style: "flex:1" });
+    const addPromoBtn = el("button", { type: "button", class: "btn ghost sm" }, "Add code");
+    addPromoBtn.onclick = () => {
+      const code = (newCode.value || "").trim().toUpperCase();
+      const pct = Math.max(1, Math.min(90, Number(newPct.value) || 0));
+      if (!code) { toast("Enter a code"); return; }
+      if (!pct)  { toast("Enter a % between 1 and 90"); return; }
+      if (_promos.some((p) => p.code === code)) { toast("That code already exists"); return; }
+      _promos.push({ code, pct, active: true, minSubtotal: Math.max(0, Number(newMin.value) || 0) });
+      newCode.value = ""; newPct.value = ""; newMin.value = "";
+      renderPromos();
+    };
+
     const saveBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Save store details");
     saveBtn.addEventListener("click", async () => {
       if (!nameEl.value.trim()) { toast("Store name is required"); return; }
@@ -990,6 +1026,7 @@
           businessPhone: bizPhoneEl.value.trim(),
           prepMins: Number(prepEl.value) || 15,
           storeDiscountPct: Math.max(0, Math.min(90, Number(discEl.value) || 0)),
+          promos: _promos,
           requiresPrescription: rxCb.checked,
           lat: _lat, lng: _lng, mapsUrl: _mapsUrl,
           photoUrl: _photoUrl, gallery: _gallery,
@@ -1023,6 +1060,14 @@
           el("div", { style: "flex:1" }, [fieldRow("Store-wide discount %", discEl, "Optional. Shown on your storefront.")]),
         ]),
         el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [rxCb, el("span", { class: "small" }, "This is a pharmacy — require prescription + selfie at checkout")]),
+      ]),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:4px" }, "Promo codes"),
+        el("div", { class: "muted small", style: "margin-bottom:8px" }, "Percent-off codes customers type at checkout. They get whichever is bigger — this code or your store-wide discount."),
+        promoList,
+        el("div", { style: "display:flex;gap:8px;margin-top:10px" }, [newCode, newPct, newMin]),
+        el("div", { style: "margin-top:8px" }, [addPromoBtn]),
+        el("div", { class: "muted small", style: "margin-top:6px" }, "Remember to Save store details below to apply changes."),
       ]),
       el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store photos"),

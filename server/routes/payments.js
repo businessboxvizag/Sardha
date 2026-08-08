@@ -2,61 +2,34 @@ const express = require("express");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const razorpay = require("../config/razorpay");
+const { priceOrder } = require("../lib/pricing");
 
 const router = express.Router();
 
-// Server-side pricing — never trusts prices sent by the client.
-async function computeTotal(vendorId, items) {
-  if (!vendorId || !Array.isArray(items) || !items.length) {
-    const e = new Error("vendorId and items required"); e.code = 400; throw e;
-  }
-  const vendorDoc = await db.collection("vendors").doc(vendorId).get();
-  if (!vendorDoc.exists) { const e = new Error("Vendor not found"); e.code = 404; throw e; }
-  const vendor = vendorDoc.data();
-  if (vendor.active === false || vendor.status === "inactive") {
-    const e = new Error("This store is currently closed"); e.code = 400; throw e;
-  }
-  let subtotal = 0;
-  for (const line of items) {
-    const { productId, qty } = line;
-    if (!productId || !qty || Number(qty) < 1) {
-      const e = new Error("Each item needs productId and qty >= 1"); e.code = 400; throw e;
-    }
-    const prodDoc = await db.collection("products").doc(productId).get();
-    if (!prodDoc.exists || prodDoc.data().available === false) {
-      const e = new Error(`Product ${productId} is unavailable`); e.code = 400; throw e;
-    }
-    const prod = prodDoc.data();
-    if (prod.vendorId !== vendorId) {
-      const e = new Error(`Product ${productId} does not belong to this vendor`); e.code = 400; throw e;
-    }
-    subtotal += prod.price * Math.floor(Number(qty));
-  }
-  const settingsDoc = await db.collection("settings").doc("global").get();
-  const deliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
-  const gst = Math.round(subtotal * 0.18); // 18% GST on items
-  return { subtotal, gst, deliveryFee, total: subtotal + gst + deliveryFee };
-}
-
-// POST /api/payments/create-order  { vendorId, items }
+// POST /api/payments/create-order  { vendorId, items, promoCode? }
 // Returns the details the browser needs to open Razorpay Checkout.
+// The amount is the SAME server-computed total (incl. discount + GST + delivery)
+// that orders.js will re-verify at placement, so the two can never disagree.
 router.post("/create-order", requireAuth, requireRole("customer"), async (req, res) => {
   try {
     if (!razorpay.instance) {
       return res.status(503).json({ error: "Online payments are not configured" });
     }
-    const { vendorId, items } = req.body;
-    const { total } = await computeTotal(vendorId, items);
+    const { vendorId, items, promoCode } = req.body;
+    const { total, discount } = await priceOrder({ vendorId, items, promoCode });
+
     // Don't charge the customer if no Saradhi can deliver (#10)
     const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();
     if (availSnap.empty) {
       return res.status(409).json({ error: "No Saradhi is available right now. Please try again in a few minutes." });
     }
+
     const rzpOrder = await razorpay.instance.orders.create({
       amount: total * 100,          // amount in paise
       currency: "INR",
       receipt: "sardha_" + Date.now(),
-      notes: { vendorId, userId: req.user.uid },
+      // Record the exact promo used so the placement step charges the identical basis.
+      notes: { vendorId, userId: req.user.uid, promoCode: (discount.code || "") },
     });
     res.json({
       razorpayOrderId: rzpOrder.id,
