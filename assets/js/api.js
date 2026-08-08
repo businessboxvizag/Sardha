@@ -384,6 +384,9 @@
       return order;
     },
 
+    /* ── Web Push ── */
+    savePushSubscription: (subscription) => post("/api/push/subscribe", { subscription }),
+
     /* ── Gold-coins rewards ── */
     rewardsMe:    () => get("/api/rewards/me"),
     gameWin:      (orderId) => post("/api/rewards/win", { orderId: orderId || undefined }),

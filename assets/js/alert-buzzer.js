@@ -22,42 +22,54 @@
     return ctx;
   }
 
-  /* One two-tone "ding-dong" chime */
+  /* One loud, urgent alarm burst (two rising square-wave tones through a shared gain) */
   function beep() {
     const c = ensureCtx();
     if (!c) return;
     const now = c.currentTime;
-    const o = c.createOscillator();
     const g = c.createGain();
-    o.type = "sine";
-    o.frequency.setValueAtTime(880, now);
-    o.frequency.setValueAtTime(1180, now + 0.16);
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.45, now + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
-    o.connect(g);
+    g.gain.exponentialRampToValueAtTime(0.9, now + 0.02);   // loud
+    g.gain.setValueAtTime(0.9, now + 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
     g.connect(c.destination);
-    o.start(now);
-    o.stop(now + 0.36);
+    // Square waves cut through ambient noise far better than a sine chime.
+    [ [740, now], [988, now + 0.22], [740, now + 0.44] ].forEach(function (pair) {
+      const o = c.createOscillator();
+      o.type = "square";
+      o.frequency.setValueAtTime(pair[0], pair[1]);
+      o.connect(g);
+      o.start(pair[1]);
+      o.stop(pair[1] + 0.2);
+    });
   }
 
-  /* Repeat the chime for `durationMs` (default 6s) or until stop() */
+  function vibrateLoop() {
+    if (global.navigator && navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400, 150, 400]);
+  }
+
+  /* Ring loudly and KEEP ringing until stop() (or up to durationMs as a safety cap,
+     default 60s). The alarm repeats so a busy merchant/rider can't miss it. */
   function play(durationMs) {
     stop();
-    stopAt = Date.now() + (durationMs || 6000);
+    stopAt = Date.now() + (durationMs || 60000);
     beep();
+    vibrateLoop();
     timer = setInterval(function () {
       if (Date.now() >= stopAt) { stop(); return; }
       beep();
-    }, 750);
-    if (global.navigator && navigator.vibrate) {
-      navigator.vibrate([250, 120, 250, 120, 250]);
-    }
+      vibrateLoop();
+    }, 900);
+    // A tap/click anywhere silences the alarm (the person has clearly noticed it).
+    setTimeout(function () {
+      ["click", "keydown", "touchstart"].forEach(function (ev) { global.addEventListener(ev, stop, { once: true }); });
+    }, 400);
   }
 
   function stop() {
     if (timer) { clearInterval(timer); timer = null; }
     if (global.navigator && navigator.vibrate) navigator.vibrate(0);
+    ["click", "keydown", "touchstart"].forEach(function (ev) { global.removeEventListener(ev, stop); });
   }
 
   /* ── Browser notifications (pull the user back from another app) ── */

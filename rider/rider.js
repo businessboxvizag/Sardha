@@ -37,6 +37,7 @@
       (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && b.status === (BW.BOOKING_STATUS || {}).RIDER_ASSIGNED).map((b) => b.id)
     );
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
+    if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { syncRider(); checkNewOrders(); render(); });
     render();
   }

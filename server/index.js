@@ -88,6 +88,7 @@ app.use("/api/admin",     apiLimiter, require("./routes/admin"));
 app.use("/api/settings",  apiLimiter, require("./routes/settings"));
 app.use("/api/support",   apiLimiter, require("./routes/support"));   // customer ⇄ support tickets
 app.use("/api/rewards",   apiLimiter, require("./routes/rewards"));   // gold-coins loyalty
+app.use("/api/push",      apiLimiter, require("./routes/push"));      // web-push subscriptions
 
 /* ── Expose Mapbox token safely ──────────────────────────────── */
 app.get("/api/config", (req, res) => {
@@ -104,6 +105,8 @@ app.get("/api/config", (req, res) => {
     features: {
       services: process.env.FEATURES_SERVICES === "true",
     },
+    // Web Push public key (empty string disables push on the client).
+    vapidPublicKey: require("./lib/push").publicKey(),
   });
 });
 

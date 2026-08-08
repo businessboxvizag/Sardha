@@ -106,6 +106,7 @@
       BW.orders({ vendorId: state.vendorId, status: S.PLACED }).map((o) => o.id)
     );
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
+    if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { checkNewOrders(); render(); });
     render();
   }

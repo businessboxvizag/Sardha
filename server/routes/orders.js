@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { verifySignature, instance: razorpayInstance, refundPayment } = require("../config/razorpay");
 const { notifyPartner } = require("../lib/webhooks");
 const { priceOrder } = require("../lib/pricing");
+const push = require("../lib/push");
 
 const router = express.Router();
 
@@ -300,6 +301,15 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;
     emitOrderUpdate(req.app.get("io"), safeOrder);
 
+    // Web Push to the merchant so a NEW order buzzes even if their app is closed.
+    if (vendor.merchantId) {
+      push.sendToUser(vendor.merchantId, {
+        title: "New order #" + orderNo,
+        body: "You have a new order to accept — open Saardha.",
+        tag: "order-" + order.id, url: "/merchant/",
+      }).catch(() => {});
+    }
+
     res.status(201).json(safeOrder);
   } catch (err) {
     console.error("POST /orders:", err);
@@ -587,6 +597,12 @@ router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async
 
     emitOrderUpdate(req.app.get("io"), updatedOrder);
     notifyPartner(updatedOrder, updatedOrder.status);
+    // Web Push so the rider is buzzed about the new task even with the app closed.
+    push.sendToUser(riderId, {
+      title: "New delivery assigned",
+      body: "Order #" + (updatedOrder.orderNo || "") + " — open Saardha to start.",
+      tag: "assign-" + req.params.id, url: "/rider/",
+    }).catch(() => {});
     res.json(updatedOrder);
   } catch (err) {
     console.error(err);
@@ -658,6 +674,12 @@ router.post("/:id/auto-assign", requireAuth, requireRole("merchant", "admin"), a
     // Also notify rider's room
     const io = req.app.get("io");
     if (io) io.to(`rider:${rider.id}`).emit("order:assigned", updatedOrder);
+    // Web Push (works when the rider app is closed).
+    push.sendToUser(rider.id, {
+      title: "New delivery assigned",
+      body: "Order #" + (updatedOrder.orderNo || "") + " — open Saardha to start.",
+      tag: "assign-" + req.params.id, url: "/rider/",
+    }).catch(() => {});
 
     res.json({ order: updatedOrder, rider: { id: rider.id, name: rider.name, vehicle: rider.vehicle, dist: rider.dist } });
   } catch (err) {
