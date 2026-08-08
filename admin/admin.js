@@ -171,6 +171,7 @@
         el("td", {}, "⭐ " + r.rating),
         el("td", {}, r.deliveriesToday + " today"),
         el("td", { style: (r.cashInHand || 0) >= (BW.codCashLimit ? BW.codCashLimit() : 2000) ? "color:var(--red);font-weight:700" : "" }, money(r.cashInHand || 0)),
+        el("td", {}, riderKyc(r)),
         el("td", {}, active ? "#" + (active.orderNo || active.id.slice(-6).toUpperCase()) : el("span", { class: "muted" }, "—")),
         el("td", {}, statusSel),
       ]);
@@ -198,12 +199,41 @@
         ]),
         el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
           el("table", {}, [
-            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "Active", "Status"].map((h) => el("th", {}, h)))),
+            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "KYC", "Active", "Status"].map((h) => el("th", {}, h)))),
             el("tbody", {}, rows),
           ]),
         ]),
       ]),
     ]);
+  }
+
+  // Compact KYC cell for the fleet table: status pill, document links, verify/reject.
+  function riderKyc(r) {
+    const d = r.documents || {};
+    const status = r.kycStatus || (d.dlUrl && d.aadhaarUrl && d.familyIdUrl ? "submitted" : "pending");
+    const pillColor = status === "verified" ? "#1a9d54" : status === "submitted" ? "#c77700" : status === "rejected" ? "var(--red)" : "#888";
+    const wrap = el("div", { style: "display:flex;flex-direction:column;gap:4px;min-width:120px" });
+    wrap.appendChild(el("span", { style: "font-weight:700;font-size:12px;color:" + pillColor }, status.toUpperCase()));
+    const links = [];
+    if (d.dlUrl) links.push(el("a", { href: d.dlUrl, target: "_blank", rel: "noopener", class: "small", title: "DL " + (d.dlNumber || "") }, "DL"));
+    if (d.aadhaarUrl) links.push(el("a", { href: d.aadhaarUrl, target: "_blank", rel: "noopener", class: "small" }, "Aadhaar"));
+    if (d.bikePhotoUrl) links.push(el("a", { href: d.bikePhotoUrl, target: "_blank", rel: "noopener", class: "small" }, "Bike"));
+    if (d.familyIdUrl) links.push(el("a", { href: d.familyIdUrl, target: "_blank", rel: "noopener", class: "small", title: "Nominee: " + (d.familyName || "") + " · " + (d.familyRelation || "") }, "Nominee ID"));
+    if (links.length) {
+      const row = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" });
+      links.forEach((l) => row.appendChild(l));
+      wrap.appendChild(row);
+    } else {
+      wrap.appendChild(el("span", { class: "muted small" }, "No docs"));
+    }
+    if (d.riderPhone || d.riderAddress) wrap.appendChild(el("div", { class: "muted small", title: d.riderAddress || "" }, "☎ " + (d.riderPhone || "—")));
+    if (d.familyName) wrap.appendChild(el("div", { class: "muted small", title: (d.familyAddress || "") }, "Nominee: " + d.familyName + (d.familyPhone ? " · " + d.familyPhone : "")));
+    if (status === "submitted") {
+      const v = el("button", { class: "btn success sm", onClick: async () => { try { await BW.setRiderKyc(r.id, "verified"); toast(r.name + " verified"); } catch (e) { toast(e.message); } } }, "Verify");
+      const x = el("button", { class: "btn ghost sm", onClick: async () => { try { await BW.setRiderKyc(r.id, "rejected"); toast(r.name + " rejected"); } catch (e) { toast(e.message); } } }, "Reject");
+      wrap.appendChild(el("div", { style: "display:flex;gap:6px" }, [v, x]));
+    }
+    return wrap;
   }
 
   /* ====================== TASK ASSIGNMENT ====================== */
@@ -719,7 +749,8 @@
       tabBtn("behavior",  "Behavior"),
       tabBtn("orders",    "Orders"),
       tabBtn("payments",  "Payments"),
-      tabBtn("support",   "Support"),
+      tabBtn("tickets",   "Tickets"),
+      tabBtn("support",   "AI logs"),
       tabBtn("rx",        "Rx / Compliance"),
     ]);
 
@@ -727,6 +758,7 @@
     if (monState.tab === "logins")         body = renderLoginLogs();
     else if (monState.tab === "behavior")  body = renderBehavior();
     else if (monState.tab === "rx")        body = renderRx();
+    else if (monState.tab === "tickets")   body = renderTickets();
     else if (monState.tab === "support")   body = renderSupport();
     else if (monState.tab === "orders")    body = renderAllOrders();
     else if (monState.tab === "customers") body = renderAllCustomers();
@@ -749,6 +781,83 @@
     ]);
   }
   viewMonitor._tab = "logins";
+
+  /* ── Support tickets (two-way) ── */
+  function ticketStatusLabel(s) {
+    return { open: "Open", awaiting_customer: "Awaiting customer", resolved: "Resolved", closed: "Closed" }[s] || s;
+  }
+  function ticketLastPreview(t) {
+    const m = (t.messages && t.messages[t.messages.length - 1]) || {};
+    return (m.from === "support" ? "Support: " : (t.customerName || "Customer") + ": ") + (m.text || "");
+  }
+
+  function renderTickets() {
+    const wrap = el("div", {});
+    wrap.appendChild(el("div", { class: "muted", style: "padding:12px" }, "Loading tickets…"));
+    BW.adminTickets().then((tickets) => { wrap.innerHTML = ""; renderTicketList(wrap, tickets); })
+      .catch(() => { wrap.innerHTML = ""; wrap.appendChild(el("div", { class: "card" }, [el("p", { class: "muted" }, "Couldn't load tickets.")])); });
+    return wrap;
+  }
+
+  function renderTicketList(container, tickets) {
+    container.innerHTML = "";
+    if (!tickets.length) { container.appendChild(el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No support tickets yet.")])); return; }
+    tickets.forEach((t) => {
+      container.appendChild(el("div", { class: "card", style: "margin-bottom:8px;cursor:pointer", onClick: () => openTicketDetail(container, t.id) }, [
+        el("div", { class: "row between" }, [
+          el("div", {}, [el("div", { style: "font-weight:700" }, t.subject), el("div", { class: "muted small" }, (t.customerName || "Customer") + (t.orderId ? " · order linked" : ""))]),
+          el("span", { class: "badge" }, ticketStatusLabel(t.status)),
+        ]),
+        el("div", { class: "muted small", style: "margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, ticketLastPreview(t)),
+      ]));
+    });
+  }
+
+  function openTicketDetail(container, id) {
+    container.innerHTML = "";
+    container.appendChild(el("div", { class: "muted", style: "padding:12px" }, "Loading…"));
+    BW.getTicket(id).then((t) => {
+      container.innerHTML = "";
+      container.appendChild(el("button", { class: "btn ghost sm", style: "margin-bottom:10px", onClick: () => renderTickets._reload(container) }, "← All tickets"));
+      container.appendChild(el("div", { class: "card", style: "margin-bottom:10px" }, [
+        el("div", { class: "row between" }, [
+          el("div", {}, [el("div", { style: "font-weight:800" }, t.subject), el("div", { class: "muted small" }, (t.customerName || "Customer"))]),
+          el("span", { class: "badge" }, ticketStatusLabel(t.status)),
+        ]),
+      ]));
+      const thread = el("div", { class: "card", style: "margin-bottom:10px;display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto" });
+      (t.messages || []).forEach((m) => {
+        const support = m.from === "support";
+        thread.appendChild(el("div", { style: "align-self:" + (support ? "flex-end" : "flex-start") + ";max-width:80%;background:" + (support ? "#e9f2ff" : "#f2f2f2") + ";padding:8px 12px;border-radius:12px" }, [
+          el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, support ? (m.byName || "Support") : (m.byName || "Customer")),
+          el("div", { style: "white-space:pre-wrap" }, m.text),
+          el("div", { style: "font-size:10px;color:#999;margin-top:3px" }, clockTime(m.at)),
+        ]));
+      });
+      container.appendChild(thread);
+
+      if (t.status !== "closed") {
+        const reply = el("textarea", { placeholder: "Reply to the customer…", style: "width:100%;min-height:64px" });
+        const send = el("button", { class: "btn primary sm", style: "margin-top:8px" }, "Send reply");
+        send.onclick = async () => {
+          if (!reply.value.trim()) return;
+          send.disabled = true; send.textContent = "Sending…";
+          try { await BW.replyTicket(id, reply.value.trim()); openTicketDetail(container, id); }
+          catch (e) { toast(e.message || "Couldn't send"); send.disabled = false; send.textContent = "Send reply"; }
+        };
+        const resolveBtn = el("button", { class: "btn success sm", style: "margin-left:8px", onClick: async () => { try { await BW.setTicketStatus(id, "resolved"); openTicketDetail(container, id); } catch (e) { toast(e.message); } } }, "Mark resolved");
+        const closeBtn = el("button", { class: "btn ghost sm", style: "margin-left:8px", onClick: async () => { try { await BW.setTicketStatus(id, "closed"); openTicketDetail(container, id); } catch (e) { toast(e.message); } } }, "Close");
+        container.appendChild(el("div", { class: "card" }, [reply, el("div", { style: "margin-top:4px" }, [send, resolveBtn, closeBtn])]));
+      } else {
+        container.appendChild(el("div", { class: "muted small" }, "This ticket is closed."));
+      }
+    }).catch(() => { container.innerHTML = ""; container.appendChild(el("div", { class: "muted" }, "Couldn't load ticket.")); });
+  }
+  renderTickets._reload = (container) => {
+    container.innerHTML = "";
+    container.appendChild(el("div", { class: "muted", style: "padding:12px" }, "Loading tickets…"));
+    BW.adminTickets().then((tickets) => renderTicketList(container, tickets)).catch(() => {});
+  };
 
   function renderLoginLogs() {
     const logs = BW.logins();
@@ -1172,6 +1281,22 @@
       codSave.disabled = false; codSave.textContent = "Save";
     });
 
+    /* --- Support contact details (shown in the customer Help screen) --- */
+    const s0 = (BW.settingsRaw && BW.settingsRaw()) || {};
+    const spPhone = el("input", { type: "tel", value: s0.supportPhone || "", placeholder: "+91 …", style: "width:100%;margin-bottom:6px" });
+    const spWa    = el("input", { type: "tel", value: s0.supportWhatsapp || "", placeholder: "WhatsApp number (+91 …)", style: "width:100%;margin-bottom:6px" });
+    const spEmail = el("input", { type: "email", value: s0.supportEmail || "", placeholder: "support@yourdomain.com", style: "width:100%;margin-bottom:6px" });
+    const spHours = el("input", { type: "text", value: s0.supportHours || "", placeholder: "e.g. Mon–Sun, 9am–9pm", style: "width:100%;margin-bottom:6px" });
+    const spSave  = el("button", { class: "btn primary" }, "Save contact");
+    spSave.addEventListener("click", async () => {
+      spSave.disabled = true; spSave.textContent = "Saving…";
+      try {
+        await BW.updateSettings({ supportPhone: spPhone.value.trim(), supportWhatsapp: spWa.value.trim(), supportEmail: spEmail.value.trim(), supportHours: spHours.value.trim() });
+        await BW.init("admin"); toast("Support contact saved");
+      } catch (err) { toast("Error: " + err.message); }
+      spSave.disabled = false; spSave.textContent = "Save contact";
+    });
+
     /* --- Operational zones (geofencing for rider duty) --- */
     const zones = (BW.operationalZones ? BW.operationalZones() : []).slice();
     const zoneList = el("div", {});
@@ -1227,6 +1352,15 @@
           el("label", {}, "COD limit (₹)"),
           el("div", { style: "display:flex;gap:10px;align-items:center" }, [codEl, codSave]),
         ]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Support contact"),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Shown to customers on the Help & Support screen (call / WhatsApp / email)."),
+        el("div", { class: "field" }, [el("label", {}, "Phone"), spPhone]),
+        el("div", { class: "field" }, [el("label", {}, "WhatsApp"), spWa]),
+        el("div", { class: "field" }, [el("label", {}, "Email"), spEmail]),
+        el("div", { class: "field" }, [el("label", {}, "Hours"), spHours]),
+        el("div", { style: "margin-top:8px" }, [spSave]),
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Operational zones"),

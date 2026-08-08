@@ -138,6 +138,62 @@ router.patch("/:id/location", requireAuth, async (req, res) => {
   }
 });
 
+/* ── PATCH /api/riders/:id/documents ── rider submits KYC docs + accepts policy ──
+ * Delivery-partner onboarding: driving licence, Aadhaar, and one family member's ID
+ * (name + relation + ID image), plus explicit acceptance of the cash-settlement policy.
+ * Files are uploaded client-side to Cloudinary; we store the resulting URLs.        */
+router.patch("/:id/documents", requireAuth, async (req, res) => {
+  if (req.user.role !== "admin" && req.user.uid !== req.params.id) {
+    return res.status(403).json({ error: "You can only submit your own documents" });
+  }
+  try {
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+
+    const b = req.body || {};
+    const str = (v, n) => (v == null ? undefined : String(v).slice(0, n));
+    const docs = {
+      dlUrl:            str(b.dlUrl, 500),
+      dlNumber:         str(b.dlNumber, 40),
+      aadhaarUrl:       str(b.aadhaarUrl, 500),
+      bikePhotoUrl:     str(b.bikePhotoUrl, 500),
+      riderPhone:       str(b.riderPhone, 20),
+      riderAddress:     str(b.riderAddress, 300),
+      // Nominee (guarantor) — name, relation, contact, address, and their Aadhaar/ID.
+      familyName:       str(b.familyName, 120),
+      familyRelation:   str(b.familyRelation, 60),
+      familyPhone:      str(b.familyPhone, 20),
+      familyAddress:    str(b.familyAddress, 300),
+      familyIdUrl:      str(b.familyIdUrl, 500),
+    };
+    Object.keys(docs).forEach((k) => docs[k] === undefined && delete docs[k]);
+
+    const updates = { documents: { ...(doc.data().documents || {}), ...docs } };
+    if (b.cashPolicyAck === true) updates.cashPolicyAckAt = new Date().toISOString();
+
+    // Mark KYC "submitted" once the core documents are present; admin verifies later.
+    const merged = updates.documents;
+    if (merged.dlUrl && merged.aadhaarUrl && merged.bikePhotoUrl && merged.familyIdUrl) {
+      updates.kycStatus = doc.data().kycStatus === "verified" ? "verified" : "submitted";
+    }
+
+    // Only an admin may set a verification decision.
+    if (req.user.role === "admin" && ["submitted", "verified", "rejected"].includes(b.kycStatus)) {
+      updates.kycStatus = b.kycStatus;
+    }
+
+    await ref.update(updates);
+    const updated = toRider(await ref.get());
+    const io = req.app.get("io");
+    if (io) io.to("admin").emit("rider:updated", updated);
+    res.json(updated);
+  } catch (err) {
+    console.error("PATCH /riders/:id/documents:", err);
+    res.status(500).json({ error: "Failed to save documents" });
+  }
+});
+
 /* ── POST /api/riders/:id/settle ── rider deposits collected cash via Razorpay UPI ── */
 router.post("/:id/settle", requireAuth, async (req, res) => {
   if (req.user.uid !== req.params.id) return res.status(403).json({ error: "Forbidden" });

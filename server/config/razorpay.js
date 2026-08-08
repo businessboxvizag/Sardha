@@ -22,4 +22,15 @@ function verifySignature(orderId, paymentId, signature) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { instance, keyId, keySecret, verifySignature };
+// Issue a refund against a captured payment. amountPaise is optional — omit for a
+// full refund. Throws if Razorpay isn't configured. Used when an online-paid order
+// is cancelled (auto-refund policy).
+async function refundPayment(paymentId, amountPaise, notes) {
+  if (!instance) { const e = new Error("Refunds are not configured"); e.code = 503; throw e; }
+  if (!paymentId) { const e = new Error("paymentId required for refund"); e.code = 400; throw e; }
+  const payload = { speed: "optimum", notes: notes || {} };
+  if (amountPaise != null) payload.amount = Math.round(amountPaise);
+  return instance.payments.refund(paymentId, payload);
+}
+
+module.exports = { instance, keyId, keySecret, verifySignature, refundPayment };

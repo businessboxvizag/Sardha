@@ -119,11 +119,127 @@
     root.innerHTML = "";
     root.appendChild(renderTopBar());
     root.appendChild(renderStatusCard());
+    root.appendChild(renderKycCard());
     root.appendChild(renderCashCard());
     root.appendChild(renderRatingsCard());
     root.appendChild(renderOrderList(orders));
     const bookings = myBookings();
     if (bookings.length) root.appendChild(renderBookingList(bookings));
+  }
+
+  /* ── Image upload helpers (Cloudinary, unsigned) ───────── */
+  function resizeImage(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w >= h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", quality || 0.7));
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  async function uploadToCloudinary(dataUrl) {
+    const cfg = (BW.config && BW.config()) || {};
+    const cloud = cfg.cloudinaryCloud, preset = cfg.cloudinaryPreset;
+    if (!cloud || !preset) throw new Error("Image uploads aren't set up yet");
+    const fd = new FormData();
+    fd.append("file", dataUrl);
+    fd.append("upload_preset", preset);
+    const r = await fetch("https://api.cloudinary.com/v1_1/" + cloud + "/image/upload", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!d.secure_url) throw new Error((d.error && d.error.message) || "Upload failed");
+    return d.secure_url;
+  }
+
+  /* ── KYC / documents + cash-settlement acknowledgment ──── */
+  function renderKycCard() {
+    const docs = (myRider && myRider.documents) || {};
+    const status = (myRider && myRider.kycStatus) || (docs.dlUrl && docs.aadhaarUrl && docs.familyIdUrl ? "submitted" : "pending");
+    const ackDone = !!(myRider && myRider.cashPolicyAckAt);
+
+    if (status === "verified") {
+      return el("div", { class: "rider-status-card", style: "margin-top:12px" }, [
+        el("div", { style: "font-weight:800;color:var(--success,#1a9d54)" }, "✓ Documents verified"),
+        el("div", { class: "muted small", style: "margin-top:4px" }, "You're a verified Saardha delivery partner."),
+        policyLink(),
+      ]);
+    }
+
+    // Local working state for uploads.
+    const state = { dlUrl: docs.dlUrl || "", aadhaarUrl: docs.aadhaarUrl || "", bikePhotoUrl: docs.bikePhotoUrl || "", familyIdUrl: docs.familyIdUrl || "" };
+    const dlNum = el("input", { type: "text", value: docs.dlNumber || "", placeholder: "Driving licence number", style: "width:100%;margin:6px 0" });
+    const riderPhone = el("input", { type: "tel", value: docs.riderPhone || "", placeholder: "Your phone number", style: "width:100%;margin:6px 0" });
+    const riderAddr = el("textarea", { placeholder: "Your full address", style: "width:100%;margin:6px 0;min-height:52px" }); riderAddr.value = docs.riderAddress || "";
+    const famName = el("input", { type: "text", value: docs.familyName || "", placeholder: "Nominee's full name", style: "width:100%;margin:6px 0" });
+    const famRel = el("input", { type: "text", value: docs.familyRelation || "", placeholder: "Relation (father, spouse, brother…)", style: "width:100%;margin:6px 0" });
+    const famPhone = el("input", { type: "tel", value: docs.familyPhone || "", placeholder: "Nominee's phone number", style: "width:100%;margin:6px 0" });
+    const famAddr = el("textarea", { placeholder: "Nominee's full address", style: "width:100%;margin:6px 0;min-height:52px" }); famAddr.value = docs.familyAddress || "";
+    const ackCb = el("input", { type: "checkbox" }); ackCb.checked = ackDone;
+
+    function uploadRow(label, key) {
+      const statusEl = el("span", { class: "muted small" }, state[key] ? "✓ Uploaded" : "Not uploaded");
+      const btn = el("button", { class: "btn ghost sm", type: "button" }, state[key] ? "Replace" : "Upload");
+      btn.onclick = () => {
+        const inp = el("input", { type: "file", accept: "image/*" });
+        inp.onchange = async () => {
+          const f = inp.files && inp.files[0]; if (!f) return;
+          statusEl.textContent = "Uploading…";
+          try { const data = await resizeImage(f, 1400, 0.75); state[key] = await uploadToCloudinary(data); statusEl.textContent = "✓ Uploaded"; }
+          catch (e) { statusEl.textContent = "Upload failed"; toast(e.message || "Upload failed"); }
+        };
+        inp.click();
+      };
+      return el("div", { class: "row between", style: "align-items:center;margin:6px 0" }, [el("span", {}, label), el("span", { style: "display:flex;gap:8px;align-items:center" }, [statusEl, btn])]);
+    }
+
+    const submit = el("button", { class: "btn primary", style: "width:100%;margin-top:10px" }, "Submit documents");
+    submit.onclick = async () => {
+      if (!state.dlUrl || !state.aadhaarUrl || !state.bikePhotoUrl || !state.familyIdUrl) { toast("Please upload your DL, Aadhaar, bike photo, and the nominee's Aadhaar/ID."); return; }
+      if (!riderPhone.value.trim() || !riderAddr.value.trim()) { toast("Add your phone number and address."); return; }
+      if (!famName.value.trim() || !famRel.value.trim() || !famPhone.value.trim() || !famAddr.value.trim()) { toast("Complete the nominee's name, relation, phone and address."); return; }
+      if (!ackCb.checked) { toast("Please accept the cash-settlement policy to continue."); return; }
+      submit.disabled = true; submit.textContent = "Submitting…";
+      try {
+        await BW.submitRiderDocuments(me.uid, {
+          dlUrl: state.dlUrl, dlNumber: dlNum.value.trim(), aadhaarUrl: state.aadhaarUrl, bikePhotoUrl: state.bikePhotoUrl,
+          riderPhone: riderPhone.value.trim(), riderAddress: riderAddr.value.trim(),
+          familyName: famName.value.trim(), familyRelation: famRel.value.trim(),
+          familyPhone: famPhone.value.trim(), familyAddress: famAddr.value.trim(), familyIdUrl: state.familyIdUrl,
+          cashPolicyAck: ackCb.checked,
+        });
+        await syncRider(); toast("Documents submitted — pending verification."); render();
+      } catch (e) { toast(e.message || "Couldn't submit"); submit.disabled = false; submit.textContent = "Submit documents"; }
+    };
+
+    return el("div", { class: "rider-status-card", style: "margin-top:12px;border:1px solid var(--brand,#e62a1f)" }, [
+      el("div", { style: "font-weight:800" }, status === "submitted" ? "Documents submitted — under review" : "Complete your onboarding"),
+      el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Saardha requires KYC before you can take deliveries. Upload clear photos."),
+      el("div", { style: "font-weight:700;margin-top:6px" }, "Your details"),
+      uploadRow("Driving licence", "dlUrl"),
+      dlNum,
+      uploadRow("Aadhaar card", "aadhaarUrl"),
+      uploadRow("Bike photo (with number plate)", "bikePhotoUrl"),
+      riderPhone, riderAddr,
+      el("div", { style: "font-weight:700;margin-top:10px" }, "Nominee (guarantor)"),
+      el("div", { class: "muted small", style: "margin-bottom:4px" }, "One family member acts as your guarantor — their Aadhaar/ID and contact are required."),
+      famName, famRel, famPhone, famAddr,
+      uploadRow("Nominee's Aadhaar / ID", "familyIdUrl"),
+      el("label", { style: "display:flex;gap:8px;align-items:flex-start;margin-top:12px;cursor:pointer" }, [
+        ackCb, el("span", { class: "small" }, "I understand that COD cash I collect belongs to Saardha and must be settled in full within the cash limit. Failure to settle can suspend my account."),
+      ]),
+      policyLink(),
+      submit,
+    ]);
+  }
+
+  function policyLink() {
+    return el("a", { href: "/policies/delivery-partner.html", target: "_blank", rel: "noopener",
+      class: "btn ghost sm", style: "display:block;text-align:center;margin-top:10px;text-decoration:none" }, "Read the Delivery Partner policy ↗");
   }
 
   /* ── Services bookings (Pickup & Drop, two legs) ──────── */

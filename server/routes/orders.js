@@ -1,7 +1,7 @@
 const express = require("express");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
-const { verifySignature, instance: razorpayInstance } = require("../config/razorpay");
+const { verifySignature, instance: razorpayInstance, refundPayment } = require("../config/razorpay");
 const { notifyPartner } = require("../lib/webhooks");
 const { priceOrder } = require("../lib/pricing");
 
@@ -141,12 +141,16 @@ router.get("/:id", requireAuth, async (req, res) => {
 router.post("/quote", requireAuth, requireRole("customer"), async (req, res) => {
   try {
     const { vendorId, items, promoCode } = req.body;
-    const p = await priceOrder({ vendorId, items, promoCode });
+    // Preview any redeemed reward too, so the shown total matches what will be charged.
+    const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    const activeReward = custSnap.empty ? null : (custSnap.docs[0].data().activeReward || null);
+    const p = await priceOrder({ vendorId, items, promoCode, reward: activeReward });
     res.json({
       subtotal: p.subtotal,
       discount: p.discount,
       promoError: p.promoError,
       discountedSubtotal: p.discountedSubtotal,
+      reward: p.reward,
       gst: p.gst,
       deliveryFee: p.deliveryFee,
       total: p.total,
@@ -180,11 +184,12 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     // and compute totals in ONE place (server/lib/pricing.js). Client prices are ignored.
     let priced;
     try {
-      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode });
+      // A redeemed gold-coin reward (if any) is read from the customer doc — never trusted from the client.
+      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode, reward: customer.activeReward });
     } catch (e) {
       return res.status(e.code || 400).json({ error: e.message || "Could not price this order" });
     }
-    const { vendor, resolvedItems, subtotal, discount, discountedSubtotal, gst, deliveryFee, total } = priced;
+    const { vendor, resolvedItems, subtotal, discount, discountedSubtotal, reward, gst, deliveryFee, total } = priced;
 
     // Pharmacy orders require a prescription, a selfie, and liability consent (stored for compliance).
     const isMedical = vendor.requiresPrescription === true || /medical|pharma|chemist|clinic|drug/i.test(vendor.category || "");
@@ -241,9 +246,10 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       subtotal,
       discount,               // { amount, source: 'store'|'promo'|'none', code, pct }
       discountedSubtotal,     // subtotal − discount.amount (basis for GST)
+      reward: reward || null, // gold-coin reward applied: { type, amount } | null
       gst,
       deliveryFee,
-      total,                  // discountedSubtotal + gst + deliveryFee (server-computed)
+      total,                  // net + gst + deliveryFee (server-computed)
       paymentMethod: pm,
       paymentStatus, // COD -> PENDING then COLLECTED on delivery; ONLINE -> PAID here
       razorpayOrderId: pm === "ONLINE" ? razorpay_order_id : null,
@@ -283,6 +289,13 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.
 
+    // Gold-coins: grant one play credit for this order, and consume the reward if one was applied.
+    try {
+      const custUpdate = { gamePlays: (customer.gamePlays || 0) + 1 };
+      if (reward) custUpdate.activeReward = null; // reward has now been spent on this order
+      await db.collection("customers").doc(customer.id).update(custUpdate);
+    } catch (e) { console.error("post-order rewards update failed:", e && e.message); }
+
     // Emit / return a version WITHOUT the sensitive Rx images or OTP.
     const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;
     emitOrderUpdate(req.app.get("io"), safeOrder);
@@ -321,7 +334,8 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
     } else if (role === "rider") {
       if (order.riderId !== uid) return res.status(403).json({ error: "Not your assigned order" });
     } else if (role === "merchant") {
-      const vendorSnap = await db.collection("vendors").where("userId", "==", uid).limit(1).get();
+      // Vendor ownership is keyed by merchantId (matches the GET handlers), not userId.
+      const vendorSnap = await db.collection("vendors").where("merchantId", "==", uid).limit(1).get();
       const vendorId = vendorSnap.empty ? null : vendorSnap.docs[0].id;
       if (order.vendorId !== vendorId) return res.status(403).json({ error: "Not your vendor\'s order" });
     }
@@ -345,6 +359,36 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
     // Cash-on-delivery: mark the money collected once the rider delivers.
     if (status === "DELIVERED" && order.paymentMethod === "COD") {
       updates.paymentStatus = "COLLECTED";
+    }
+
+    // Cancellation handling.
+    if (status === "CANCELLED") {
+      // Policy: a CUSTOMER may only self-cancel while the order is still PLACED
+      // (before the merchant accepts). The state machine already enforces this, but
+      // we keep an explicit guard so the rule is unmistakable.
+      if (role === "customer" && order.status !== "PLACED") {
+        return res.status(400).json({ error: "This order can no longer be cancelled here — it's already being prepared. Please contact support." });
+      }
+      // Record who cancelled and (optionally) why.
+      updates.cancelledBy = role;
+      updates.cancelledAt = now;
+      if (req.body.reason) updates.cancelReason = String(req.body.reason).slice(0, 300);
+
+      // Auto-refund: an online payment that was actually captured gets refunded now.
+      if (order.paymentMethod === "ONLINE" && order.paymentStatus === "PAID" && order.razorpayPaymentId) {
+        try {
+          const rf = await refundPayment(order.razorpayPaymentId, order.total * 100, {
+            orderId: order.id, orderNo: String(order.orderNo || ""), reason: "order_cancelled",
+          });
+          updates.paymentStatus = "REFUNDED";
+          updates.refund = { id: rf.id, amount: (rf.amount != null ? rf.amount / 100 : order.total), status: rf.status || "processed", at: now };
+        } catch (e) {
+          // Never block a cancellation on a refund hiccup — flag it for admin follow-up.
+          console.error("refund on cancel failed:", e && e.message);
+          updates.paymentStatus = "REFUND_PENDING";
+          updates.refund = { error: (e && e.message) || "refund failed", at: now };
+        }
+      }
     }
 
     // Free the rider when order completes or is cancelled
@@ -389,7 +433,8 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
     } else if (role === "rider") {
       if (order.riderId !== uid) return res.status(403).json({ error: "Not your assigned order" });
     } else if (role === "merchant") {
-      const vendorSnap = await db.collection("vendors").where("userId", "==", uid).limit(1).get();
+      // Vendor ownership is keyed by merchantId (matches the GET handlers), not userId.
+      const vendorSnap = await db.collection("vendors").where("merchantId", "==", uid).limit(1).get();
       const vendorId = vendorSnap.empty ? null : vendorSnap.docs[0].id;
       if (order.vendorId !== vendorId) return res.status(403).json({ error: "Not your vendor\'s order" });
     }

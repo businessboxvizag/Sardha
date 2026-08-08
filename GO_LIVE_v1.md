@@ -106,6 +106,25 @@ means brute-force rate limiting is working. (Keep concurrency modest on the free
 
 ---
 
+## Support, cancellations, refunds & policies (added after v1)
+
+New in this build — no new environment variables required:
+
+- **In-app support tickets.** Customers open tickets from **Profile → Help & Support** (or "Get help with this order" on an order), with tap-to-call / WhatsApp / email. Admins reply and close them under **Monitor → Tickets**.
+- **Set the support contact.** In the **admin app → Settings → Support contact**, fill in the phone, WhatsApp, email and hours. These power the buttons on the customer Help screen (blank ones are hidden).
+- **Cancel + auto-refund.** Customers can cancel an order while it's still *Placed* (before the store accepts). If it was paid online, the app **auto-issues a Razorpay refund**; on any hiccup it's flagged *refund pending* for admin follow-up. This also relies on Razorpay keys being set (`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`).
+- **Rider KYC + cash policy.** New Saradhis must upload DL, Aadhaar, and one **family-member guarantor ID** and accept the cash-settlement policy before working. Admins verify/reject under **Fleet → KYC**. (Photo uploads use your existing Cloudinary settings.)
+- **Policy pages.** Five pages live under `/policies/` — cancellation-refund, support, delivery, terms, and delivery-partner — linked from the apps. They're marked as templates: **have a lawyer review them** before launch.
+
+### Extra smoke tests for this build
+1. Admin → Settings → Support contact: save a phone/WhatsApp; confirm the buttons appear on the customer Help screen.
+2. Place a COD order, then cancel it while *Placed* → status shows Cancelled.
+3. Place an online order, cancel while *Placed* → refund initiated message; verify the refund in your Razorpay dashboard.
+4. Customer raises a ticket → admin replies under Monitor → Tickets → customer sees the reply.
+5. Rider app: upload the three documents + accept the cash policy → admin sees KYC "submitted" in Fleet and can Verify.
+
+> Reminder: these are all frontend + backend code changes, so they ship with the same `git push` + `firebase deploy --only hosting` from step 3.
+
 ## Security posture (for your reference)
 
 - **Data access ("RLS"):** Firestore rules are **deny-all** for direct client access; every

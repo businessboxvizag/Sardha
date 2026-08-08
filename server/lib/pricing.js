@@ -80,7 +80,7 @@ function computeDiscount(vendor, subtotal, promoCode) {
  *   promoError, discountedSubtotal, gst, deliveryFee, total
  * }>}
  */
-async function priceOrder({ vendorId, items, promoCode }) {
+async function priceOrder({ vendorId, items, promoCode, reward }) {
   if (!vendorId || !Array.isArray(items) || !items.length) {
     const e = new Error("vendorId and items required"); e.code = 400; throw e;
   }
@@ -117,9 +117,24 @@ async function priceOrder({ vendorId, items, promoCode }) {
   const discountedSubtotal = Math.max(0, subtotal - discount.amount);
 
   const settingsDoc = await db.collection("settings").doc("global").get();
-  const deliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
-  const gst = Math.round(discountedSubtotal * GST_RATE);
-  const total = discountedSubtotal + gst + deliveryFee;
+  const baseDeliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
+
+  // Gold-coin reward (platform-borne, validated by the caller from the customer doc):
+  //   FREE_DELIVERY → delivery fee waived; PERCENT10 → extra 10% off items.
+  // Applied AFTER any store/promo discount, and it stacks (Saardha absorbs it).
+  const rewardType = reward && reward.type;
+  let rewardAmount = 0, deliveryFee = baseDeliveryFee, rewardApplied = null;
+  if (rewardType === "PERCENT10") {
+    rewardAmount = Math.round(discountedSubtotal * 0.10);
+    rewardApplied = { type: "PERCENT10", amount: rewardAmount };
+  } else if (rewardType === "FREE_DELIVERY") {
+    deliveryFee = 0;
+    rewardApplied = { type: "FREE_DELIVERY", amount: baseDeliveryFee };
+  }
+
+  const netSubtotal = Math.max(0, discountedSubtotal - rewardAmount);
+  const gst = Math.round(netSubtotal * GST_RATE);
+  const total = netSubtotal + gst + deliveryFee;
 
   return {
     vendor,
@@ -128,6 +143,7 @@ async function priceOrder({ vendorId, items, promoCode }) {
     discount: { amount: discount.amount, source: discount.source, code: discount.code, pct: discount.pct },
     promoError: discount.promoError || null,
     discountedSubtotal,
+    reward: rewardApplied,      // null, or { type, amount } — what the coins reward saved
     gst,
     deliveryFee,
     total,

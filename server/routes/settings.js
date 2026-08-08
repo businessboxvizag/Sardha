@@ -14,6 +14,10 @@ router.get("/", async (req, res) => {
       deliveryFee: data.deliveryFee ?? 15,
       codCashLimit: data.codCashLimit ?? 2000,
       operationalZones: data.operationalZones ?? [],
+      supportPhone: data.supportPhone ?? "",
+      supportWhatsapp: data.supportWhatsapp ?? "",
+      supportEmail: data.supportEmail ?? "",
+      supportHours: data.supportHours ?? "Mon–Sun, 9am–9pm",
       ...data,
     });
   } catch (err) {
@@ -24,7 +28,8 @@ router.get("/", async (req, res) => {
 /* ── PUT /api/settings ─── admin only ── */
 router.put("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
-    const allowed = ["deliveryFee", "codCashLimit", "operationalZones"];
+    const allowed = ["deliveryFee", "codCashLimit", "operationalZones",
+                     "supportPhone", "supportWhatsapp", "supportEmail", "supportHours"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.deliveryFee !== undefined) updates.deliveryFee = Number(updates.deliveryFee);

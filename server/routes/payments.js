@@ -16,7 +16,10 @@ router.post("/create-order", requireAuth, requireRole("customer"), async (req, r
       return res.status(503).json({ error: "Online payments are not configured" });
     }
     const { vendorId, items, promoCode } = req.body;
-    const { total, discount } = await priceOrder({ vendorId, items, promoCode });
+    // Include any redeemed reward so the charged amount matches order placement.
+    const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    const activeReward = custSnap.empty ? null : (custSnap.docs[0].data().activeReward || null);
+    const { total, discount } = await priceOrder({ vendorId, items, promoCode, reward: activeReward });
 
     // Don't charge the customer if no Saradhi can deliver (#10)
     const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();

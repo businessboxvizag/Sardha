@@ -361,6 +361,45 @@
 
     askAssistant: (message, history) => post("/api/assistant", { message, history }),
 
+    /* ── Support tickets (customer ⇄ support) ── */
+    createTicket:    ({ subject, message, orderId }) => post("/api/support", { subject, message, orderId: orderId || undefined }),
+    myTickets:       () => get("/api/support/mine"),
+    getTicket:       (id) => get("/api/support/" + id),
+    replyTicket:     (id, text) => post("/api/support/" + id + "/messages", { text }),
+    adminTickets:    () => get("/api/support"),
+    setTicketStatus: (id, status) => patch("/api/support/" + id, { status }),
+
+    // Support contact details (admin-configured) from cached settings.
+    supportContact: () => {
+      const s = _cache.settings || {};
+      return { phone: s.supportPhone || "", whatsapp: s.supportWhatsapp || "", email: s.supportEmail || "", hours: s.supportHours || "" };
+    },
+
+    /* ── Cancel an order (optionally with a reason) ── */
+    cancelOrder: async (orderId, reason) => {
+      const order = await patch("/api/orders/" + orderId + "/status", { status: "CANCELLED", reason: reason || undefined });
+      const i = _cache.orders.findIndex((o) => o.id === orderId);
+      if (i >= 0) _cache.orders[i] = order;
+      emit();
+      return order;
+    },
+
+    /* ── Gold-coins rewards ── */
+    rewardsMe:    () => get("/api/rewards/me"),
+    gameWin:      () => post("/api/rewards/win", {}),
+    redeemReward: (type) => post("/api/rewards/redeem", { type }),
+
+    /* ── Rider KYC document submission ── */
+    submitRiderDocuments: (riderId, docs) => patch("/api/riders/" + riderId + "/documents", docs),
+    // Admin verification decision: status ∈ 'verified' | 'rejected' | 'submitted'.
+    setRiderKyc: async (riderId, status) => {
+      const rider = await patch("/api/riders/" + riderId + "/documents", { kycStatus: status });
+      const i = _cache.riders.findIndex((r) => r.id === riderId);
+      if (i >= 0) _cache.riders[i] = rider;
+      emit();
+      return rider;
+    },
+
     // Update the signed-in customer's profile (name, phone, dob, photoUrl, address).
     updateProfile: async (fields) => {
       const c = await put("/api/customers/me", fields);
@@ -488,6 +527,7 @@
     // Rider cash settlement via Razorpay UPI deposit
     settleCashStart:  (riderId, amount) => post(`/api/riders/${riderId}/settle`, { amount }),
     settleCashVerify: (riderId, data)   => post(`/api/riders/${riderId}/settle/verify`, data),
+    settingsRaw: () => ({ ...(_cache.settings || {}) }),
     codCashLimit: () => (_cache.settings && _cache.settings.codCashLimit != null) ? Number(_cache.settings.codCashLimit) : 2000,
     operationalZones: () => (_cache.settings && Array.isArray(_cache.settings.operationalZones)) ? _cache.settings.operationalZones : [],
 

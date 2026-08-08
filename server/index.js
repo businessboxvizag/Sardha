@@ -86,6 +86,8 @@ app.use("/api/customers", apiLimiter, require("./routes/customers"));
 app.use("/api/analytics", apiLimiter, require("./routes/analytics"));
 app.use("/api/admin",     apiLimiter, require("./routes/admin"));
 app.use("/api/settings",  apiLimiter, require("./routes/settings"));
+app.use("/api/support",   apiLimiter, require("./routes/support"));   // customer ⇄ support tickets
+app.use("/api/rewards",   apiLimiter, require("./routes/rewards"));   // gold-coins loyalty
 
 /* ── Expose Mapbox token safely ──────────────────────────────── */
 app.get("/api/config", (req, res) => {

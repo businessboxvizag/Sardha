@@ -31,6 +31,9 @@
     const me = BW.currentCustomer();
     if (me) BW.joinCustomerRoom(me.id);
 
+    // Load gold-coin balance / active reward so checkout and the Games hub reflect it.
+    refreshRewards();
+
     // Notify the customer live when a fresh order is accepted or declined by the store
     const _lastStatus = {};
     BW.subscribe(() => {
@@ -517,8 +520,14 @@
       if (promoDisc > 0 && promoDisc >= storeDisc) { disc = promoDisc; discLabel = "Discount (" + state.appliedPromoCode + ")"; }
       else if (storeDisc > 0)                       { disc = storeDisc; discLabel = "Store discount (" + storePct + "%)"; }
       const discountedSub = Math.max(0, sub - disc);
-      const gst = Math.round(discountedSub * 0.18);
-      const total = discountedSub + gst + fee;
+      // Gold-coin reward (auto-applied at checkout, mirrors the server).
+      const _rw = _rewards.activeReward;
+      const rewardAmt = (_rw && _rw.type === "PERCENT10") ? Math.round(discountedSub * 0.10) : 0;
+      const rewardFreeDel = !!(_rw && _rw.type === "FREE_DELIVERY");
+      const netSub = Math.max(0, discountedSub - rewardAmt);
+      const feeFinal = rewardFreeDel ? 0 : fee;
+      const gst = Math.round(netSub * 0.18);
+      const total = netSub + gst + feeFinal;
 
       // ── Promo code row ──
       const promoInput = el("input", { type: "text", value: state.appliedPromoCode || "",
@@ -562,11 +571,14 @@
       if (disc > 0) linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, discLabel), el("span", { style: "color:var(--brand)" }, "− " + money(disc)),
       ]));
+      if (rewardAmt > 0) linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
+        el("span", { class: "muted" }, "🎁 Reward (10% off)"), el("span", { style: "color:var(--brand)" }, "− " + money(rewardAmt)),
+      ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
         el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
-        el("span", { class: "muted" }, "Delivery fee"), el("span", {}, money(fee)),
+        el("span", { class: "muted" }, "Delivery fee"), rewardFreeDel ? el("span", { style: "color:var(--brand)" }, "FREE 🎁") : el("span", {}, money(fee)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
         el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(total)),
@@ -669,7 +681,12 @@
       if (promoDisc > 0 && promoDisc >= storeDisc) { disc = promoDisc; discLabel = "Discount (" + state.appliedPromoCode + ")"; }
       else if (storeDisc > 0)                       { disc = storeDisc; discLabel = "Store discount (" + storePct + "%)"; }
       const discountedSub = Math.max(0, sub - disc);
-      const gst = Math.round(discountedSub * 0.18);
+      const _rwP = _rewards.activeReward;
+      const rewardAmtP = (_rwP && _rwP.type === "PERCENT10") ? Math.round(discountedSub * 0.10) : 0;
+      const rewardFreeDelP = !!(_rwP && _rwP.type === "FREE_DELIVERY");
+      const netSubP = Math.max(0, discountedSub - rewardAmtP);
+      const feeFinalP = rewardFreeDelP ? 0 : fee;
+      const gst = Math.round(netSubP * 0.18);
 
       // Promo code entry
       const pInput = el("input", { type: "text", value: state.appliedPromoCode || "", placeholder: "Promo code",
@@ -695,10 +712,11 @@
         state.promoMsg ? el("div", { class: "small", style: "margin:-2px 0 6px;color:" + (state.promoMsg.ok ? "var(--brand)" : "#c0392b") }, state.promoMsg.text) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Subtotal"), el("span", {}, money(sub))]),
         disc > 0 ? el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, discLabel), el("span", { style: "color:var(--brand)" }, "− " + money(disc))]) : document.createTextNode(""),
+        rewardAmtP > 0 ? el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "🎁 Reward (10% off)"), el("span", { style: "color:var(--brand)" }, "− " + money(rewardAmtP))]) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst))]),
-        el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Delivery fee"), el("span", {}, money(fee))]),
+        el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Delivery fee"), rewardFreeDelP ? el("span", { style: "color:var(--brand)" }, "FREE 🎁") : el("span", {}, money(fee))]),
         el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
-          el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(discountedSub + gst + fee)),
+          el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(netSubP + gst + feeFinalP)),
         ]),
       ]);
       panelCart.appendChild(bill);
@@ -952,6 +970,7 @@
       state.cart = {};
       state.cartVendor = null;
       state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null;
+      refreshRewards();  // order grants a play credit and may have consumed a reward
       hidePlacing();
       showOrderConfirmation(order);
     } catch (err) {
@@ -1061,6 +1080,22 @@
         statusBadge(o.status),
       ]),
       el("div", { class: "card" }, [tracker(o.status)]),
+      (o.status === "PLACED")
+        ? el("div", { class: "card", style: "margin-top:12px" }, [
+            el("div", { class: "muted small", style: "margin-bottom:8px" }, "Changed your mind? You can cancel until the store accepts your order" + (o.paymentMethod === "ONLINE" ? " — your online payment is refunded automatically." : ".")),
+            el("button", { class: "btn danger", style: "width:100%", onClick: () => cancelOrderFlow(o) }, "Cancel order"),
+          ])
+        : document.createTextNode(""),
+      (o.status !== "DELIVERED" && o.status !== "CANCELLED")
+        ? el("div", { class: "card", style: "margin-top:12px;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff" }, [
+            el("div", { style: "font-weight:800" }, "🎮 Play while you wait"),
+            el("div", { style: "font-size:13px;opacity:.92;margin:2px 0 10px" }, "Win a quick game and earn 🪙 10 gold coins. 100 coins = free delivery or 10% off!"),
+            el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:700", onClick: () => { openGameModal(true); refreshRewards(); } }, "Play now"),
+          ])
+        : document.createTextNode(""),
+      el("div", { style: "margin-top:12px" }, [
+        el("button", { class: "btn ghost sm", style: "width:100%", onClick: () => openTicketForm(o.id) }, "🎧 Get help with this order"),
+      ]),
       (o.status !== "DELIVERED" && o.status !== "CANCELLED") ? deliveryOtpCard(o) : document.createTextNode(""),
       o.status === "CANCELLED"
         ? el("div", { class: "card", style: "border:1px solid var(--red);background:#fdeceb;margin-top:12px" }, [
@@ -1073,7 +1108,7 @@
       el("div", { class: "grid cols-2", style: "margin-top:16px" }, [
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Live tracking"),
-          mapFor(v, cust, rider),
+          mapFallbackCard(o, rider),
           // Always-works fallback: open the Saradhi's live position in Google Maps
           // (no API key needed — handy when the embedded map can't load).
           (rider && rider.lat && !["DELIVERED", "CANCELLED"].includes(o.status))
@@ -1101,14 +1136,54 @@
           ...o.items.map((l) => el("div", { class: "row between small", style: "padding:5px 0" }, [
             el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
           ])),
+          (o.discount && o.discount.amount > 0)
+            ? el("div", { class: "row between small", style: "padding:3px 0;color:var(--brand)" }, [
+                el("span", {}, "Discount" + (o.discount.code ? " (" + o.discount.code + ")" : "")), el("span", {}, "− " + money(o.discount.amount)),
+              ])
+            : document.createTextNode(""),
           el("div", { class: "line", style: "border-top:1px solid var(--border);margin-top:8px;padding-top:10px" }, [
             el("strong", {}, "Total"), el("strong", {}, money(o.total)),
           ]),
+          (o.paymentStatus === "REFUNDED")
+            ? el("div", { class: "small", style: "margin-top:8px;color:var(--brand)" }, "✓ Refund of " + money((o.refund && o.refund.amount) || o.total) + " initiated to your original payment method.")
+            : (o.paymentStatus === "REFUND_PENDING")
+              ? el("div", { class: "small", style: "margin-top:8px;color:#c0392b" }, "Refund is being processed by our team.")
+              : document.createTextNode(""),
           el("div", { class: "muted small", style: "margin-top:10px" }, "Deliver to: " + (o.deliverTo || (cust && cust.address) || "—")),
         ]),
       ]),
     ];
     shell("history", body);
+  }
+
+  // Confirm + cancel a still-PLACED order, with an optional reason. Online payments
+  // are auto-refunded server-side; we surface the outcome to the customer.
+  function cancelOrderFlow(o) {
+    const reasons = ["Ordered by mistake", "Changed my mind", "Wrong items in cart", "Delivery taking too long", "Other"];
+    const sel = el("select", {}, reasons.map((r) => el("option", { value: r }, r)));
+    let close;
+    const confirmBtn = el("button", { class: "btn danger" }, "Cancel my order");
+    confirmBtn.onclick = async () => {
+      confirmBtn.disabled = true; confirmBtn.textContent = "Cancelling…";
+      try {
+        const updated = await BW.cancelOrder(o.id, sel.value);
+        close && close();
+        if (updated.paymentStatus === "REFUNDED") toast("Order cancelled. Refund of " + money((updated.refund && updated.refund.amount) || o.total) + " initiated.");
+        else if (updated.paymentStatus === "REFUND_PENDING") toast("Order cancelled. Your refund is being processed.");
+        else toast("Order cancelled.");
+        render();
+      } catch (e) { toast(e.message || "Couldn't cancel"); confirmBtn.disabled = false; confirmBtn.textContent = "Cancel my order"; }
+    };
+    close = UI.modal({
+      title: "Cancel this order?",
+      body: el("div", {}, [
+        el("p", { class: "muted small", style: "margin:0 0 10px" }, o.paymentMethod === "ONLINE"
+          ? "Your online payment will be refunded automatically to your original payment method."
+          : "This order hasn't been accepted yet, so you can cancel it now."),
+        el("div", { class: "field" }, [el("label", {}, "Reason (optional)"), sel]),
+      ]),
+      footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Keep order"), confirmBtn],
+    });
   }
 
   /* ----- live ETA ----- */
@@ -1753,8 +1828,168 @@
           el("span", { style: "font-weight:600" }, String(getUnlockedVendors().length)),
         ]),
       ]),
+      el("div", { class: "card", style: "margin-top:12px;cursor:pointer", onClick: () => go("games") }, [
+        el("div", { class: "row between", style: "align-items:center" }, [
+          el("div", {}, [
+            el("div", { style: "font-weight:700" }, "🎮 Games & Rewards"),
+            el("div", { class: "muted small" }, "Play games, earn gold coins, unlock free delivery"),
+          ]),
+          el("div", { style: "font-size:20px;color:var(--muted)" }, "→"),
+        ]),
+      ]),
+      el("div", { class: "card", style: "margin-top:12px;cursor:pointer", onClick: () => go("help") }, [
+        el("div", { class: "row between", style: "align-items:center" }, [
+          el("div", {}, [
+            el("div", { style: "font-weight:700" }, "🎧 Help & Support"),
+            el("div", { class: "muted small" }, "Chat with us, call, or cancel an order"),
+          ]),
+          el("div", { style: "font-size:20px;color:var(--muted)" }, "→"),
+        ]),
+      ]),
+      el("div", { class: "card", style: "margin-top:12px" }, [
+        el("div", { style: "font-weight:700;margin-bottom:8px" }, "Policies"),
+        policyLinks(),
+      ]),
       el("button", { class: "btn danger", style: "width:100%;margin-top:18px", onClick: () => BW.logout() }, "Log out"),
     ]);
+  }
+
+  // Shared list of policy links (opens the static policy pages in a new tab).
+  function policyLinks() {
+    const items = [
+      ["Cancellation & Refund", "/policies/cancellation-refund.html"],
+      ["Support / Contact",     "/policies/support.html"],
+      ["Delivery policy",       "/policies/delivery.html"],
+      ["Terms of Service",      "/policies/terms.html"],
+      ["Delivery Partner policy", "/policies/delivery-partner.html"],
+    ];
+    return el("div", {}, items.map(([label, href]) =>
+      el("a", { href, target: "_blank", rel: "noopener",
+        style: "display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);text-decoration:none;color:inherit" },
+        [el("span", {}, label), el("span", { style: "color:var(--muted)" }, "↗")])
+    ));
+  }
+
+  /* ====================== HELP & SUPPORT ====================== */
+  function viewHelp() {
+    const c = BW.supportContact ? BW.supportContact() : {};
+    const digits = (s) => String(s || "").replace(/[^0-9+]/g, "");
+    const contactBtns = [];
+    if (c.phone) contactBtns.push(el("a", { class: "btn primary", style: "flex:1;text-align:center;text-decoration:none", href: "tel:" + digits(c.phone) }, "📞 Call us"));
+    if (c.whatsapp) contactBtns.push(el("a", { class: "btn success", style: "flex:1;text-align:center;text-decoration:none", href: "https://wa.me/" + digits(c.whatsapp).replace(/^\+/, ""), target: "_blank", rel: "noopener" }, "💬 WhatsApp"));
+    if (c.email) contactBtns.push(el("a", { class: "btn ghost", style: "flex:1;text-align:center;text-decoration:none", href: "mailto:" + c.email }, "✉️ Email"));
+
+    const listWrap = el("div", {}, [el("div", { class: "muted small" }, "Loading your tickets…")]);
+    BW.myTickets().then((tickets) => {
+      listWrap.innerHTML = "";
+      if (!tickets.length) { listWrap.appendChild(el("div", { class: "muted small" }, "No support tickets yet.")); return; }
+      tickets.forEach((t) => {
+        const last = (t.messages && t.messages[t.messages.length - 1]) || {};
+        listWrap.appendChild(el("div", { class: "card", style: "margin-bottom:8px;cursor:pointer", onClick: () => go("ticket", { ticketId: t.id }) }, [
+          el("div", { class: "row between" }, [
+            el("div", { style: "font-weight:700" }, t.subject),
+            el("span", { class: "badge", style: "font-size:11px" }, ticketStatusLabel(t.status)),
+          ]),
+          el("div", { class: "muted small", style: "margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, (last.from === "support" ? "Support: " : "You: ") + (last.text || "")),
+        ]));
+      });
+    }).catch(() => { listWrap.innerHTML = ""; listWrap.appendChild(el("div", { class: "muted small" }, "Couldn't load tickets.")); });
+
+    shell("profile", [
+      el("div", { class: "row", style: "align-items:center;gap:10px;margin-bottom:6px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("profile") }, "←"),
+        el("h1", { class: "page-title", style: "margin:0" }, "Help & Support"),
+      ]),
+      c.hours ? el("div", { class: "muted small", style: "margin-bottom:10px" }, "🕑 " + c.hours) : document.createTextNode(""),
+      contactBtns.length ? el("div", { class: "card" }, [
+        el("div", { style: "font-weight:700;margin-bottom:8px" }, "Reach us directly"),
+        el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, contactBtns),
+      ]) : document.createTextNode(""),
+      el("div", { class: "card", style: "margin-top:12px" }, [
+        el("div", { style: "font-weight:700;margin-bottom:8px" }, "Message support"),
+        el("button", { class: "btn primary", style: "width:100%", onClick: () => openTicketForm() }, "✏️ Raise a ticket"),
+        el("div", { style: "margin-top:12px" }, [el("div", { class: "muted small", style: "margin-bottom:6px" }, "Your tickets"), listWrap]),
+      ]),
+      el("div", { class: "card", style: "margin-top:12px" }, [
+        el("div", { style: "font-weight:700;margin-bottom:8px" }, "Policies"),
+        policyLinks(),
+      ]),
+    ]);
+  }
+
+  function ticketStatusLabel(s) {
+    return { open: "Open", awaiting_customer: "Reply needed", resolved: "Resolved", closed: "Closed" }[s] || s;
+  }
+
+  function openTicketForm(prefillOrderId) {
+    const subj = el("input", { type: "text", placeholder: "What's it about? (e.g. Missing item)" });
+    const msg  = el("textarea", { placeholder: "Describe the issue…", style: "min-height:90px" });
+    // Optional order picker: recent orders to attach.
+    const orders = BW.orders ? BW.orders({}).slice(0, 8) : [];
+    const orderSel = el("select", {}, [el("option", { value: "" }, "Not about a specific order")]
+      .concat(orders.map((o) => el("option", { value: o.id, ...(prefillOrderId === o.id ? { selected: "" } : {}) }, "#" + (o.orderNo || o.id.slice(0, 5)) + " · " + money(o.total)))));
+    let close;
+    const submit = el("button", { class: "btn primary" }, "Send");
+    submit.onclick = async () => {
+      if (!subj.value.trim() || !msg.value.trim()) { toast("Add a subject and a message"); return; }
+      submit.disabled = true; submit.textContent = "Sending…";
+      try {
+        const t = await BW.createTicket({ subject: subj.value.trim(), message: msg.value.trim(), orderId: orderSel.value || null });
+        close && close();
+        go("ticket", { ticketId: t.id });
+      } catch (e) { toast(e.message || "Couldn't send"); submit.disabled = false; submit.textContent = "Send"; }
+    };
+    close = UI.modal({
+      title: "Raise a ticket",
+      body: el("div", {}, [
+        el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, "Subject"), subj]),
+        el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, "Related order (optional)"), orderSel]),
+        el("div", { class: "field" }, [el("label", {}, "Message"), msg]),
+      ]),
+      footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"), submit],
+    });
+  }
+
+  function viewTicket() {
+    const id = state.ticketId;
+    const wrap = el("div", {}, [el("div", { class: "muted" }, "Loading…")]);
+    shell("profile", [
+      el("div", { class: "row", style: "align-items:center;gap:10px;margin-bottom:10px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("help") }, "←"),
+        el("h1", { class: "page-title", style: "margin:0" }, "Ticket"),
+      ]),
+      wrap,
+    ]);
+    BW.getTicket(id).then((t) => {
+      wrap.innerHTML = "";
+      wrap.appendChild(el("div", { class: "card", style: "margin-bottom:10px" }, [
+        el("div", { class: "row between" }, [el("div", { style: "font-weight:800" }, t.subject), el("span", { class: "badge" }, ticketStatusLabel(t.status))]),
+        t.orderId ? el("div", { class: "muted small", style: "margin-top:4px" }, "Linked to an order") : document.createTextNode(""),
+      ]));
+      const thread = el("div", { class: "card", style: "margin-bottom:10px;display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow:auto" });
+      (t.messages || []).forEach((m) => {
+        const mine = m.from === "customer";
+        thread.appendChild(el("div", { style: "align-self:" + (mine ? "flex-end" : "flex-start") + ";max-width:80%;background:" + (mine ? "var(--brand-lt)" : "var(--surface-2,#f2f2f2)") + ";padding:8px 12px;border-radius:12px" }, [
+          el("div", { class: "small", style: "font-weight:700;margin-bottom:2px" }, mine ? "You" : (m.byName || "Support")),
+          el("div", { style: "white-space:pre-wrap" }, m.text),
+          el("div", { class: "muted", style: "font-size:10px;margin-top:3px" }, timeAgo(m.at)),
+        ]));
+      });
+      wrap.appendChild(thread);
+      if (t.status === "closed") {
+        wrap.appendChild(el("div", { class: "muted small" }, "This ticket is closed. Raise a new one if you still need help."));
+      } else {
+        const reply = el("textarea", { placeholder: "Type a reply…", style: "min-height:60px" });
+        const send = el("button", { class: "btn primary", style: "margin-top:8px;width:100%" }, "Send reply");
+        send.onclick = async () => {
+          if (!reply.value.trim()) return;
+          send.disabled = true; send.textContent = "Sending…";
+          try { await BW.replyTicket(id, reply.value.trim()); viewTicket(); }
+          catch (e) { toast(e.message || "Couldn't send"); send.disabled = false; send.textContent = "Send reply"; }
+        };
+        wrap.appendChild(el("div", { class: "card" }, [reply, send]));
+      }
+    }).catch(() => { wrap.innerHTML = ""; wrap.appendChild(el("div", { class: "muted" }, "Couldn't load this ticket.")); });
   }
 
   // Downscale an image File to a square-ish JPEG data URL for lightweight avatar storage.
@@ -2119,6 +2354,181 @@
     return el("div", { class: "card", style: "margin-bottom:12px" }, [el("div", { style: "font-weight:700;margin-bottom:6px;text-align:center" }, "Rate this service"), starRow, cmt, btn]);
   }
 
+  /* ====================== GAMES & REWARDS ====================== */
+  // Gold coins: win a mini-game (+10) using a play credit earned by ordering.
+  // 100 coins → free delivery or 10% off, applied automatically on the next order.
+  let _rewards = { goldCoins: 0, gamePlays: 0, activeReward: null, redeemCost: 100, coinsPerWin: 10 };
+  function refreshRewards() {
+    return BW.rewardsMe().then((r) => { _rewards = { ..._rewards, ...r }; return _rewards; }).catch(() => _rewards);
+  }
+
+  const GAMES = [
+    { key: "reaction", name: "Quick Tap",     build: buildReactionGame },
+    { key: "memory",   name: "Memory Match",  build: buildMemoryGame },
+    { key: "catch",    name: "Tap Rush",      build: buildTapRushGame },
+  ];
+  function nextGame() {
+    let n = 0; try { n = parseInt(localStorage.getItem("bw_game_rot") || "0", 10) || 0; } catch (e) {}
+    try { localStorage.setItem("bw_game_rot", String(n + 1)); } catch (e) {}
+    return GAMES[n % GAMES.length];
+  }
+
+  // Open a game in a modal. rewardable=true tries to award coins on a win.
+  function openGameModal(rewardable, forced) {
+    const game = forced || nextGame();
+    const arena = el("div", { style: "min-height:220px" });
+    const msg = el("div", { style: "text-align:center;font-weight:700;margin-top:10px;min-height:22px" }, "");
+    let close;
+    async function handleWin() {
+      if (rewardable && _rewards.gamePlays > 0) {
+        try {
+          const r = await BW.gameWin();
+          _rewards.goldCoins = r.goldCoins; _rewards.gamePlays = r.gamePlays;
+          msg.innerHTML = ""; msg.appendChild(el("span", { style: "color:var(--brand)" }, r.awarded ? "🏆 You won +" + r.awarded + " coins! Total: " + r.goldCoins : "You won! 🎉"));
+        } catch (e) { msg.textContent = "You won! 🎉"; }
+      } else {
+        msg.textContent = rewardable ? "You won! 🎉 (no coin credit left — order to earn more)" : "You won! 🎉";
+      }
+      againBtn.style.display = "inline-block";
+    }
+    function startGame(g) {
+      arena.innerHTML = ""; msg.textContent = ""; againBtn.style.display = "none";
+      g.build(arena, handleWin);
+    }
+    const againBtn = el("button", { class: "btn ghost sm", style: "display:none", onClick: () => startGame(nextGame()) }, "Play another");
+    close = UI.modal({
+      title: "🎮 " + game.name,
+      body: el("div", {}, [arena, msg]),
+      footer: [againBtn, el("button", { class: "btn primary", onClick: () => close() }, "Done")],
+    });
+    startGame(game);
+  }
+
+  // ---- Game 1: Quick Tap (reaction) ----
+  function buildReactionGame(root, onWin) {
+    const box = el("div", { style: "height:180px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px;cursor:pointer;background:#c0392b;user-select:none" }, "Wait for green…");
+    let ready = false, t0 = 0, done = false;
+    const timer = setTimeout(() => { ready = true; t0 = Date.now(); box.style.background = "#1a9d54"; box.textContent = "TAP NOW!"; }, 900 + Math.random() * 2200);
+    box.onclick = () => {
+      if (done) return;
+      if (!ready) { clearTimeout(timer); box.style.background = "#8e44ad"; box.textContent = "Too soon! Tap Play another"; done = true; return; }
+      const ms = Date.now() - t0; done = true;
+      if (ms <= 600) { box.style.background = "#1a9d54"; box.textContent = ms + " ms — nice!"; onWin(); }
+      else { box.style.background = "#c0392b"; box.textContent = ms + " ms — too slow, try again"; }
+    };
+    root.appendChild(el("div", { class: "muted small", style: "text-align:center;margin-bottom:8px" }, "Tap the box the instant it turns green (under 600ms wins)."));
+    root.appendChild(box);
+  }
+
+  // ---- Game 2: Memory Match ----
+  function buildMemoryGame(root, onWin) {
+    const emojis = ["🍎", "🥑", "🍕", "🍰"];
+    const deck = emojis.concat(emojis).sort(() => Math.random() - 0.5);
+    let first = null, lock = false, matched = 0;
+    const grid = el("div", { style: "display:grid;grid-template-columns:repeat(4,1fr);gap:8px" });
+    deck.forEach((em) => {
+      const card = el("div", { style: "height:70px;border-radius:10px;background:var(--brand);display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer" }, "");
+      card._em = em; card._open = false;
+      card.onclick = () => {
+        if (lock || card._open) return;
+        card.textContent = em; card.style.background = "#eee"; card._open = true;
+        if (!first) { first = card; return; }
+        if (first._em === em) { matched++; first = null; if (matched === emojis.length) onWin(); }
+        else { lock = true; const a = first; setTimeout(() => { a.textContent = ""; a.style.background = "var(--brand)"; a._open = false; card.textContent = ""; card.style.background = "var(--brand)"; card._open = false; first = null; lock = false; }, 700); }
+      };
+      grid.appendChild(card);
+    });
+    root.appendChild(el("div", { class: "muted small", style: "text-align:center;margin-bottom:8px" }, "Flip two cards at a time — match all 4 pairs to win."));
+    root.appendChild(grid);
+  }
+
+  // ---- Game 3: Tap Rush ----
+  function buildTapRushGame(root, onWin) {
+    const GOAL = 12, SECS = 12;
+    let score = 0, left = SECS, ended = false;
+    const hud = el("div", { style: "display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px" }, [el("span", {}, "Score: 0"), el("span", {}, SECS + "s")]);
+    const field = el("div", { style: "position:relative;height:200px;border-radius:12px;background:#faf3ef;overflow:hidden" });
+    const target = el("div", { style: "position:absolute;width:52px;height:52px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer", }, "🎯");
+    function place() { target.style.left = Math.random() * 78 + "%"; target.style.top = Math.random() * 70 + "%"; }
+    target.onclick = () => { if (ended) return; score++; hud.firstChild.textContent = "Score: " + score; place(); if (score >= GOAL) { ended = true; clearInterval(iv); field.innerHTML = ""; field.appendChild(el("div", { style: "text-align:center;padding-top:80px;font-weight:800" }, "You hit " + score + "! 🎉")); onWin(); } };
+    field.appendChild(target); place();
+    const iv = setInterval(() => { if (ended) return; left--; hud.lastChild.textContent = left + "s"; if (left <= 0) { ended = true; clearInterval(iv); field.innerHTML = ""; field.appendChild(el("div", { style: "text-align:center;padding-top:80px;font-weight:800;color:#c0392b" }, "Time! You got " + score + ". Try again.")); } }, 1000);
+    root.appendChild(el("div", { class: "muted small", style: "text-align:center;margin-bottom:8px" }, "Tap the target " + GOAL + " times before the clock runs out."));
+    root.appendChild(hud); root.appendChild(field);
+  }
+
+  // ---- Games & Rewards hub ----
+  function viewGames() {
+    const wrap = el("div", {}, [el("div", { class: "muted" }, "Loading…")]);
+    shell("profile", [
+      el("div", { class: "row", style: "align-items:center;gap:10px;margin-bottom:10px" }, [
+        el("button", { class: "btn ghost sm", onClick: () => go("profile") }, "←"),
+        el("h1", { class: "page-title", style: "margin:0" }, "Games & Rewards"),
+      ]),
+      wrap,
+    ]);
+    refreshRewards().then(() => {
+      wrap.innerHTML = "";
+      const coins = _rewards.goldCoins || 0;
+      const cost = _rewards.redeemCost || 100;
+      wrap.appendChild(el("div", { class: "card", style: "text-align:center;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff" }, [
+        el("div", { style: "font-size:34px;font-weight:900" }, "🪙 " + coins),
+        el("div", { style: "opacity:.9" }, "gold coins" + (_rewards.gamePlays ? " · " + _rewards.gamePlays + " play credit" + (_rewards.gamePlays > 1 ? "s" : "") : "")),
+      ]));
+
+      // Active reward banner.
+      if (_rewards.activeReward) {
+        wrap.appendChild(el("div", { class: "card", style: "border:1px solid var(--brand);margin-top:10px" }, [
+          el("div", { style: "font-weight:700" }, "🎁 Reward ready: " + rewardLabel(_rewards.activeReward.type)),
+          el("div", { class: "muted small" }, "It's applied automatically on your next order."),
+        ]));
+      }
+
+      // Redeem options.
+      const canRedeem = coins >= cost && !_rewards.activeReward;
+      const redeemCard = el("div", { class: "card", style: "margin-top:10px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Redeem " + cost + " coins"),
+        el("div", { class: "muted small", style: "margin-bottom:10px" }, canRedeem ? "Pick your reward:" : (_rewards.activeReward ? "Use your current reward first." : "Earn " + (cost - coins) + " more coins to redeem.")),
+        el("div", { style: "display:flex;gap:8px" }, [
+          redeemBtn("FREE_DELIVERY", "🚚 Free delivery", canRedeem),
+          redeemBtn("PERCENT10", "💯 10% off", canRedeem),
+        ]),
+      ]);
+      wrap.appendChild(redeemCard);
+
+      // Play area.
+      wrap.appendChild(el("div", { class: "card", style: "margin-top:10px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Play a game"),
+        el("div", { class: "muted small", style: "margin-bottom:10px" }, _rewards.gamePlays > 0
+          ? "You have " + _rewards.gamePlays + " play credit" + (_rewards.gamePlays > 1 ? "s" : "") + " — win to earn " + (_rewards.coinsPerWin || 10) + " coins each!"
+          : "Place an order to earn play credits. You can still play for fun below."),
+        el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, GAMES.map((g) =>
+          el("button", { class: "btn ghost sm", onClick: () => { openGameModal(true, g); setTimeout(() => go("games"), 0); } }, g.name))),
+      ]));
+    }).catch(() => { wrap.innerHTML = ""; wrap.appendChild(el("div", { class: "muted" }, "Couldn't load rewards.")); });
+  }
+
+  function rewardLabel(type) { return type === "FREE_DELIVERY" ? "Free delivery" : type === "PERCENT10" ? "10% off your order" : type; }
+
+  function redeemBtn(type, label, enabled) {
+    const b = el("button", { class: "btn " + (enabled ? "primary" : "ghost") + " sm", style: "flex:1", disabled: enabled ? undefined : "" }, label);
+    if (enabled) b.onclick = async () => {
+      b.disabled = true; b.textContent = "…";
+      try { await BW.redeemReward(type); toast("Redeemed! " + rewardLabel(type) + " will apply on your next order."); await refreshRewards(); go("games"); }
+      catch (e) { toast(e.message || "Couldn't redeem"); b.disabled = false; b.textContent = label; }
+    };
+    return b;
+  }
+
+  // Fallback for the live-tracking map (the embedded Google map needs a billing-enabled
+  // key; until then we show a clean card and the always-works "open in Google Maps" link).
+  function mapFallbackCard(o, rider) {
+    const active = rider && rider.lat && !["DELIVERED", "CANCELLED"].includes(o.status);
+    return el("div", { style: "height:120px;border-radius:12px;background:#faf3ef;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;color:var(--muted)" },
+      active ? "📍 Your Saradhi is on the way — tap below for live location."
+             : (o.status === "DELIVERED" ? "✓ Delivered" : "Live location appears here once a Saradhi is assigned."));
+  }
+
   function render() {
     switch (state.route) {
       case "vendor":        return viewVendor();
@@ -2130,6 +2540,9 @@
       case "services":      return viewServices();
       case "serviceVendor": return viewServiceVendor();
       case "bookingTrack":  return viewBookingTrack();
+      case "help":          return viewHelp();
+      case "ticket":        return viewTicket();
+      case "games":         return viewGames();
       default:              return viewStores();
     }
   }
