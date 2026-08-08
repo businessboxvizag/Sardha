@@ -289,12 +289,12 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.
 
-    // Gold-coins: grant one play credit for this order, and consume the reward if one was applied.
-    try {
-      const custUpdate = { gamePlays: (customer.gamePlays || 0) + 1 };
-      if (reward) custUpdate.activeReward = null; // reward has now been spent on this order
-      await db.collection("customers").doc(customer.id).update(custUpdate);
-    } catch (e) { console.error("post-order rewards update failed:", e && e.message); }
+    // Gold-coins: consume the reward if one was applied. (Coins are earned by playing
+    // a game during an ACTIVE delivery — see /api/rewards/win — not granted here.)
+    if (reward) {
+      try { await db.collection("customers").doc(customer.id).update({ activeReward: null }); }
+      catch (e) { console.error("post-order reward clear failed:", e && e.message); }
+    }
 
     // Emit / return a version WITHOUT the sensitive Rx images or OTP.
     const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;

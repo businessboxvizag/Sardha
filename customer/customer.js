@@ -970,7 +970,7 @@
       state.cart = {};
       state.cartVendor = null;
       state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null;
-      refreshRewards();  // order grants a play credit and may have consumed a reward
+      refreshRewards();  // refresh coin balance; a redeemed reward may have been consumed
       hidePlacing();
       showOrderConfirmation(order);
     } catch (err) {
@@ -1090,7 +1090,7 @@
         ? el("div", { class: "card", style: "margin-top:12px;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff" }, [
             el("div", { style: "font-weight:800" }, "🎮 Play while you wait"),
             el("div", { style: "font-size:13px;opacity:.92;margin:2px 0 10px" }, "Win a quick game and earn 🪙 10 gold coins. 100 coins = free delivery or 10% off!"),
-            el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:700", onClick: () => { openGameModal(true); refreshRewards(); } }, "Play now"),
+            el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:700", onClick: () => { openGameModal(o.id); refreshRewards(); } }, "Play now"),
           ])
         : document.createTextNode(""),
       el("div", { style: "margin-top:12px" }, [
@@ -1831,8 +1831,8 @@
       el("div", { class: "card", style: "margin-top:12px;cursor:pointer", onClick: () => go("games") }, [
         el("div", { class: "row between", style: "align-items:center" }, [
           el("div", {}, [
-            el("div", { style: "font-weight:700" }, "🎮 Games & Rewards"),
-            el("div", { class: "muted small" }, "Play games, earn gold coins, unlock free delivery"),
+            el("div", { style: "font-weight:700" }, "🪙 My Rewards"),
+            el("div", { class: "muted small" }, "Your gold coins — redeem for free delivery or 10% off"),
           ]),
           el("div", { style: "font-size:20px;color:var(--muted)" }, "→"),
         ]),
@@ -2373,21 +2373,25 @@
     return GAMES[n % GAMES.length];
   }
 
-  // Open a game in a modal. rewardable=true tries to award coins on a win.
-  function openGameModal(rewardable, forced) {
+  // Open a game in a modal. Coins are awarded only for a win tied to an ACTIVE order
+  // (orderId supplied) — the server enforces one payout per in-progress order.
+  function openGameModal(orderId, forced) {
     const game = forced || nextGame();
     const arena = el("div", { style: "min-height:220px" });
     const msg = el("div", { style: "text-align:center;font-weight:700;margin-top:10px;min-height:22px" }, "");
     let close;
     async function handleWin() {
-      if (rewardable && _rewards.gamePlays > 0) {
+      if (orderId) {
         try {
-          const r = await BW.gameWin();
-          _rewards.goldCoins = r.goldCoins; _rewards.gamePlays = r.gamePlays;
-          msg.innerHTML = ""; msg.appendChild(el("span", { style: "color:var(--brand)" }, r.awarded ? "🏆 You won +" + r.awarded + " coins! Total: " + r.goldCoins : "You won! 🎉"));
+          const r = await BW.gameWin(orderId);
+          _rewards.goldCoins = r.goldCoins;
+          msg.innerHTML = "";
+          if (r.awarded) msg.appendChild(el("span", { style: "color:var(--brand)" }, "🏆 You won +" + r.awarded + " coins! Total: " + r.goldCoins));
+          else if (r.reason === "already_rewarded") msg.appendChild(el("span", {}, "You won! 🎉 (coins for this order already earned)"));
+          else msg.appendChild(el("span", {}, "You won! 🎉"));
         } catch (e) { msg.textContent = "You won! 🎉"; }
       } else {
-        msg.textContent = rewardable ? "You won! 🎉 (no coin credit left — order to earn more)" : "You won! 🎉";
+        msg.textContent = "You won! 🎉";
       }
       againBtn.style.display = "inline-block";
     }
@@ -2457,13 +2461,13 @@
     root.appendChild(hud); root.appendChild(field);
   }
 
-  // ---- Games & Rewards hub ----
+  // ---- Rewards hub (view balance + redeem only — games are played during a live delivery) ----
   function viewGames() {
     const wrap = el("div", {}, [el("div", { class: "muted" }, "Loading…")]);
     shell("profile", [
       el("div", { class: "row", style: "align-items:center;gap:10px;margin-bottom:10px" }, [
         el("button", { class: "btn ghost sm", onClick: () => go("profile") }, "←"),
-        el("h1", { class: "page-title", style: "margin:0" }, "Games & Rewards"),
+        el("h1", { class: "page-title", style: "margin:0" }, "My Rewards"),
       ]),
       wrap,
     ]);
@@ -2473,7 +2477,7 @@
       const cost = _rewards.redeemCost || 100;
       wrap.appendChild(el("div", { class: "card", style: "text-align:center;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff" }, [
         el("div", { style: "font-size:34px;font-weight:900" }, "🪙 " + coins),
-        el("div", { style: "opacity:.9" }, "gold coins" + (_rewards.gamePlays ? " · " + _rewards.gamePlays + " play credit" + (_rewards.gamePlays > 1 ? "s" : "") : "")),
+        el("div", { style: "opacity:.9" }, "gold coins"),
       ]));
 
       // Active reward banner.
@@ -2496,14 +2500,10 @@
       ]);
       wrap.appendChild(redeemCard);
 
-      // Play area.
+      // How to earn — games are ONLY playable while an order is on the way.
       wrap.appendChild(el("div", { class: "card", style: "margin-top:10px" }, [
-        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Play a game"),
-        el("div", { class: "muted small", style: "margin-bottom:10px" }, _rewards.gamePlays > 0
-          ? "You have " + _rewards.gamePlays + " play credit" + (_rewards.gamePlays > 1 ? "s" : "") + " — win to earn " + (_rewards.coinsPerWin || 10) + " coins each!"
-          : "Place an order to earn play credits. You can still play for fun below."),
-        el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, GAMES.map((g) =>
-          el("button", { class: "btn ghost sm", onClick: () => { openGameModal(true, g); setTimeout(() => go("games"), 0); } }, g.name))),
+        el("div", { style: "font-weight:800;margin-bottom:6px" }, "How to earn coins 🎮"),
+        el("div", { class: "muted small" }, "Play the mini-game on your order-tracking screen while your order is being delivered — win to earn " + (_rewards.coinsPerWin || 10) + " coins (once per order)."),
       ]));
     }).catch(() => { wrap.innerHTML = ""; wrap.appendChild(el("div", { class: "muted" }, "Couldn't load rewards.")); });
   }

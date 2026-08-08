@@ -386,7 +386,7 @@
 
     /* ── Gold-coins rewards ── */
     rewardsMe:    () => get("/api/rewards/me"),
-    gameWin:      () => post("/api/rewards/win", {}),
+    gameWin:      (orderId) => post("/api/rewards/win", { orderId: orderId || undefined }),
     redeemReward: (type) => post("/api/rewards/redeem", { type }),
 
     /* ── Rider KYC document submission ── */
@@ -398,6 +398,20 @@
       if (i >= 0) _cache.riders[i] = rider;
       emit();
       return rider;
+    },
+    // Admin marks ONE KYC item verified/rejected (offline check).
+    verifyRiderItem: async (riderId, item, decision, notes) => {
+      const rider = await patch("/api/riders/" + riderId + "/verify", { item, decision, notes });
+      const i = _cache.riders.findIndex((r) => r.id === riderId);
+      if (i >= 0) _cache.riders[i] = rider;
+      emit();
+      return rider;
+    },
+    // Admin runs an automated online check (DL/RC/Aadhaar) via the KYC provider.
+    verifyRiderOnline: async (riderId, item) => {
+      const out = await post("/api/riders/" + riderId + "/verify-online", { item });
+      if (out && out.rider) { const i = _cache.riders.findIndex((r) => r.id === riderId); if (i >= 0) _cache.riders[i] = out.rider; emit(); }
+      return out;
     },
 
     // Update the signed-in customer's profile (name, phone, dob, photoUrl, address).

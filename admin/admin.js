@@ -226,12 +226,32 @@
     } else {
       wrap.appendChild(el("span", { class: "muted small" }, "No docs"));
     }
+    if (d.vehicleNumber) wrap.appendChild(el("div", { class: "muted small" }, "🏍 " + d.vehicleNumber + (d.vehicleType ? " · " + d.vehicleType : "")));
     if (d.riderPhone || d.riderAddress) wrap.appendChild(el("div", { class: "muted small", title: d.riderAddress || "" }, "☎ " + (d.riderPhone || "—")));
-    if (d.familyName) wrap.appendChild(el("div", { class: "muted small", title: (d.familyAddress || "") }, "Nominee: " + d.familyName + (d.familyPhone ? " · " + d.familyPhone : "")));
-    if (status === "submitted") {
-      const v = el("button", { class: "btn success sm", onClick: async () => { try { await BW.setRiderKyc(r.id, "verified"); toast(r.name + " verified"); } catch (e) { toast(e.message); } } }, "Verify");
-      const x = el("button", { class: "btn ghost sm", onClick: async () => { try { await BW.setRiderKyc(r.id, "rejected"); toast(r.name + " rejected"); } catch (e) { toast(e.message); } } }, "Reject");
-      wrap.appendChild(el("div", { style: "display:flex;gap:6px" }, [v, x]));
+    if (d.aadhaarLast4) wrap.appendChild(el("div", { class: "muted small" }, "Aadhaar ••••" + d.aadhaarLast4));
+    if (d.familyName) wrap.appendChild(el("div", { class: "muted small", title: (d.familyAddress || "") }, "Nominee: " + d.familyName + (d.familyPhone ? " · " + d.familyPhone : "") + (d.nomineeAadhaarLast4 ? " · ••••" + d.nomineeAadhaarLast4 : "")));
+    if (r.agreement && r.agreement.acceptedAt) wrap.appendChild(el("div", { class: "small", style: "color:#1a9d54", title: "Signed " + r.agreement.acceptedAt + " · IP " + (r.agreement.ip || "?") }, "✓ Agreement signed by " + r.agreement.fullName));
+
+    // Per-item verification (offline decisions + optional online check).
+    if (status !== "pending") {
+      const v = r.verification || {};
+      const itemRow = (label, key, online) => {
+        const s = v[key] && v[key].status;
+        const color = s === "verified" ? "#1a9d54" : s === "rejected" ? "var(--red)" : "#888";
+        const state = el("span", { class: "small", style: "min-width:64px;color:" + color }, s ? s : "pending");
+        const ok = el("button", { class: "btn success sm", title: "Mark " + label + " verified", onClick: async () => { try { await BW.verifyRiderItem(r.id, key, "verified"); toast(label + " verified"); } catch (e) { toast(e.message); } } }, "✓");
+        const no = el("button", { class: "btn ghost sm", title: "Reject " + label, onClick: async () => { const notes = prompt("Reason for rejecting " + label + " (optional):") || ""; try { await BW.verifyRiderItem(r.id, key, "rejected", notes); toast(label + " rejected"); } catch (e) { toast(e.message); } } }, "✗");
+        const kids = [el("span", { class: "small", style: "min-width:74px" }, label), state, ok, no];
+        if (online) kids.push(el("button", { class: "btn ghost sm", title: "Run automated online check", onClick: async () => { try { const out = await BW.verifyRiderOnline(r.id, key); const rr = out.result || {}; toast(rr.status === "manual_required" ? "No KYC provider configured — verify manually" : (label + ": " + rr.status)); } catch (e) { toast(e.message); } } }, "⟳ online"));
+        return el("div", { style: "display:flex;gap:6px;align-items:center;margin-top:4px" }, kids);
+      };
+      const panel = el("div", { style: "margin-top:6px;border-top:1px dashed var(--border,#ddd);padding-top:6px" }, [
+        itemRow("DL", "dl", true),
+        itemRow("Vehicle", "rc", true),
+        itemRow("Aadhaar", "aadhaar", true),
+        itemRow("Nominee", "nominee", false),
+      ]);
+      wrap.appendChild(panel);
     }
     return wrap;
   }

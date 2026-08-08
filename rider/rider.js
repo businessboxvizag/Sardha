@@ -173,13 +173,20 @@
     // Local working state for uploads.
     const state = { dlUrl: docs.dlUrl || "", aadhaarUrl: docs.aadhaarUrl || "", bikePhotoUrl: docs.bikePhotoUrl || "", familyIdUrl: docs.familyIdUrl || "" };
     const dlNum = el("input", { type: "text", value: docs.dlNumber || "", placeholder: "Driving licence number", style: "width:100%;margin:6px 0" });
+    const riderDob = el("input", { type: "date", value: docs.riderDob || "", style: "width:100%;margin:6px 0" });
+    const aadhaarNum = el("input", { type: "tel", inputmode: "numeric", value: "", placeholder: docs.aadhaarLast4 ? "Aadhaar (••••" + docs.aadhaarLast4 + " on file)" : "Your 12-digit Aadhaar number", style: "width:100%;margin:6px 0" });
+    const vehNum = el("input", { type: "text", value: docs.vehicleNumber || "", placeholder: "Vehicle number plate (e.g. AP39AB1234)", style: "width:100%;margin:6px 0;text-transform:uppercase" });
+    const vehType = el("input", { type: "text", value: docs.vehicleType || "", placeholder: "Vehicle type (bike / scooter / cycle)", style: "width:100%;margin:6px 0" });
     const riderPhone = el("input", { type: "tel", value: docs.riderPhone || "", placeholder: "Your phone number", style: "width:100%;margin:6px 0" });
     const riderAddr = el("textarea", { placeholder: "Your full address", style: "width:100%;margin:6px 0;min-height:52px" }); riderAddr.value = docs.riderAddress || "";
     const famName = el("input", { type: "text", value: docs.familyName || "", placeholder: "Nominee's full name", style: "width:100%;margin:6px 0" });
     const famRel = el("input", { type: "text", value: docs.familyRelation || "", placeholder: "Relation (father, spouse, brother…)", style: "width:100%;margin:6px 0" });
     const famPhone = el("input", { type: "tel", value: docs.familyPhone || "", placeholder: "Nominee's phone number", style: "width:100%;margin:6px 0" });
     const famAddr = el("textarea", { placeholder: "Nominee's full address", style: "width:100%;margin:6px 0;min-height:52px" }); famAddr.value = docs.familyAddress || "";
+    const nomAadhaar = el("input", { type: "tel", inputmode: "numeric", value: "", placeholder: docs.nomineeAadhaarLast4 ? "Nominee Aadhaar (••••" + docs.nomineeAadhaarLast4 + " on file)" : "Nominee's 12-digit Aadhaar number", style: "width:100%;margin:6px 0" });
     const ackCb = el("input", { type: "checkbox" }); ackCb.checked = ackDone;
+    const agreeName = el("input", { type: "text", value: (myRider && myRider.agreement && myRider.agreement.fullName) || "", placeholder: "Type your full legal name to sign", style: "width:100%;margin:6px 0" });
+    const agreeCb = el("input", { type: "checkbox" }); agreeCb.checked = !!(myRider && myRider.agreement);
 
     function uploadRow(label, key) {
       const statusEl = el("span", { class: "muted small" }, state[key] ? "✓ Uploaded" : "Not uploaded");
@@ -197,42 +204,78 @@
       return el("div", { class: "row between", style: "align-items:center;margin:6px 0" }, [el("span", {}, label), el("span", { style: "display:flex;gap:8px;align-items:center" }, [statusEl, btn])]);
     }
 
-    const submit = el("button", { class: "btn primary", style: "width:100%;margin-top:10px" }, "Submit documents");
+    const submit = el("button", { class: "btn primary", style: "width:100%;margin-top:10px" }, "Submit for verification");
+    const digits = (s) => String(s || "").replace(/\D/g, "");
     submit.onclick = async () => {
-      if (!state.dlUrl || !state.aadhaarUrl || !state.bikePhotoUrl || !state.familyIdUrl) { toast("Please upload your DL, Aadhaar, bike photo, and the nominee's Aadhaar/ID."); return; }
+      if (!state.dlUrl || !state.aadhaarUrl || !state.bikePhotoUrl || !state.familyIdUrl) { toast("Upload your DL, Aadhaar, bike photo (with number plate), and the nominee's Aadhaar/ID."); return; }
+      if (!dlNum.value.trim() || !riderDob.value) { toast("Add your driving-licence number and date of birth."); return; }
+      if (!vehNum.value.trim()) { toast("Add your vehicle number plate."); return; }
+      if (!aadhaarNum.value.trim() && !docs.aadhaarLast4) { toast("Enter your 12-digit Aadhaar number."); return; }
+      if (aadhaarNum.value.trim() && digits(aadhaarNum.value).length !== 12) { toast("Aadhaar must be 12 digits."); return; }
       if (!riderPhone.value.trim() || !riderAddr.value.trim()) { toast("Add your phone number and address."); return; }
       if (!famName.value.trim() || !famRel.value.trim() || !famPhone.value.trim() || !famAddr.value.trim()) { toast("Complete the nominee's name, relation, phone and address."); return; }
-      if (!ackCb.checked) { toast("Please accept the cash-settlement policy to continue."); return; }
+      if (!nomAadhaar.value.trim() && !docs.nomineeAadhaarLast4) { toast("Enter the nominee's 12-digit Aadhaar number."); return; }
+      if (!ackCb.checked) { toast("Please accept the cash-settlement policy."); return; }
+      if (!agreeCb.checked || !agreeName.value.trim()) { toast("Type your full name and accept the Delivery Partner Agreement to sign."); return; }
       submit.disabled = true; submit.textContent = "Submitting…";
       try {
         await BW.submitRiderDocuments(me.uid, {
-          dlUrl: state.dlUrl, dlNumber: dlNum.value.trim(), aadhaarUrl: state.aadhaarUrl, bikePhotoUrl: state.bikePhotoUrl,
+          dlUrl: state.dlUrl, dlNumber: dlNum.value.trim(), riderDob: riderDob.value,
+          aadhaarUrl: state.aadhaarUrl, aadhaarNumber: aadhaarNum.value.trim() || undefined,
+          bikePhotoUrl: state.bikePhotoUrl, vehicleNumber: vehNum.value.trim(), vehicleType: vehType.value.trim(),
           riderPhone: riderPhone.value.trim(), riderAddress: riderAddr.value.trim(),
           familyName: famName.value.trim(), familyRelation: famRel.value.trim(),
           familyPhone: famPhone.value.trim(), familyAddress: famAddr.value.trim(), familyIdUrl: state.familyIdUrl,
+          nomineeAadhaarNumber: nomAadhaar.value.trim() || undefined,
           cashPolicyAck: ackCb.checked,
+          agreementFullName: agreeCb.checked ? agreeName.value.trim() : undefined,
         });
-        await syncRider(); toast("Documents submitted — pending verification."); render();
-      } catch (e) { toast(e.message || "Couldn't submit"); submit.disabled = false; submit.textContent = "Submit documents"; }
+        await syncRider(); toast("Submitted — Saardha will verify your documents."); render();
+      } catch (e) { toast(e.message || "Couldn't submit"); submit.disabled = false; submit.textContent = "Submit for verification"; }
     };
 
+    // Per-item verification summary (once an admin has started checking).
+    const v = (myRider && myRider.verification) || {};
+    const vRow = (label, key) => {
+      const s = v[key] && v[key].status;
+      const color = s === "verified" ? "#1a9d54" : s === "rejected" ? "var(--brand)" : "#888";
+      const txt = s === "verified" ? "✓ Verified" : s === "rejected" ? "✗ Rejected" + (v[key].notes ? " — " + v[key].notes : "") : "Pending";
+      return el("div", { class: "row between", style: "padding:3px 0" }, [el("span", { class: "small" }, label), el("span", { class: "small", style: "color:" + color }, txt)]);
+    };
+    const verifyPanel = (status === "submitted" || status === "rejected")
+      ? el("div", { style: "margin-top:10px;padding-top:8px;border-top:1px solid var(--border,#eee)" }, [
+          el("div", { style: "font-weight:700;margin-bottom:4px" }, "Verification status"),
+          vRow("Driving licence", "dl"), vRow("Vehicle (RC / plate)", "rc"), vRow("Aadhaar / identity", "aadhaar"), vRow("Nominee", "nominee"),
+        ])
+      : document.createTextNode("");
+
     return el("div", { class: "rider-status-card", style: "margin-top:12px;border:1px solid var(--brand,#e62a1f)" }, [
-      el("div", { style: "font-weight:800" }, status === "submitted" ? "Documents submitted — under review" : "Complete your onboarding"),
-      el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Saardha requires KYC before you can take deliveries. Upload clear photos."),
+      el("div", { style: "font-weight:800" }, status === "submitted" ? "Documents submitted — under review" : status === "rejected" ? "Some documents were rejected — please re-submit" : "Complete your onboarding"),
+      el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Saardha verifies every partner (online + physical check) before you can take deliveries. Upload clear photos."),
       el("div", { style: "font-weight:700;margin-top:6px" }, "Your details"),
       uploadRow("Driving licence", "dlUrl"),
-      dlNum,
+      dlNum, riderDob,
       uploadRow("Aadhaar card", "aadhaarUrl"),
-      uploadRow("Bike photo (with number plate)", "bikePhotoUrl"),
+      aadhaarNum,
+      uploadRow("Vehicle photo (show number plate)", "bikePhotoUrl"),
+      vehNum, vehType,
       riderPhone, riderAddr,
       el("div", { style: "font-weight:700;margin-top:10px" }, "Nominee (guarantor)"),
-      el("div", { class: "muted small", style: "margin-bottom:4px" }, "One family member acts as your guarantor — their Aadhaar/ID and contact are required."),
+      el("div", { class: "muted small", style: "margin-bottom:4px" }, "One family member acts as your guarantor — their Aadhaar and contact are required."),
       famName, famRel, famPhone, famAddr,
       uploadRow("Nominee's Aadhaar / ID", "familyIdUrl"),
+      nomAadhaar,
       el("label", { style: "display:flex;gap:8px;align-items:flex-start;margin-top:12px;cursor:pointer" }, [
         ackCb, el("span", { class: "small" }, "I understand that COD cash I collect belongs to Saardha and must be settled in full within the cash limit. Failure to settle can suspend my account."),
       ]),
+      el("div", { style: "font-weight:700;margin-top:12px" }, "Delivery Partner Agreement"),
+      el("div", { class: "muted small" }, ["Read the full ", el("a", { href: "/policies/delivery-partner-agreement.html", target: "_blank", rel: "noopener" }, "Delivery Partner Agreement"), ", then sign below."]),
+      agreeName,
+      el("label", { style: "display:flex;gap:8px;align-items:flex-start;margin-top:4px;cursor:pointer" }, [
+        agreeCb, el("span", { class: "small" }, "I have read and agree to the Delivery Partner Agreement. My typed name is my electronic signature and is legally binding."),
+      ]),
       policyLink(),
+      verifyPanel,
       submit,
     ]);
   }

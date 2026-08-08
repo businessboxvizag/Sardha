@@ -2,6 +2,12 @@ const express = require("express");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const razorpay = require("../config/razorpay");
+const kyc = require("../lib/kycVerify");
+
+const AGREEMENT_VERSION = "2026-08-DP-1";               // bump when the agreement text changes
+const REQUIRE_KYC = process.env.REQUIRE_RIDER_KYC === "true"; // gate duty on verified KYC when true
+const REQUIRED_VERIFY_ITEMS = ["dl", "rc", "aadhaar", "nominee"];
+const last4 = (v) => { const s = String(v || "").replace(/\D/g, ""); return s ? s.slice(-4) : undefined; };
 
 const router = express.Router();
 const toRider = (doc) => ({ id: doc.id, ...doc.data() });
@@ -83,6 +89,10 @@ router.patch("/:id/availability", requireAuth, async (req, res) => {
     }
     // Auto-suspension: can't go online while cash-in-hand is overdue past the limit.
     if (status === "available") {
+      // KYC gate: when enabled, only verified partners can go on duty.
+      if (REQUIRE_KYC && rd.kycStatus !== "verified") {
+        return res.status(403).json({ error: "Your documents are still being verified. You can go on duty once Saardha approves your KYC." });
+      }
       const limit = await getCodLimit();
       if (isCashSuspended(rd, limit)) {
         return res.status(403).json({ error: "Duty suspended — settle your cash-in-hand (₹" + (rd.cashInHand || 0) + ") to go back online." });
@@ -156,8 +166,12 @@ router.patch("/:id/documents", requireAuth, async (req, res) => {
     const docs = {
       dlUrl:            str(b.dlUrl, 500),
       dlNumber:         str(b.dlNumber, 40),
+      riderDob:         str(b.riderDob, 20),        // needed for DL verification
       aadhaarUrl:       str(b.aadhaarUrl, 500),
+      aadhaarLast4:     last4(b.aadhaarNumber),     // NEVER store the full Aadhaar number
       bikePhotoUrl:     str(b.bikePhotoUrl, 500),
+      vehicleNumber:    b.vehicleNumber != null ? String(b.vehicleNumber).toUpperCase().replace(/\s+/g, "").slice(0, 15) : undefined,
+      vehicleType:      str(b.vehicleType, 30),
       riderPhone:       str(b.riderPhone, 20),
       riderAddress:     str(b.riderAddress, 300),
       // Nominee (guarantor) — name, relation, contact, address, and their Aadhaar/ID.
@@ -166,11 +180,23 @@ router.patch("/:id/documents", requireAuth, async (req, res) => {
       familyPhone:      str(b.familyPhone, 20),
       familyAddress:    str(b.familyAddress, 300),
       familyIdUrl:      str(b.familyIdUrl, 500),
+      nomineeAadhaarLast4: last4(b.nomineeAadhaarNumber),
     };
     Object.keys(docs).forEach((k) => docs[k] === undefined && delete docs[k]);
 
     const updates = { documents: { ...(doc.data().documents || {}), ...docs } };
     if (b.cashPolicyAck === true) updates.cashPolicyAckAt = new Date().toISOString();
+
+    // Legally binding e-signature of the Delivery Partner Agreement.
+    if (b.agreementFullName && String(b.agreementFullName).trim()) {
+      updates.agreement = {
+        version: AGREEMENT_VERSION,
+        fullName: String(b.agreementFullName).trim().slice(0, 120),
+        acceptedAt: new Date().toISOString(),
+        ip: (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").toString().split(",")[0].trim(),
+        userAgent: String(req.headers["user-agent"] || "").slice(0, 300),
+      };
+    }
 
     // Mark KYC "submitted" once the core documents are present; admin verifies later.
     const merged = updates.documents;
@@ -178,7 +204,7 @@ router.patch("/:id/documents", requireAuth, async (req, res) => {
       updates.kycStatus = doc.data().kycStatus === "verified" ? "verified" : "submitted";
     }
 
-    // Only an admin may set a verification decision.
+    // Only an admin may set a verification decision directly.
     if (req.user.role === "admin" && ["submitted", "verified", "rejected"].includes(b.kycStatus)) {
       updates.kycStatus = b.kycStatus;
     }
@@ -191,6 +217,85 @@ router.patch("/:id/documents", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("PATCH /riders/:id/documents:", err);
     res.status(500).json({ error: "Failed to save documents" });
+  }
+});
+
+// Recompute the overall KYC status from the per-item verification map.
+function deriveKycStatus(rider) {
+  const v = rider.verification || {};
+  if (REQUIRED_VERIFY_ITEMS.some((k) => v[k] && v[k].status === "rejected")) return "rejected";
+  const allVerified = REQUIRED_VERIFY_ITEMS.every((k) => v[k] && v[k].status === "verified");
+  if (allVerified) return "verified";
+  const docs = rider.documents || {};
+  if (docs.dlUrl && docs.aadhaarUrl && docs.bikePhotoUrl && docs.familyIdUrl) return "submitted";
+  return "pending";
+}
+
+/* ── PATCH /api/riders/:id/verify ── admin marks ONE item verified/rejected (offline KYC) ──
+ * body: { item: 'dl'|'rc'|'aadhaar'|'nominee'|'address'|'physical', decision: 'verified'|'rejected', notes? } */
+router.patch("/:id/verify", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const { item, decision, notes } = req.body;
+    const items = ["dl", "rc", "aadhaar", "nominee", "address", "physical"];
+    if (!items.includes(item) || !["verified", "rejected"].includes(decision)) {
+      return res.status(400).json({ error: "Invalid item or decision" });
+    }
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+
+    const rider = doc.data();
+    const verification = { ...(rider.verification || {}) };
+    verification[item] = {
+      status: decision, method: "manual",
+      by: req.user.name || req.user.email || "admin",
+      at: new Date().toISOString(),
+      notes: notes ? String(notes).slice(0, 300) : null,
+    };
+    const kycStatus = deriveKycStatus({ ...rider, verification });
+    await ref.update({ verification, kycStatus });
+    const updated = toRider(await ref.get());
+    const io = req.app.get("io");
+    if (io) io.to("admin").emit("rider:updated", updated);
+    res.json(updated);
+  } catch (err) {
+    console.error("PATCH /riders/:id/verify:", err);
+    res.status(500).json({ error: "Failed to record verification" });
+  }
+});
+
+/* ── POST /api/riders/:id/verify-online ── admin runs an automated check via the KYC provider ──
+ * body: { item: 'dl'|'rc'|'aadhaar' }. Returns manual_required if no provider is configured. */
+router.post("/:id/verify-online", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const item = req.body.item;
+    if (!["dl", "rc", "aadhaar"].includes(item)) return res.status(400).json({ error: "Invalid item" });
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+    const d = doc.data().documents || {};
+
+    let result;
+    if (item === "dl")      result = await kyc.verifyDL({ number: d.dlNumber, dob: d.riderDob });
+    else if (item === "rc") result = await kyc.verifyRC({ number: d.vehicleNumber });
+    else                    result = await kyc.verifyAadhaar({ number: null }); // Aadhaar → DigiLocker/OTP flow
+
+    const verification = { ...(doc.data().verification || {}) };
+    verification[item] = {
+      status: result.status === "verified" ? "verified" : result.status === "rejected" ? "rejected" : (verification[item] && verification[item].status) || "pending",
+      method: "online",
+      provider: result.provider || null,
+      by: req.user.name || "admin",
+      at: result.checkedAt || new Date().toISOString(),
+      raw: result.data || null,
+      note: result.reason || result.error || null,
+    };
+    const kycStatus = deriveKycStatus({ ...doc.data(), verification });
+    await ref.update({ verification, kycStatus });
+    res.json({ result, rider: toRider(await ref.get()) });
+  } catch (err) {
+    console.error("POST /riders/:id/verify-online:", err);
+    res.status(500).json({ error: "Online verification failed" });
   }
 });
 

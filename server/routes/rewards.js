@@ -43,22 +43,42 @@ router.get("/me", requireAuth, requireRole("customer"), async (req, res) => {
   }
 });
 
-/* ── POST /api/rewards/win ── award coins for a game win (needs a play credit) ── */
+/* ── POST /api/rewards/win  { orderId } ──────────────────────────────
+ * Coins are ONLY earnable while an order is actively being delivered, and each
+ * order pays out at most once. This blocks farming from the profile screen or from
+ * old/delivered orders — the client must pass the id of a live, in-progress order
+ * that belongs to the customer and hasn't already been rewarded.                 */
+const ACTIVE_ORDER_STATUSES = ["PLACED", "ACCEPTED", "ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"];
 router.post("/win", requireAuth, requireRole("customer"), async (req, res) => {
   try {
-    const ref = await customerRefFor(req.user.uid);
-    if (!ref) return res.status(404).json({ error: "Customer profile not found" });
+    const orderId = req.body.orderId;
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: "Customer profile not found" });
+    const custDoc = snap.docs[0];
+    const custId = custDoc.id;
+    const ref = custDoc.ref;
+
+    if (!orderId) return res.json({ awarded: 0, goldCoins: custDoc.data().goldCoins || 0, reason: "no_active_order" });
+
+    // The order must exist, belong to this customer, and still be in progress.
+    const orderDoc = await db.collection("orders").doc(orderId).get();
+    if (!orderDoc.exists || orderDoc.data().customerId !== custId) {
+      return res.status(403).json({ error: "Not your order" });
+    }
+    if (!ACTIVE_ORDER_STATUSES.includes(orderDoc.data().status)) {
+      return res.json({ awarded: 0, goldCoins: custDoc.data().goldCoins || 0, reason: "order_not_active" });
+    }
 
     const result = await db.runTransaction(async (tx) => {
       const doc = await tx.get(ref);
       const d = doc.data() || {};
-      const plays = d.gamePlays || 0;
-      if (plays <= 0) {
-        return { awarded: 0, goldCoins: d.goldCoins || 0, gamePlays: 0, reason: "no_play_credit" };
+      const rewarded = Array.isArray(d.rewardedOrderIds) ? d.rewardedOrderIds : [];
+      if (rewarded.includes(orderId)) {
+        return { awarded: 0, goldCoins: d.goldCoins || 0, reason: "already_rewarded" };
       }
       const goldCoins = (d.goldCoins || 0) + COINS_PER_WIN;
-      tx.update(ref, { gamePlays: plays - 1, goldCoins });
-      return { awarded: COINS_PER_WIN, goldCoins, gamePlays: plays - 1 };
+      tx.update(ref, { goldCoins, rewardedOrderIds: [...rewarded, orderId] });
+      return { awarded: COINS_PER_WIN, goldCoins };
     });
 
     res.json(result);
