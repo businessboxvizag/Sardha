@@ -485,19 +485,30 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
           return res.status(400).json({ error: "Incorrect delivery OTP. Ask the customer for their 4-digit code." });
         }
       }
-      // Cash on delivery — record the collected cash into the rider's floating balance.
+      // Pay on delivery (paymentMethod "COD") — the customer pays at the door either by
+      // UPI (scanning the Saradhi's Saardha QR → money goes straight to Saardha) or cash.
       let cash = 0;
+      let paidByUpi = false;
       if (order.paymentMethod === "COD") {
-        cash = Number(req.body.cashCollected);
-        if (!cash || cash <= 0) return res.status(400).json({ error: "Enter the cash amount collected from the customer." });
-        updates.paymentStatus = "COLLECTED";
-        updates.cashCollected = cash;
+        const mode = String(req.body.paymentMode || "").toUpperCase();
+        if (mode === "UPI") {
+          paidByUpi = true;
+          updates.paymentStatus = "PAID";     // paid directly to Saardha's UPI, not held by the rider
+          updates.paymentMode = "UPI";
+        } else {
+          cash = Number(req.body.cashCollected);
+          if (!cash || cash <= 0) return res.status(400).json({ error: "Enter the cash amount collected, or mark the order paid by UPI." });
+          updates.paymentStatus = "COLLECTED";
+          updates.paymentMode = "CASH";
+          updates.cashCollected = cash;
+        }
       }
       if (order.riderId) {
         const riderRef = db.collection("riders").doc(order.riderId);
         const rd = (await riderRef.get()).data() || {};
         const riderUpd = { status: "available", deliveriesToday: (rd.deliveriesToday || 0) + 1 };
-        if (order.paymentMethod === "COD") {
+        // Only physical cash adds to the rider's floating balance — UPI does not.
+        if (order.paymentMethod === "COD" && !paidByUpi) {
           const limit = await getCodLimit();
           const newCash = (rd.cashInHand || 0) + cash;
           riderUpd.cashInHand = newCash;

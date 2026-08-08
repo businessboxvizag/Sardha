@@ -594,8 +594,8 @@
         onClick: () => { state.paymentMethod = val; rebuild(); },
       }, label);
       payWrap.appendChild(el("div", { style: "display:flex;gap:8px" }, [
-        mkOpt("COD", "Cash on delivery"),
-        mkOpt("ONLINE", "Pay online (UPI/Card)"),
+        mkOpt("COD", "Pay on delivery"),
+        mkOpt("ONLINE", "Pay now online"),
       ]));
       linesWrap.appendChild(payWrap);
     };
@@ -729,8 +729,8 @@
       }, label);
       panelCart.appendChild(el("div", { class: "muted small", style: "margin-bottom:6px" }, "Payment method"));
       panelCart.appendChild(el("div", { style: "display:flex;gap:8px;margin-bottom:14px" }, [
-        mkOpt("COD", "Cash on delivery"),
-        mkOpt("ONLINE", "Pay online (UPI/Card)"),
+        mkOpt("COD", "Pay on delivery"),
+        mkOpt("ONLINE", "Pay now online"),
       ]));
 
       // ---- Delivery address (Zomato-style: pin + structured fields) ----

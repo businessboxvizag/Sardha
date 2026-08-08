@@ -364,18 +364,66 @@
   }
 
   /* ── Delivery: collect OTP (+ cash for COD) ────────────── */
+  // Build a UPI payment QR (Saardha VPA + amount) from admin settings, via the same
+  // QR image service the rest of the app uses. Returns null if no UPI ID is set.
+  function upiQrUrl(amount, orderNo) {
+    const s = (BW.settingsRaw && BW.settingsRaw()) || {};
+    const vpa = (s.upiVpa || "").trim();
+    if (!vpa) return null;
+    const intent = "upi://pay?pa=" + encodeURIComponent(vpa) +
+      "&pn=" + encodeURIComponent(s.upiName || "Saardha") +
+      "&am=" + encodeURIComponent(amount) + "&cu=INR" +
+      "&tn=" + encodeURIComponent("Saardha order " + (orderNo || ""));
+    return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(intent);
+  }
+
   function promptDeliver(order) {
-    const isCod = order.paymentMethod === "COD";
+    const isCod = order.paymentMethod === "COD"; // "pay on delivery"
+    const amount = order.total || 0;
     const otpIn = el("input", { inputmode: "numeric", maxlength: "4", placeholder: "4-digit OTP from customer", style: "width:100%;margin-bottom:10px" });
-    const cashIn = isCod ? el("input", { inputmode: "numeric", placeholder: "Cash collected (₹)", value: String(order.total || ""), style: "width:100%;margin-bottom:10px" }) : null;
+    const cashIn = el("input", { inputmode: "numeric", placeholder: "Cash collected (₹)", value: String(amount), style: "width:100%;margin-bottom:10px" });
     const err = el("div", { class: "auth-err", style: "text-align:left" });
+    const qrUrl = upiQrUrl(amount, order.orderNo);
+    let payMode = qrUrl ? "UPI" : "CASH"; // prefer UPI when a Saardha UPI ID is configured
+    const modeWrap = el("div", {});
+
+    function renderMode() {
+      modeWrap.innerHTML = "";
+      if (!isCod) { modeWrap.appendChild(el("p", { class: "muted small" }, "This order was prepaid online — just verify the OTP.")); return; }
+      const mk = (val, label) => el("button", { type: "button", class: "btn " + (payMode === val ? "primary" : "ghost") + " sm", style: "flex:1", onClick: () => { payMode = val; renderMode(); } }, label);
+      modeWrap.appendChild(el("div", { style: "display:flex;gap:8px;margin-bottom:10px" }, [mk("UPI", "UPI (scan QR)"), mk("CASH", "Cash")]));
+      if (payMode === "UPI") {
+        if (qrUrl) {
+          modeWrap.appendChild(el("div", { style: "text-align:center" }, [
+            el("div", { class: "small", style: "margin-bottom:6px" }, "Show this to the customer — they scan & pay " + money(amount)),
+            el("img", { src: qrUrl, alt: "Saardha UPI QR", style: "width:220px;height:220px;border-radius:8px" }),
+            el("div", { class: "muted small", style: "margin-top:6px" }, "Confirm the payment shows success before marking delivered."),
+          ]));
+        } else {
+          modeWrap.appendChild(el("div", { class: "auth-err" }, "Saardha UPI ID isn't set. Ask admin to add it in Settings, or collect cash."));
+        }
+      } else {
+        modeWrap.appendChild(cashIn);
+      }
+    }
+    renderMode();
+
     let close;
     const submit = el("button", { class: "btn success" }, "Mark Delivered");
     submit.addEventListener("click", async function () {
       const otp = otpIn.value.trim();
       if (otp.length !== 4) { err.textContent = "Enter the 4-digit OTP the customer shows you."; return; }
       const body = { otp: otp };
-      if (isCod) { const c = Number(cashIn.value); if (!c || c <= 0) { err.textContent = "Enter the cash amount collected."; return; } body.cashCollected = c; }
+      if (isCod) {
+        if (payMode === "UPI") {
+          if (!qrUrl) { err.textContent = "No UPI ID set — collect cash instead."; return; }
+          body.paymentMode = "UPI";
+        } else {
+          const c = Number(cashIn.value);
+          if (!c || c <= 0) { err.textContent = "Enter the cash amount collected."; return; }
+          body.paymentMode = "CASH"; body.cashCollected = c;
+        }
+      }
       submit.disabled = true; submit.textContent = "Confirming…";
       try { await BW.advanceOrder(order.id, body); if (close) close(); toast("Delivered ✓"); await syncRider(); render(); }
       catch (e) { err.textContent = e.message || "Could not complete delivery."; submit.disabled = false; submit.textContent = "Mark Delivered"; }
@@ -383,8 +431,9 @@
     close = modal({
       title: "Complete delivery · #" + (order.orderNo || order.id.slice(-6).toUpperCase()),
       body: el("div", {}, [
-        el("p", { class: "muted small", style: "margin:0 0 10px" }, "Ask the customer for their 4-digit delivery OTP" + (isCod ? " and collect the cash." : ".")),
-        otpIn, cashIn, err,
+        el("p", { class: "muted small", style: "margin:0 0 10px" }, isCod ? "Collect payment, then verify the customer's 4-digit OTP." : "Verify the customer's 4-digit delivery OTP."),
+        isCod ? el("div", { style: "font-weight:800;margin-bottom:8px" }, "Amount: " + money(amount)) : null,
+        modeWrap, otpIn, err,
       ].filter(Boolean)),
       footer: [submit],
     });

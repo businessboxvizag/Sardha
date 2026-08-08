@@ -1317,6 +1317,17 @@
       spSave.disabled = false; spSave.textContent = "Save contact";
     });
 
+    /* --- Pay-on-delivery UPI (Saardha QR the Saradhi shows at the door) --- */
+    const upiVpaEl  = el("input", { type: "text", value: s0.upiVpa || "", placeholder: "yourname@upi (Saardha's UPI ID)", style: "width:100%;margin-bottom:6px" });
+    const upiNameEl = el("input", { type: "text", value: s0.upiName || "Saardha", placeholder: "Payee name shown to customer", style: "width:100%;margin-bottom:6px" });
+    const upiSave   = el("button", { class: "btn primary" }, "Save UPI");
+    upiSave.addEventListener("click", async () => {
+      upiSave.disabled = true; upiSave.textContent = "Saving…";
+      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha" }); await BW.init("admin"); toast("UPI details saved"); }
+      catch (err) { toast("Error: " + err.message); }
+      upiSave.disabled = false; upiSave.textContent = "Save UPI";
+    });
+
     /* --- Operational zones (geofencing for rider duty) --- */
     const zones = (BW.operationalZones ? BW.operationalZones() : []).slice();
     const zoneList = el("div", {});
@@ -1372,6 +1383,13 @@
           el("label", {}, "COD limit (₹)"),
           el("div", { style: "display:flex;gap:10px;align-items:center" }, [codEl, codSave]),
         ]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Pay-on-delivery UPI"),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "The Saradhi shows a Saardha UPI QR at the door so customers can pay by UPI (or cash). Enter Saardha's UPI ID."),
+        el("div", { class: "field" }, [el("label", {}, "UPI ID (VPA)"), upiVpaEl]),
+        el("div", { class: "field" }, [el("label", {}, "Payee name"), upiNameEl]),
+        el("div", { style: "margin-top:8px" }, [upiSave]),
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Support contact"),
