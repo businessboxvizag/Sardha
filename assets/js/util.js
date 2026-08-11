@@ -134,59 +134,54 @@
     try { document.querySelectorAll(".gmap-embed").forEach(gmapFallbackNote); } catch (e) {}
   };
 
-  var _gmapsPromise = null;
-  function loadGoogleMaps(key) {
-    if (window.google && window.google.maps) return Promise.resolve(window.google.maps);
-    if (_gmapsPromise) return _gmapsPromise;
-    if (!key) return Promise.reject(new Error("no maps key"));
-    _gmapsPromise = new Promise(function (resolve, reject) {
+  /* ── Free maps: Leaflet + OpenStreetMap (no API key, no billing needed) ── */
+  var _leafletPromise = null;
+  function loadLeaflet() {
+    if (global.L && global.L.map) return Promise.resolve(global.L);
+    if (_leafletPromise) return _leafletPromise;
+    _leafletPromise = new Promise(function (resolve, reject) {
+      if (!document.getElementById("leaflet-css")) {
+        var link = document.createElement("link");
+        link.id = "leaflet-css"; link.rel = "stylesheet";
+        link.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+        document.head.appendChild(link);
+      }
       var s = document.createElement("script");
-      s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) + "&loading=async";
-      s.async = true; s.defer = true;
-      s.onload = function () { resolve(window.google.maps); };
-      s.onerror = function () { reject(new Error("maps failed to load")); };
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+      s.async = true;
+      s.onload = function () { resolve(global.L); };
+      s.onerror = function () { reject(new Error("leaflet failed to load")); };
       document.head.appendChild(s);
     });
-    return _gmapsPromise;
+    return _leafletPromise;
   }
-  function mapsKey() {
-    try { return (window.BW && BW.config && BW.config().googleMapsKey) || ""; } catch (e) { return ""; }
+  function osmLayer(L) {
+    return L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" });
   }
-  // Chariot marker for the Saradhi (who "rides a chariot").
-  var CHARIOT_ICON = "data:image/svg+xml;utf8," + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">' +
-    '<circle cx="24" cy="24" r="21" fill="#ffffff" stroke="#e62a1f" stroke-width="2.5"/>' +
-    '<g stroke="#e62a1f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
-    '<path d="M17 27 L17 20 L30 20 C31 20 31 21 31 22 L31 27 Z" fill="#e62a1f"/>' +
-    '<path d="M31 21 L36 18"/><path d="M31 26 L38 24"/>' +
-    '<circle cx="18" cy="31" r="5.5" fill="#ffffff"/>' +
-    '<path d="M18 25.5 L18 36.5 M12.5 31 L23.5 31 M14.2 27.2 L21.8 34.8 M21.8 27.2 L14.2 34.8"/>' +
-    '</g></svg>');
-  // markers: [{ lat, lng, label, color }]
+  function pinIcon(L, kind, label) {
+    var html = kind === "chariot"
+      ? '<div style="font-size:26px;line-height:1;transform:translate(-13px,-24px)">🛺</div>'
+      : '<div style="width:26px;height:26px;border-radius:50%;background:#e62a1f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transform:translate(-13px,-13px)">' + (label ? String(label).charAt(0) : "") + "</div>";
+    return L.divIcon({ html: html, className: "", iconSize: [0, 0] });
+  }
+
+  // markers: [{ lat, lng, label, icon }] — returns a container with a live OSM map.
   function gmap(opts) {
     opts = opts || {};
-    var key = mapsKey();
-    if (!key) return null; // caller falls back to the built-in map
     var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
-    if (window.__gmapsFailed) { gmapFallbackNote(container); return container; }
-    loadGoogleMaps(key).then(function (maps) {
+    loadLeaflet().then(function (L) {
       var pts = (opts.markers || []).filter(function (m) { return m && m.lat != null && m.lng != null; });
-      var center = opts.center || (pts[0] ? { lat: Number(pts[0].lat), lng: Number(pts[0].lng) } : { lat: 17.385, lng: 78.4867 });
-      var map = new maps.Map(container, { center: center, zoom: opts.zoom || 14, disableDefaultUI: true, zoomControl: true });
-      var bounds = new maps.LatLngBounds();
+      var center = opts.center || (pts[0] ? [Number(pts[0].lat), Number(pts[0].lng)] : [17.6868, 83.2185]);
+      var map = L.map(container, { zoomControl: true, attributionControl: false }).setView(center, opts.zoom || 13);
+      osmLayer(L).addTo(map);
+      var group = [];
       pts.forEach(function (m) {
-        var opts = { position: { lat: Number(m.lat), lng: Number(m.lng) }, map: map, title: m.label || "" };
-        if (m.icon === "chariot") {
-          // The Saradhi's top-down chariot artwork (falls back to the SVG glyph if missing).
-          opts.icon = { url: "/assets/img/saradhi-chariot.png", scaledSize: new maps.Size(72, 34), anchor: new maps.Point(36, 17) };
-        } else if (m.label) {
-          opts.label = { text: String(m.label).charAt(0), color: "#fff", fontWeight: "700" };
-        }
-        new maps.Marker(opts);
-        bounds.extend({ lat: Number(m.lat), lng: Number(m.lng) });
+        L.marker([Number(m.lat), Number(m.lng)], { icon: pinIcon(L, m.icon, m.label), title: m.label || "" }).addTo(map);
+        group.push([Number(m.lat), Number(m.lng)]);
       });
-      if (pts.length > 1) map.fitBounds(bounds);
-    }).catch(function () { container.innerHTML = ""; });
+      if (group.length > 1) { try { map.fitBounds(group, { padding: [30, 30] }); } catch (e) {} }
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 200);
+    }).catch(function () { gmapFallbackNote(container); });
     return container;
   }
 
@@ -247,18 +242,17 @@
   // set the drop point; calls opts.onPick(lat, lng). Returns null if no Maps key.
   function mapPicker(opts) {
     opts = opts || {};
-    var key = mapsKey();
-    if (!key) return null;
     var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
-    if (window.__gmapsFailed) { gmapFallbackNote(container); return container; }
-    loadGoogleMaps(key).then(function (maps) {
-      var start = { lat: Number(opts.lat) || 17.6868, lng: Number(opts.lng) || 83.2185 }; // default Visakhapatnam
-      var map = new maps.Map(container, { center: start, zoom: (opts.lat ? 16 : 12), disableDefaultUI: true, zoomControl: true });
-      var marker = new maps.Marker({ position: start, map: map, draggable: true });
-      function report(latLng) { if (opts.onPick) opts.onPick(latLng.lat(), latLng.lng()); }
-      marker.addListener("dragend", function () { report(marker.getPosition()); });
-      map.addListener("click", function (e) { marker.setPosition(e.latLng); report(e.latLng); });
-    }).catch(function () { container.innerHTML = ""; });
+    loadLeaflet().then(function (L) {
+      var start = [Number(opts.lat) || 17.6868, Number(opts.lng) || 83.2185]; // default Visakhapatnam
+      var map = L.map(container, { zoomControl: true, attributionControl: false }).setView(start, opts.lat ? 16 : 12);
+      osmLayer(L).addTo(map);
+      var marker = L.marker(start, { draggable: true, icon: pinIcon(L, null, "") }).addTo(map);
+      function report(ll) { if (opts.onPick) opts.onPick(ll.lat, ll.lng); }
+      marker.on("dragend", function () { report(marker.getLatLng()); });
+      map.on("click", function (e) { marker.setLatLng(e.latlng); report(e.latlng); });
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 200);
+    }).catch(function () { gmapFallbackNote(container); });
     return container;
   }
 

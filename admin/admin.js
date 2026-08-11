@@ -43,7 +43,7 @@
       navItem("vendors",   "Ve", "Stores"),
       navItem("partners",  "Pa", "Partners"),
       navItem("services",  "Sv", "Services"),
-      navItem("fleet",     "Fl", "Fleet"),
+      navItem("fleet",     "Sa", "Saradhis"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
     ]);
@@ -52,7 +52,7 @@
     // Bottom nav (mobile only)
     root.appendChild(el("div", { class: "bottom-nav" }, [
       bnItem("overview",  "Ov", "Overview"),
-      bnItem("fleet",     "Fl", "Fleet"),
+      bnItem("fleet",     "Sa", "Saradhis"),
       bnItem("vendors",   "Ve", "Vendors"),
       bnItem("monitor",   "Mo", "Monitor"),
     ]));
@@ -188,28 +188,28 @@
     shell("fleet", [
       el("div", { class: "row between", style: "margin-bottom:4px" }, [
         el("div", {}, [
-          el("h1", { class: "page-title", style: "margin:0" }, "Fleet Management"),
-          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "On-demand Saradhis. Monitor live location and assign orders."),
+          el("h1", { class: "page-title", style: "margin:0" }, "Saradhis"),
+          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "On-demand Saradhis. Monitor live location, manage and assign."),
         ]),
         el("button", { class: "btn primary", onClick: createRider }, "+ Add Saradhi"),
       ]),
-      el("div", { class: "grid cols-2" }, [
-        el("div", { class: "card" }, [
-          el("div", { class: "row between" }, [
-            el("h3", { style: "margin:0" }, "Live fleet map"),
-            el("div", { class: "row small muted", style: "gap:12px" }, [
-              el("span", { class: "fleet-legend fleet-legend--available" }, "Available"),
-              el("span", { class: "fleet-legend fleet-legend--busy" }, "On delivery"),
-              el("span", { class: "fleet-legend fleet-legend--offline" }, "Offline"),
-            ]),
+      el("div", { class: "card" }, [
+        el("div", { class: "row between" }, [
+          el("h3", { style: "margin:0" }, "Live map"),
+          el("div", { class: "row small muted", style: "gap:12px" }, [
+            el("span", { class: "fleet-legend fleet-legend--available" }, "Available"),
+            el("span", { class: "fleet-legend fleet-legend--busy" }, "On delivery"),
+            el("span", { class: "fleet-legend fleet-legend--offline" }, "Offline"),
           ]),
-          el("div", { style: "margin-top:12px" }, map),
         ]),
-        el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
-          el("table", {}, [
-            el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "KYC", "Active", "Status"].map((h) => el("th", {}, h)))),
-            el("tbody", {}, rows),
-          ]),
+        el("div", { style: "margin-top:12px" }, map),
+      ]),
+      // Full-width, horizontally-scrollable table so every column and the Edit/Delete
+      // and Status controls stay reachable on any screen width.
+      el("div", { class: "card", style: "padding:0;margin-top:16px;overflow-x:auto" }, [
+        el("table", { style: "min-width:820px" }, [
+          el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "KYC", "Active", "Status"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows),
         ]),
       ]),
     ]);

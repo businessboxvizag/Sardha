@@ -753,35 +753,36 @@
         return el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), inp]);
       };
 
-      const locStatus = el("span", { class: "muted small" }, state.deliverLoc ? "📍 Pin set" : "Optional — typed address is enough");
-      const useLocBtn = el("button", { class: "btn ghost sm", type: "button" }, "📍 Use my current location");
+      const locStatus = el("div", { class: "small", style: "margin-top:6px;color:" + (state.deliverLoc ? "var(--brand)" : "var(--muted)") },
+        state.deliverLoc ? ("📍 Location set" + (state.deliverAcc ? " (±" + state.deliverAcc + "m)" : "") + " — drag the pin below to fine-tune.") : "Tap above to set your location automatically.");
+      const useLocBtn = el("button", { class: "btn primary", type: "button", style: "width:100%" }, "📍 Use my current location");
       useLocBtn.addEventListener("click", () => {
         if (!navigator.geolocation) { toast("Location not available on this device"); return; }
-        if (!window.isSecureContext) { toast("GPS needs a secure (https) link. Just type your address below — that works fine."); return; }
+        if (!window.isSecureContext) { toast("Location needs a secure (https) connection. Please open the app via https."); return; }
         useLocBtn.disabled = true; useLocBtn.textContent = "Locating…";
         navigator.geolocation.getCurrentPosition(
-          (p) => { state.deliverLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; toast("Location pinned"); renderCartPanel(); },
+          (p) => { state.deliverLoc = { lat: p.coords.latitude, lng: p.coords.longitude }; state.deliverAcc = Math.round(p.coords.accuracy || 0); toast("Location set ✓"); renderCartPanel(); },
           (err) => {
-            toast(err && err.code === 1 ? "Location permission blocked — type your address below instead." : "Couldn't get GPS — type your address below instead.");
+            toast(err && err.code === 1 ? "Location permission blocked. Enable location for this site, or type your address below." : "Couldn't get your location — drag the pin on the map, or type your address below.");
             useLocBtn.disabled = false; useLocBtn.textContent = "📍 Use my current location";
           },
-          { enableHighAccuracy: true, timeout: 8000 }
+          { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
         );
       });
-      const picker = UI.mapPicker ? UI.mapPicker({
-        height: 180,
+      const picker = UI.mapPicker({
+        height: 190,
         lat: state.deliverLoc && state.deliverLoc.lat,
         lng: state.deliverLoc && state.deliverLoc.lng,
-        onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; },
-      }) : null;
+        onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; state.deliverAcc = 0; locStatus.style.color = "var(--brand)"; locStatus.textContent = "📍 Location set — drag the pin to fine-tune."; },
+      });
 
       panelCart.appendChild(el("div", { class: "card", style: "margin-bottom:12px" }, [
-        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Delivery address"),
-        el("div", { style: "display:flex;gap:8px;align-items:center;margin-bottom:8px" }, [useLocBtn, locStatus]),
-        picker ? el("div", { style: "margin-bottom:10px" }, [el("div", { class: "muted small", style: "margin-bottom:4px" }, "Drag the pin to your exact door"), picker]) : document.createTextNode(""),
-        el("div", { style: "margin-bottom:10px" }, [
-          el("div", { class: "muted small", style: "margin-bottom:4px" }, "…or paste a Google Maps link to your home"),
-          UI.mapsLinkField({ value: state.deliverMapsUrl || "", onResolved: (la, ln, url) => { state.deliverMapsUrl = url; if (la != null) { state.deliverLoc = { lat: la, lng: ln }; locStatus.textContent = "📍 Pin set"; } } }),
+        el("div", { style: "font-weight:800;margin-bottom:8px" }, "Delivery location"),
+        useLocBtn,
+        locStatus,
+        el("div", { style: "margin:10px 0" }, [
+          el("div", { class: "muted small", style: "margin-bottom:4px" }, "Or pick / drag the pin to your exact door:"),
+          picker,
         ]),
         field("Flat / House no. & building", "deliverFlat", "e.g. Flat 3B, Sunrise Apartments"),
         field("Area / street / colony", "deliverArea", "e.g. MG Road, Dwaraka Nagar"),
@@ -789,6 +790,13 @@
         el("div", { style: "display:flex;gap:8px" }, [
           el("div", { style: "flex:1" }, [field("Receiver name", "deliverName", "Name")]),
           el("div", { style: "flex:1" }, [field("Receiver phone", "deliverPhone", "10-digit mobile", "tel")]),
+        ]),
+        // Advanced fallback — paste a Maps link (kept for edge cases, de-emphasised).
+        el("details", { style: "margin-top:6px" }, [
+          el("summary", { class: "muted small", style: "cursor:pointer" }, "Advanced: paste a Google Maps link instead"),
+          el("div", { style: "margin-top:8px" }, [
+            UI.mapsLinkField({ value: state.deliverMapsUrl || "", onResolved: (la, ln, url) => { state.deliverMapsUrl = url; if (la != null) { state.deliverLoc = { lat: la, lng: ln }; state.deliverAcc = 0; locStatus.style.color = "var(--brand)"; locStatus.textContent = "📍 Location set from link."; } } }),
+          ]),
         ]),
       ]));
 
