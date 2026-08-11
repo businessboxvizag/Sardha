@@ -393,7 +393,13 @@
     redeemReward: (type) => post("/api/rewards/redeem", { type }),
 
     /* ── Rider KYC document submission ── */
-    submitRiderDocuments: (riderId, docs) => patch("/api/riders/" + riderId + "/documents", docs),
+    submitRiderDocuments: async (riderId, docs) => {
+      const rider = await patch("/api/riders/" + riderId + "/documents", docs);
+      const i = _cache.riders.findIndex((r) => r.id === riderId);
+      if (i >= 0) _cache.riders[i] = rider; else _cache.riders.push(rider);
+      emit();
+      return rider;
+    },
     // Admin verification decision: status ∈ 'verified' | 'rejected' | 'submitted'.
     setRiderKyc: async (riderId, status) => {
       const rider = await patch("/api/riders/" + riderId + "/documents", { kycStatus: status });
@@ -401,6 +407,21 @@
       if (i >= 0) _cache.riders[i] = rider;
       emit();
       return rider;
+    },
+    // Admin edits a Saradhi's core details (name, phone, vehicle, area, active).
+    updateRiderDetails: async (riderId, fields) => {
+      const rider = await patch("/api/riders/" + riderId, fields);
+      const i = _cache.riders.findIndex((r) => r.id === riderId);
+      if (i >= 0) _cache.riders[i] = rider; else _cache.riders.push(rider);
+      emit();
+      return rider;
+    },
+    // Admin deletes a Saradhi (login + record).
+    deleteRider: async (riderId) => {
+      await del("/api/riders/" + riderId);
+      _cache.riders = _cache.riders.filter((r) => r.id !== riderId);
+      emit();
+      return true;
     },
     // Admin marks ONE KYC item verified/rejected (offline check).
     verifyRiderItem: async (riderId, item, decision, notes) => {

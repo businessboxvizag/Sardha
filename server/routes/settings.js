@@ -20,6 +20,8 @@ router.get("/", async (req, res) => {
       supportHours: data.supportHours ?? "Mon–Sun, 9am–9pm",
       upiVpa: data.upiVpa ?? "",           // Saardha's UPI ID for pay-on-delivery QR
       upiName: data.upiName ?? "Saardha",  // payee name shown in the customer's UPI app
+      riderPayPerDelivery: data.riderPayPerDelivery ?? 30,   // ₹ paid to a rider per completed delivery
+      merchantCommissionPct: data.merchantCommissionPct ?? 10, // Saardha's % cut of merchant item sales
       ...data,
     });
   } catch (err) {
@@ -32,7 +34,9 @@ router.put("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const allowed = ["deliveryFee", "codCashLimit", "operationalZones",
                      "supportPhone", "supportWhatsapp", "supportEmail", "supportHours",
-                     "upiVpa", "upiName"];
+                     "upiVpa", "upiName", "riderPayPerDelivery", "merchantCommissionPct"];
+    if (req.body.riderPayPerDelivery !== undefined) req.body.riderPayPerDelivery = Number(req.body.riderPayPerDelivery) || 0;
+    if (req.body.merchantCommissionPct !== undefined) req.body.merchantCommissionPct = Math.max(0, Math.min(100, Number(req.body.merchantCommissionPct) || 0));
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.deliveryFee !== undefined) updates.deliveryFee = Number(updates.deliveryFee);

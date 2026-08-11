@@ -130,6 +130,11 @@
 
     root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "Saardha", []));
 
+    // Beta notice — this is a beta version (not a final release).
+    root.appendChild(el("div", {
+      style: "background:#fff3cd;color:#7a5b00;font-size:12px;line-height:1.4;text-align:center;padding:7px 14px;font-weight:600",
+    }, "🚧 Beta version — Saardha is still being improved. Thanks for trying it and sharing feedback!"));
+
     const nav = el("div", { class: "sidebar" }, [
       navItem("stores",   ICONS.store,   "My Stores"),
       navItem("scan",     ICONS.scan,    "Scan QR"),

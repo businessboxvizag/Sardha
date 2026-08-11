@@ -299,6 +299,57 @@ router.post("/:id/verify-online", requireAuth, requireRole("admin"), async (req,
   }
 });
 
+/* ── PATCH /api/riders/:id ── admin edits a Saradhi's core details ── */
+router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+    const b = req.body || {};
+    const updates = {};
+    if (b.name    != null) updates.name    = String(b.name).slice(0, 120);
+    if (b.phone   != null) updates.phone   = String(b.phone).slice(0, 20);
+    if (b.vehicle != null) updates.vehicle = String(b.vehicle).slice(0, 40);
+    if (b.area    != null) updates.area    = String(b.area).slice(0, 120);
+    if (b.shift   != null) updates.shift   = String(b.shift).slice(0, 40);
+    if (b.active  != null) updates.active  = !!b.active;   // suspend / reinstate
+    if (!Object.keys(updates).length) return res.status(400).json({ error: "No fields to update" });
+    await ref.update(updates);
+    if (updates.name) { try { await db.collection("users").doc(req.params.id).update({ name: updates.name }); } catch (e) {} }
+    const updated = toRider(await ref.get());
+    const io = req.app.get("io"); if (io) io.to("admin").emit("rider:updated", updated);
+    res.json(updated);
+  } catch (err) {
+    console.error("PATCH /riders/:id:", err);
+    res.status(500).json({ error: "Failed to update rider" });
+  }
+});
+
+/* ── DELETE /api/riders/:id ── admin removes a Saradhi (login + record) ── */
+router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const ref = db.collection("riders").doc(req.params.id);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
+    const rd = doc.data();
+    // Guard: don't delete a rider mid-delivery or holding company cash.
+    const oSnap = await db.collection("orders").where("riderId", "==", req.params.id).get();
+    if (oSnap.docs.some((d) => ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(d.data().status))) {
+      return res.status(400).json({ error: "This Saradhi has an active delivery. Reassign it first." });
+    }
+    if ((rd.cashInHand || 0) > 0) {
+      return res.status(400).json({ error: "Settle this Saradhi's cash-in-hand (₹" + (rd.cashInHand || 0) + ") before deleting." });
+    }
+    await ref.delete();
+    try { await db.collection("users").doc(req.params.id).delete(); } catch (e) {}
+    const io = req.app.get("io"); if (io) io.to("admin").emit("rider:deleted", { id: req.params.id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /riders/:id:", err);
+    res.status(500).json({ error: "Failed to delete rider" });
+  }
+});
+
 /* ── POST /api/riders/:id/settle ── rider deposits collected cash via Razorpay UPI ── */
 router.post("/:id/settle", requireAuth, async (req, res) => {
   if (req.user.uid !== req.params.id) return res.status(403).json({ error: "Forbidden" });

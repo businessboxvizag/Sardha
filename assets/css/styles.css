@@ -571,11 +571,14 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
 
   /* Tables — scrollable */
   .card { overflow-x: auto; }
-  table { min-width: 480px; }
+  /* Lower table min-width on small screens so tables fit better */
+  table { min-width: 420px; }
 
   /* Modals — bottom sheet */
   .modal-backdrop { align-items: flex-end; padding: 0; }
   .modal { border-radius: 20px 20px 0 0; max-height: 92vh; }
+  /* Ensure modals don't overflow the viewport on narrow screens */
+  .modal { max-width: 92%; }
 
   /* Toasts */
   #toasts { bottom: 78px; right: 12px; left: 12px; }

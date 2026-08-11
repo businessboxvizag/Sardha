@@ -38,6 +38,7 @@
     const nav = el("div", { class: "sidebar" }, [
       navItem("overview",  "Ov", "Overview"),
       navItem("analytics", "An", "Analytics"),
+      navItem("earnings",  "₹",  "Earnings"),
       navItem("customers", "Cu", "Customers"),
       navItem("vendors",   "Ve", "Stores"),
       navItem("partners",  "Pa", "Partners"),
@@ -166,7 +167,14 @@
         statusSel.appendChild(o);
       });
       return el("tr", {}, [
-        el("td", {}, el("strong", {}, r.name)),
+        el("td", {}, [
+          el("strong", {}, r.name),
+          (r.active === false) ? el("span", { style: "margin-left:6px;font-size:11px;color:var(--red);font-weight:700" }, "SUSPENDED") : document.createTextNode(""),
+          el("div", { style: "display:flex;gap:6px;margin-top:4px" }, [
+            el("button", { class: "btn ghost sm", onClick: () => editRiderModal(r) }, "✏️ Edit"),
+            el("button", { class: "btn ghost sm", onClick: () => deleteRiderFlow(r) }, "🗑"),
+          ]),
+        ]),
         el("td", { class: "muted small" }, r.vehicle || "—"),
         el("td", {}, "⭐ " + r.rating),
         el("td", {}, r.deliveriesToday + " today"),
@@ -471,6 +479,19 @@
     });
   }
 
+  // Deleting rider accounts is not allowed from the admin UI to avoid
+  // accidental data loss. Show an explanatory modal instead.
+  function deleteRider(r) {
+    UI.modal({
+      title: "Delete Saradhi",
+      body: el("div", {}, [
+        el("p", { class: "muted" }, "Deleting Saradhi accounts is disabled from the admin panel to prevent accidental data loss."),
+        el("p", { class: "muted small" }, "To deactivate a Saradhi, change their status to 'offline' or contact support for an account removal.")
+      ]),
+      footer: [ el("button", { class: "btn primary", onClick: () => {} }, "OK") ],
+    });
+  }
+
 
   function createRider() {
     const nameEl    = el("input", { placeholder: "e.g. Ajay Kumar" });
@@ -518,6 +539,55 @@
             go("fleet");
           } catch (err) { errEl.textContent = err.message || "Failed to create rider."; }
         }}, "Create Saradhi"),
+      ],
+    });
+  }
+
+  function editRiderModal(r) {
+    const nameEl    = el("input", { value: r.name || "" });
+    const phoneEl   = el("input", { type: "tel", value: r.phone || "" });
+    const vehicleEl = el("select", {});
+    ["Bike", "Bicycle", "Scooter", "Van"].forEach((v) => vehicleEl.appendChild(el("option", { value: v, ...(r.vehicle === v ? { selected: "" } : {}) }, v)));
+    const areaEl    = el("input", { value: r.area || "" });
+    const activeCb  = el("input", { type: "checkbox" }); activeCb.checked = r.active !== false;
+    const errEl     = el("div", { class: "auth-err" });
+    const body = el("div", {}, [
+      el("div", { class: "field" }, [el("label", {}, "Full name"), nameEl]),
+      el("div", { class: "field" }, [el("label", {}, "Phone"), phoneEl]),
+      el("div", { class: "field" }, [el("label", {}, "Vehicle"), vehicleEl]),
+      el("div", { class: "field" }, [el("label", {}, "Area / zone"), areaEl]),
+      el("label", { style: "display:flex;gap:8px;align-items:center;margin:6px 0" }, [activeCb, el("span", {}, "Active (unchecked = suspended, can't go on duty)")]),
+      errEl,
+    ]);
+    const close = UI.modal({
+      title: "Edit Saradhi · " + (r.name || ""),
+      body,
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn primary", onClick: async () => {
+          errEl.textContent = "";
+          if (!nameEl.value.trim()) { errEl.textContent = "Name required."; return; }
+          try {
+            await BW.updateRiderDetails(r.id, { name: nameEl.value.trim(), phone: phoneEl.value.trim(), vehicle: vehicleEl.value, area: areaEl.value.trim(), active: activeCb.checked });
+            close(); toast("Saradhi updated"); render();
+          } catch (e) { errEl.textContent = e.message || "Failed to update."; }
+        } }, "Save"),
+      ],
+    });
+  }
+
+  function deleteRiderFlow(r) {
+    const close = UI.modal({
+      title: "Delete Saradhi?",
+      body: el("div", {}, [
+        el("p", { class: "muted small" }, "This permanently removes " + (r.name || "this Saradhi") + " and their login. This can't be undone. (Blocked if they have an active delivery or unsettled cash.)"),
+      ]),
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
+        el("button", { class: "btn danger", onClick: async () => {
+          try { await BW.deleteRider(r.id); close(); toast("Saradhi removed"); render(); }
+          catch (e) { toast(e.message || "Couldn't delete"); }
+        } }, "Delete"),
       ],
     });
   }
@@ -611,6 +681,106 @@
       totalCustomers: customers.length, custWithOrders, repeatRate, newToday, verifiedEmail, verifiedPhone,
       ridersOnline: riders.filter((r) => r.status && r.status !== "offline").length, ridersTotal: riders.length, avgDelivery,
     };
+  }
+
+  /* ====================== EARNINGS & SETTLEMENTS ====================== */
+  function viewEarnings() {
+    const s = (BW.settingsRaw && BW.settingsRaw()) || {};
+    const payPerDelivery = Number(s.riderPayPerDelivery != null ? s.riderPayPerDelivery : 30);
+    const commissionPct  = Number(s.merchantCommissionPct != null ? s.merchantCommissionPct : 10);
+
+    const PERIODS = [["today", "Today"], ["7d", "Last 7 days"], ["30d", "Last 30 days"], ["all", "All time"]];
+    const cur = viewEarnings._period || "today";
+    const nowD = new Date();
+    const startOfToday = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()).getTime();
+    const cutoff = cur === "today" ? startOfToday : cur === "7d" ? (Date.now() - 7 * 864e5) : cur === "30d" ? (Date.now() - 30 * 864e5) : 0;
+
+    const inPeriod = (o) => new Date(o.createdAt).getTime() >= cutoff;
+    const delivered = BW.orders().filter((o) => o.status === "DELIVERED" && inPeriod(o));
+
+    // Totals
+    let grossSales = 0, deliveryFees = 0, gstSum = 0;
+    delivered.forEach((o) => { grossSales += (o.subtotal || 0); deliveryFees += (o.deliveryFee || 0); gstSum += (o.gst || 0); });
+    const commission = Math.round(grossSales * commissionPct / 100);
+    const merchantPayable = grossSales - commission;
+    const riderPayouts = delivered.length * payPerDelivery;
+
+    // Per-rider
+    const riderMap = {};
+    delivered.forEach((o) => {
+      const id = o.riderId; if (!id) return;
+      const r = riderMap[id] || (riderMap[id] = { deliveries: 0, cash: 0, upi: 0 });
+      r.deliveries++;
+      if (o.paymentMethod === "COD") { if (o.paymentMode === "UPI" || o.paymentStatus === "PAID") r.upi += (o.total || 0); else r.cash += (o.total || 0); }
+    });
+    const riderRows = Object.keys(riderMap).map((id) => {
+      const r = riderMap[id]; const rider = BW.riders().find((x) => x.id === id);
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, rider ? rider.name : id.slice(-6))),
+        el("td", {}, String(r.deliveries)),
+        el("td", { style: "color:#1a9d54;font-weight:700" }, money(r.deliveries * payPerDelivery)),
+        el("td", {}, money(r.cash)),
+        el("td", {}, money(r.upi)),
+        el("td", { style: (rider && (rider.cashInHand || 0) > 0) ? "color:var(--red);font-weight:700" : "" }, money(rider ? (rider.cashInHand || 0) : 0)),
+      ]);
+    });
+
+    // Per-merchant
+    const vendMap = {};
+    delivered.forEach((o) => {
+      const id = o.vendorId; if (!id) return;
+      const m = vendMap[id] || (vendMap[id] = { orders: 0, gross: 0 });
+      m.orders++; m.gross += (o.subtotal || 0);
+    });
+    const vendRows = Object.keys(vendMap).map((id) => {
+      const m = vendMap[id]; const v = BW.vendor(id); const comm = Math.round(m.gross * commissionPct / 100);
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, v ? v.name : id)),
+        el("td", {}, String(m.orders)),
+        el("td", {}, money(m.gross)),
+        el("td", { class: "muted" }, money(comm)),
+        el("td", { style: "color:#1a9d54;font-weight:700" }, money(m.gross - comm)),
+      ]);
+    });
+
+    const chips = el("div", { style: "display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" }, PERIODS.map(([val, label]) =>
+      el("button", { class: "btn " + (cur === val ? "primary sm" : "ghost sm"), onClick: () => { viewEarnings._period = val; render(); } }, label)));
+
+    const card = (label, value, sub) => el("div", { class: "card", style: "flex:1;min-width:150px" }, [
+      el("div", { class: "muted small" }, label),
+      el("div", { style: "font-size:20px;font-weight:800;margin-top:2px" }, value),
+      sub ? el("div", { class: "muted small" }, sub) : document.createTextNode(""),
+    ]);
+
+    return shell("earnings", [
+      el("div", { class: "row between", style: "align-items:center" }, [
+        el("div", {}, [el("h1", { class: "page-title" }, "Earnings & Settlements"), el("p", { class: "page-sub" }, "Delivered orders only · rider pay ₹" + payPerDelivery + "/delivery · commission " + commissionPct + "%")]),
+        el("button", { class: "btn ghost sm", onClick: () => go("settings") }, "Change rates"),
+      ]),
+      chips,
+      el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px" }, [
+        card("Delivered orders", String(delivered.length)),
+        card("Gross sales", money(grossSales), "items only"),
+        card("Platform commission", money(commission), commissionPct + "% of sales"),
+        card("Delivery fees", money(deliveryFees)),
+        card("Rider payouts", money(riderPayouts), delivered.length + " × ₹" + payPerDelivery),
+        card("Merchant payable", money(merchantPayable)),
+      ]),
+      el("h3", { style: "margin:0 0 8px" }, "Riders — earnings & cash to settle"),
+      el("div", { class: "card", style: "padding:0;overflow:hidden;margin-bottom:20px" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Saradhi", "Deliveries", "Earnings", "Cash collected", "UPI collected", "Cash-in-hand (to settle)"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, riderRows.length ? riderRows : [el("tr", {}, el("td", { colspan: "6", class: "muted", style: "text-align:center;padding:20px" }, "No deliveries in this period."))]),
+        ]),
+      ]),
+      el("h3", { style: "margin:0 0 8px" }, "Merchants — payable"),
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Store", "Orders", "Gross sales", "Commission", "Net payable"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, vendRows.length ? vendRows : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:20px" }, "No deliveries in this period."))]),
+        ]),
+      ]),
+    ]);
   }
 
   function viewAnalytics() {
@@ -741,6 +911,7 @@
       case "fleet":     return viewFleet();
       case "vendors":   return viewVendors();
       case "analytics": return viewAnalytics();
+      case "earnings":  return viewEarnings();
       case "customers": return viewCustomers();
       case "partners":  return viewPartners();
       case "services":  return viewServices();
@@ -985,10 +1156,31 @@
     ])));
   }
 
+  function orderPayCell(o) {
+    if (o.paymentMethod === "ONLINE") return el("span", { style: "color:#1a9d54" }, "Online ✓");
+    // Pay on delivery:
+    if (o.paymentStatus === "PAID" || o.paymentMode === "UPI") return el("span", { style: "color:#1a9d54" }, "UPI ✓");
+    if (o.paymentStatus === "COLLECTED" || o.paymentMode === "CASH") return el("span", {}, "Cash ✓");
+    if (o.paymentStatus === "REFUNDED") return el("span", { style: "color:var(--brand)" }, "Refunded");
+    return el("span", { class: "muted" }, "On delivery");
+  }
+
   function renderAllOrders() {
-    const orders = BW.orders();
+    const FILTERS = [
+      ["ALL", "All"], ["PLACED", "New"], ["ACCEPTED", "Accepted"], ["ASSIGNED", "Assigned"],
+      ["OUT_FOR_DELIVERY", "Out for delivery"], ["DELIVERED", "Delivered"], ["CANCELLED", "Cancelled"],
+    ];
+    const cur = renderAllOrders._status || "ALL";
+    let orders = BW.orders();
+    if (cur !== "ALL") orders = orders.filter((o) => o.status === cur);
+
+    const chips = el("div", { style: "display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" }, FILTERS.map(([val, label]) => {
+      const count = val === "ALL" ? BW.orders().length : BW.orders().filter((o) => o.status === val).length;
+      return el("button", { class: "btn " + (cur === val ? "primary sm" : "ghost sm"), onClick: () => { renderAllOrders._status = val; render(); } }, label + " (" + count + ")");
+    }));
+
     if (!orders.length) {
-      return el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No orders yet.")]);
+      return el("div", {}, [chips, el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No orders in this view.")])]);
     }
     const rows = orders.map((o) => {
       const v     = BW.vendor(o.vendorId);
@@ -997,24 +1189,26 @@
       const hist  = o.history || [];
       const first = hist[0] ? new Date(hist[0].at) : null;
       const last  = hist[hist.length - 1] ? new Date(hist[hist.length - 1].at) : null;
-      const dur   = (first && last && last > first)
-        ? Math.round((last - first) / 60000) + " min"
-        : "—";
+      const dur   = (first && last && last > first) ? Math.round((last - first) / 60000) + " min" : "—";
       return el("tr", {}, [
         el("td", {}, el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase()))),
         el("td", { class: "muted small" }, clockTime(o.createdAt)),
         el("td", {}, v ? v.name : "—"),
         el("td", {}, cust ? cust.name : "—"),
         el("td", {}, money(o.total)),
+        el("td", {}, orderPayCell(o)),
         el("td", {}, statusBadge(o.status)),
-        el("td", {}, rider ? rider.name : el("span", { class: "muted" }, "—")),
+        el("td", {}, rider ? rider.name : el("span", { class: "muted" }, "unassigned")),
         el("td", { class: "muted small" }, dur),
       ]);
     });
-    return el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
-      el("table", {}, [
-        el("thead", {}, el("tr", {}, ["Order", "Placed at", "Vendor", "Customer", "Total", "Status", "Saradhi", "Duration"].map((h) => el("th", {}, h)))),
-        el("tbody", {}, rows),
+    return el("div", {}, [
+      chips,
+      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Order", "Placed at", "Vendor", "Customer", "Total", "Payment", "Status", "Saradhi", "Duration"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows),
+        ]),
       ]),
     ]);
   }
@@ -1328,6 +1522,17 @@
       upiSave.disabled = false; upiSave.textContent = "Save UPI";
     });
 
+    /* --- Payouts: rider pay per delivery + merchant commission --- */
+    const payEl = el("input", { type: "number", min: "0", value: String(s0.riderPayPerDelivery != null ? s0.riderPayPerDelivery : 30), style: "max-width:140px" });
+    const commEl = el("input", { type: "number", min: "0", max: "100", value: String(s0.merchantCommissionPct != null ? s0.merchantCommissionPct : 10), style: "max-width:140px" });
+    const paySave = el("button", { class: "btn primary" }, "Save payouts");
+    paySave.addEventListener("click", async () => {
+      paySave.disabled = true; paySave.textContent = "Saving…";
+      try { await BW.updateSettings({ riderPayPerDelivery: Number(payEl.value) || 0, merchantCommissionPct: Number(commEl.value) || 0 }); await BW.init("admin"); toast("Payout settings saved"); }
+      catch (err) { toast("Error: " + err.message); }
+      paySave.disabled = false; paySave.textContent = "Save payouts";
+    });
+
     /* --- Operational zones (geofencing for rider duty) --- */
     const zones = (BW.operationalZones ? BW.operationalZones() : []).slice();
     const zoneList = el("div", {});
@@ -1383,6 +1588,13 @@
           el("label", {}, "COD limit (₹)"),
           el("div", { style: "display:flex;gap:10px;align-items:center" }, [codEl, codSave]),
         ]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Payouts & commission"),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Used by the Earnings page to compute rider pay and merchant settlements."),
+        el("div", { class: "field" }, [el("label", {}, "Rider pay per delivery (₹)"), payEl]),
+        el("div", { class: "field" }, [el("label", {}, "Merchant commission (%)"), commEl]),
+        el("div", { style: "margin-top:8px" }, [paySave]),
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Pay-on-delivery UPI"),
