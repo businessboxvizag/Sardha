@@ -1,9 +1,10 @@
 /* Saardha — Service Worker
- * - Offline shell for all apps (cache-first for static, network-first for API).
- * - Web Push: shows a notification (with vibration) even when the app is closed,
- *   so merchants and riders are alerted to new orders/tasks.
+ * - App code (HTML/JS/CSS) is served NETWORK-FIRST so a new deploy shows up
+ *   immediately; it falls back to cache only when offline.
+ * - Other static assets (images/fonts) are cache-first for speed.
+ * - Web Push: shows a notification (with vibration) even when the app is closed.
  */
-const CACHE = "sardha-v5";
+const CACHE = "sardha-v6";
 const SHELL = [
   "/assets/css/styles.css",
   "/assets/js/api.js",
@@ -34,35 +35,40 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
+function cachePut(req, res) {
+  if (res && res.ok && new URL(req.url).origin === self.location.origin) {
+    const copy = res.clone();
+    caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+  }
+  return res;
+}
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Never cache API or socket traffic — always go to the network.
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io/")) return;
   if (e.request.method !== "GET") return;
-  // Cache-first for the app shell / static assets.
+  // API and sockets: always straight to the network, never cached.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/socket.io/")) return;
+
+  const isAppCode = e.request.mode === "navigate" || /\.(js|css|html)$/i.test(url.pathname);
+  if (isAppCode) {
+    // Network-first: newest deploy wins; cache is only the offline fallback.
+    e.respondWith(
+      fetch(e.request).then((res) => cachePut(e.request, res)).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+  // Everything else (images/fonts): cache-first for speed.
   e.respondWith(
     caches.match(e.request).then((cached) =>
-      cached ||
-      fetch(e.request)
-        .then((res) => {
-          if (res && res.ok && (e.request.url.startsWith("http"))) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => cached)
+      cached || fetch(e.request).then((res) => cachePut(e.request, res)).catch(() => cached)
     )
   );
 });
 
-/* ── Web Push ──────────────────────────────────────────────────────────
- * Payload: { title, body, tag, url }. requireInteraction keeps it on screen,
- * and a vibration pattern makes the phone buzz like an alarm.               */
+/* ── Web Push ────────────────────────────────────────────────────────── */
 self.addEventListener("push", (e) => {
   let data = {};
   try { data = e.data ? e.data.json() : {}; } catch (err) { data = { title: "Saardha", body: e.data ? e.data.text() : "" }; }
-  const title = data.title || "Saardha";
   const options = {
     body: data.body || "",
     icon: "/assets/img/icon.png",
@@ -73,7 +79,7 @@ self.addEventListener("push", (e) => {
     vibrate: [400, 150, 400, 150, 400, 150, 400],
     data: { url: data.url || "/" },
   };
-  e.waitUntil(self.registration.showNotification(title, options));
+  e.waitUntil(self.registration.showNotification(data.title || "Saardha", options));
 });
 
 self.addEventListener("notificationclick", (e) => {
@@ -81,9 +87,7 @@ self.addEventListener("notificationclick", (e) => {
   const target = (e.notification.data && e.notification.data.url) || "/";
   e.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const c of list) {
-        if (c.url.includes(target) && "focus" in c) return c.focus();
-      }
+      for (const c of list) { if (c.url.includes(target) && "focus" in c) return c.focus(); }
       if (clients.openWindow) return clients.openWindow(target);
     })
   );

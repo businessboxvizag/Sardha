@@ -773,6 +773,7 @@
         height: 190,
         lat: state.deliverLoc && state.deliverLoc.lat,
         lng: state.deliverLoc && state.deliverLoc.lng,
+        accuracy: state.deliverAcc || 0,
         onPick: (la, ln) => { state.deliverLoc = { lat: la, lng: ln }; state.deliverAcc = 0; locStatus.style.color = "var(--brand)"; locStatus.textContent = "📍 Location set — drag the pin to fine-tune."; },
       });
 
@@ -1100,11 +1101,22 @@
           ])
         : document.createTextNode(""),
       (o.status !== "DELIVERED" && o.status !== "CANCELLED")
-        ? el("div", { class: "card", style: "margin-top:12px;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff" }, [
-            el("div", { style: "font-weight:800" }, "🎮 Play while you wait"),
-            el("div", { style: "font-size:13px;opacity:.92;margin:2px 0 10px" }, "Win a quick game and earn 🪙 10 gold coins. 100 coins = free delivery or 10% off!"),
-            el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:700", onClick: () => { openGameModal(o.id); refreshRewards(); } }, "Play now"),
-          ])
+        ? (function () {
+            ensureGameStyles();
+            const coins = _rewards.goldCoins || 0;
+            const toGoal = Math.max(0, (_rewards.redeemCost || 100) - coins);
+            return el("div", { class: "bw-play-invite", style: "margin-top:12px;border-radius:14px;background:linear-gradient(90deg,#f7b733,#fc4a1a);color:#fff;padding:16px;text-align:center;box-shadow:0 6px 18px rgba(252,74,26,.35)" }, [
+              el("div", { class: "bw-play-emoji", style: "font-size:34px;line-height:1" }, "🎮"),
+              el("div", { style: "font-weight:900;font-size:17px;margin-top:4px" }, "Play while you wait!"),
+              el("div", { style: "font-size:13px;opacity:.95;margin:4px 0 2px" }, "Win a quick game → earn 🪙 10 gold coins."),
+              el("div", { style: "font-size:12.5px;opacity:.92;margin-bottom:10px" },
+                coins >= (_rewards.redeemCost || 100)
+                  ? "You have 🪙 " + coins + " — enough for FREE delivery or 10% off!"
+                  : "You have 🪙 " + coins + " · just " + toGoal + " more for FREE delivery or 10% off."),
+              el("button", { class: "bw-play-btn", style: "background:#fff;color:#c0392b;font-weight:800;border:none;border-radius:10px;padding:11px 22px;font-size:15px;cursor:pointer", onClick: () => { openGameModal(o.id); refreshRewards(); } }, "▶ Play now"),
+              el("div", { style: "font-size:11px;opacity:.85;margin-top:8px" }, "A different game every time · one reward per order"),
+            ]);
+          })()
         : document.createTextNode(""),
       el("div", { style: "margin-top:12px" }, [
         el("button", { class: "btn ghost sm", style: "width:100%", onClick: () => openTicketForm(o.id) }, "🎧 Get help with this order"),
@@ -2375,15 +2387,35 @@
     return BW.rewardsMe().then((r) => { _rewards = { ..._rewards, ...r }; return _rewards; }).catch(() => _rewards);
   }
 
+  // Inject the game-invite animations once (keyframes can't live in inline styles).
+  let _gameStyles = false;
+  function ensureGameStyles() {
+    if (_gameStyles) return; _gameStyles = true;
+    const st = document.createElement("style");
+    st.textContent =
+      "@keyframes bwInvitePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}" +
+      "@keyframes bwEmojiBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}" +
+      "@keyframes bwBtnGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.6)}50%{box-shadow:0 0 0 8px rgba(255,255,255,0)}}" +
+      ".bw-play-invite{animation:bwInvitePulse 1.8s ease-in-out infinite}" +
+      ".bw-play-emoji{animation:bwEmojiBounce 1.1s ease-in-out infinite;display:inline-block}" +
+      ".bw-play-btn{animation:bwBtnGlow 1.8s ease-in-out infinite}";
+    document.head.appendChild(st);
+  }
+
   const GAMES = [
-    { key: "reaction", name: "Quick Tap",     build: buildReactionGame },
-    { key: "memory",   name: "Memory Match",  build: buildMemoryGame },
-    { key: "catch",    name: "Tap Rush",      build: buildTapRushGame },
+    { key: "reaction", name: "Quick Tap",      build: buildReactionGame },
+    { key: "memory",   name: "Memory Match",   build: buildMemoryGame },
+    { key: "catch",    name: "Tap Rush",       build: buildTapRushGame },
+    { key: "trivia",   name: "Tricky Trivia",  build: buildTriviaGame },
+    { key: "puzzle",   name: "Brain Teaser",   build: buildPuzzleGame },
   ];
+  // Pick a game at random, never the same one twice in a row — so it feels fresh each time.
   function nextGame() {
-    let n = 0; try { n = parseInt(localStorage.getItem("bw_game_rot") || "0", 10) || 0; } catch (e) {}
-    try { localStorage.setItem("bw_game_rot", String(n + 1)); } catch (e) {}
-    return GAMES[n % GAMES.length];
+    let last = -1; try { last = parseInt(localStorage.getItem("bw_game_last") || "-1", 10); } catch (e) {}
+    let idx = 0;
+    if (GAMES.length > 1) { do { idx = Math.floor(Math.random() * GAMES.length); } while (idx === last); }
+    try { localStorage.setItem("bw_game_last", String(idx)); } catch (e) {}
+    return GAMES[idx];
   }
 
   // Open a game in a modal. Coins are awarded only for a win tied to an ACTIVE order
@@ -2472,6 +2504,67 @@
     const iv = setInterval(() => { if (ended) return; left--; hud.lastChild.textContent = left + "s"; if (left <= 0) { ended = true; clearInterval(iv); field.innerHTML = ""; field.appendChild(el("div", { style: "text-align:center;padding-top:80px;font-weight:800;color:#c0392b" }, "Time! You got " + score + ". Try again.")); } }, 1000);
     root.appendChild(el("div", { class: "muted small", style: "text-align:center;margin-bottom:8px" }, "Tap the target " + GOAL + " times before the clock runs out."));
     root.appendChild(hud); root.appendChild(field);
+  }
+
+  // ---- Game 4: Tricky Trivia ----
+  const TRIVIA = [
+    { q: "A bat and a ball cost ₹110 in total. The bat costs ₹100 more than the ball. How much is the ball?", opts: ["₹10", "₹5", "₹0"], a: 1 },
+    { q: "Which weighs more: 1 kg of iron or 1 kg of cotton?", opts: ["Iron", "Cotton", "They weigh the same"], a: 2 },
+    { q: "If you overtake the person in 2nd place in a race, what position are you in?", opts: ["1st", "2nd", "3rd"], a: 1 },
+    { q: "How many months have 28 days?", opts: ["1", "2", "All 12"], a: 2 },
+    { q: "What is 7 × 8?", opts: ["54", "56", "58"], a: 1 },
+    { q: "A farmer has 17 sheep; all but 9 run away. How many are left?", opts: ["8", "9", "17"], a: 1 },
+    { q: "Which is heavier: a kilo of feathers or half a kilo of gold?", opts: ["Feathers", "Gold", "Equal"], a: 0 },
+    { q: "Next in the series: 2, 4, 8, 16, …?", opts: ["24", "32", "30"], a: 1 },
+    { q: "Divide 30 by ½ and add 10. What do you get?", opts: ["25", "70", "40"], a: 1 },
+    { q: "A clock shows 3:15. What number is the hour hand closest to?", opts: ["3", "Between 3 and 4", "4"], a: 1 },
+  ];
+  function buildTriviaGame(root, onWin) {
+    const item = TRIVIA[Math.floor(Math.random() * TRIVIA.length)];
+    const msg = el("div", { style: "min-height:20px;text-align:center;font-weight:700;margin-top:8px" });
+    let done = false;
+    root.appendChild(el("div", { style: "font-weight:700;text-align:center;margin-bottom:12px;line-height:1.4" }, item.q));
+    const opts = el("div", { style: "display:flex;flex-direction:column;gap:8px" });
+    item.opts.forEach((o, i) => {
+      const b = el("button", { class: "btn ghost", style: "width:100%" }, o);
+      b.onclick = () => {
+        if (done) return; done = true;
+        if (i === item.a) { b.className = "btn success"; msg.style.color = "#1a9d54"; msg.textContent = "Correct! 🎉"; onWin(); }
+        else { b.className = "btn danger"; msg.style.color = "#c0392b"; msg.textContent = "Not quite — answer: " + item.opts[item.a]; }
+      };
+      opts.appendChild(b);
+    });
+    root.appendChild(opts); root.appendChild(msg);
+  }
+
+  // ---- Game 5: Brain Teaser (number sequence) ----
+  function buildPuzzleGame(root, onWin) {
+    // Generate a simple arithmetic/geometric sequence and ask for the next term.
+    const type = Math.random() < 0.5 ? "add" : "mul";
+    const start = 1 + Math.floor(Math.random() * 5);
+    const step = 2 + Math.floor(Math.random() * 3);
+    const seq = []; let v = start;
+    for (let i = 0; i < 4; i++) { seq.push(v); v = type === "add" ? v + step : v * step; }
+    const answer = v;
+    // Build 3 options including the answer.
+    const wrongs = new Set();
+    while (wrongs.size < 2) { const w = answer + (Math.random() < 0.5 ? 1 : -1) * (step + Math.floor(Math.random() * 5) + 1); if (w !== answer && w > 0) wrongs.add(w); }
+    const options = [answer, ...wrongs].sort(() => Math.random() - 0.5);
+    const msg = el("div", { style: "min-height:20px;text-align:center;font-weight:700;margin-top:8px" });
+    let done = false;
+    root.appendChild(el("div", { class: "muted small", style: "text-align:center;margin-bottom:6px" }, "What comes next in the sequence?"));
+    root.appendChild(el("div", { style: "font-weight:800;font-size:20px;text-align:center;margin-bottom:12px" }, seq.join(",  ") + ",  ?"));
+    const optsWrap = el("div", { style: "display:flex;gap:8px;justify-content:center" });
+    options.forEach((o) => {
+      const b = el("button", { class: "btn ghost", style: "min-width:64px" }, String(o));
+      b.onclick = () => {
+        if (done) return; done = true;
+        if (o === answer) { b.className = "btn success"; msg.style.color = "#1a9d54"; msg.textContent = "Correct! 🎉"; onWin(); }
+        else { b.className = "btn danger"; msg.style.color = "#c0392b"; msg.textContent = "Answer was " + answer; }
+      };
+      optsWrap.appendChild(b);
+    });
+    root.appendChild(optsWrap); root.appendChild(msg);
   }
 
   // ---- Rewards hub (view balance + redeem only — games are played during a live delivery) ----

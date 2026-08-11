@@ -370,12 +370,17 @@
   function upiQrUrl(amount, orderNo) {
     const s = (BW.settingsRaw && BW.settingsRaw()) || {};
     const vpa = (s.upiVpa || "").trim();
-    if (!vpa) return null;
-    const intent = "upi://pay?pa=" + encodeURIComponent(vpa) +
-      "&pn=" + encodeURIComponent(s.upiName || "Saardha") +
-      "&am=" + encodeURIComponent(amount) + "&cu=INR" +
-      "&tn=" + encodeURIComponent("Saardha order " + (orderNo || ""));
-    return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(intent);
+    if (vpa) {
+      // Dynamic QR with the amount pre-filled (works in PhonePe/GPay/Paytm/any UPI app).
+      const intent = "upi://pay?pa=" + encodeURIComponent(vpa) +
+        "&pn=" + encodeURIComponent(s.upiName || "Saardha") +
+        "&am=" + encodeURIComponent(amount) + "&cu=INR" +
+        "&tn=" + encodeURIComponent("Saardha order " + (orderNo || ""));
+      return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(intent);
+    }
+    // Fallback: an uploaded static QR image (customer types the amount themselves).
+    if (s.upiQrImageUrl) return s.upiQrImageUrl;
+    return null;
   }
 
   function promptDeliver(order) {

@@ -4,6 +4,20 @@
 (function () {
   "use strict";
   const { el, money, timeAgo, clockTime, toast, topbar, project, statusBadge } = UI;
+
+  // Upload an image file to Cloudinary (unsigned preset from /api/config).
+  async function uploadToCloudinary(file) {
+    const cfg = (BW.config && BW.config()) || {};
+    if (!cfg.cloudinaryCloud || !cfg.cloudinaryPreset) throw new Error("Image uploads aren't set up");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("upload_preset", cfg.cloudinaryPreset);
+    const r = await fetch("https://api.cloudinary.com/v1_1/" + cfg.cloudinaryCloud + "/image/upload", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!d.secure_url) throw new Error((d.error && d.error.message) || "Upload failed");
+    return d.secure_url;
+  }
+
   const S = {
     PLACED: "PLACED", ACCEPTED: "ACCEPTED", ASSIGNED: "ASSIGNED",
     PICKED_UP: "PICKED_UP", OUT_FOR_DELIVERY: "OUT_FOR_DELIVERY",
@@ -1512,12 +1526,28 @@
     });
 
     /* --- Pay-on-delivery UPI (Saardha QR the Saradhi shows at the door) --- */
-    const upiVpaEl  = el("input", { type: "text", value: s0.upiVpa || "", placeholder: "yourname@upi (Saardha's UPI ID)", style: "width:100%;margin-bottom:6px" });
+    const upiVpaEl  = el("input", { type: "text", value: s0.upiVpa || "", placeholder: "yourname@ybl (your UPI ID)", style: "width:100%;margin-bottom:6px" });
     const upiNameEl = el("input", { type: "text", value: s0.upiName || "Saardha", placeholder: "Payee name shown to customer", style: "width:100%;margin-bottom:6px" });
+    let _upiQrUrl = s0.upiQrImageUrl || "";
+    const qrPreview = el("div", { style: "margin:6px 0" });
+    function renderQrPreview() { qrPreview.innerHTML = ""; if (_upiQrUrl) qrPreview.appendChild(el("img", { src: _upiQrUrl, alt: "UPI QR", style: "width:120px;height:120px;object-fit:contain;border:1px solid var(--border);border-radius:8px" })); }
+    renderQrPreview();
+    const qrUpBtn = el("button", { class: "btn ghost sm", type: "button" }, _upiQrUrl ? "Replace QR image" : "Upload QR image");
+    qrUpBtn.onclick = () => {
+      const inp = el("input", { type: "file", accept: "image/*" });
+      inp.onchange = async () => {
+        const f = inp.files && inp.files[0]; if (!f) return;
+        qrUpBtn.textContent = "Uploading…";
+        try { _upiQrUrl = await uploadToCloudinary(f); renderQrPreview(); toast("QR uploaded — remember to Save"); }
+        catch (e) { toast(e.message || "Upload failed"); }
+        qrUpBtn.textContent = "Replace QR image";
+      };
+      inp.click();
+    };
     const upiSave   = el("button", { class: "btn primary" }, "Save UPI");
     upiSave.addEventListener("click", async () => {
       upiSave.disabled = true; upiSave.textContent = "Saving…";
-      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha" }); await BW.init("admin"); toast("UPI details saved"); }
+      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha", upiQrImageUrl: _upiQrUrl }); await BW.init("admin"); toast("UPI details saved"); }
       catch (err) { toast("Error: " + err.message); }
       upiSave.disabled = false; upiSave.textContent = "Save UPI";
     });
@@ -1598,9 +1628,10 @@
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Pay-on-delivery UPI"),
-        el("p", { class: "muted small", style: "margin:0 0 12px" }, "The Saradhi shows a Saardha UPI QR at the door so customers can pay by UPI (or cash). Enter Saardha's UPI ID."),
-        el("div", { class: "field" }, [el("label", {}, "UPI ID (VPA)"), upiVpaEl]),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "The Saradhi shows this at the door so customers pay by UPI (or cash). Best: enter your UPI ID — the app then makes a QR with the order amount pre-filled. Or upload your existing QR image (e.g. PhonePe); customers type the amount."),
+        el("div", { class: "field" }, [el("label", {}, "UPI ID (VPA) — recommended"), upiVpaEl]),
         el("div", { class: "field" }, [el("label", {}, "Payee name"), upiNameEl]),
+        el("div", { class: "field" }, [el("label", {}, "…or upload a UPI QR image"), qrPreview, qrUpBtn]),
         el("div", { style: "margin-top:8px" }, [upiSave]),
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [

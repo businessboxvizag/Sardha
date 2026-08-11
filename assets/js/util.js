@@ -242,16 +242,43 @@
   // set the drop point; calls opts.onPick(lat, lng). Returns null if no Maps key.
   function mapPicker(opts) {
     opts = opts || {};
-    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2);position:relative" });
     loadLeaflet().then(function (L) {
+      var hasStart = opts.lat != null && opts.lng != null;
       var start = [Number(opts.lat) || 17.6868, Number(opts.lng) || 83.2185]; // default Visakhapatnam
-      var map = L.map(container, { zoomControl: true, attributionControl: false }).setView(start, opts.lat ? 16 : 12);
+      var map = L.map(container, { zoomControl: true, attributionControl: false }).setView(start, hasStart ? 17 : 12);
       osmLayer(L).addTo(map);
       var marker = L.marker(start, { draggable: true, icon: pinIcon(L, null, "") }).addTo(map);
+      var accCircle = null;
+      function setAcc(latlng, acc) {
+        if (accCircle) { map.removeLayer(accCircle); accCircle = null; }
+        if (acc && acc > 0) accCircle = L.circle(latlng, { radius: acc, color: "#e62a1f", weight: 1, fillOpacity: 0.08 }).addTo(map);
+      }
+      if (hasStart && opts.accuracy) setAcc(marker.getLatLng(), opts.accuracy);
       function report(ll) { if (opts.onPick) opts.onPick(ll.lat, ll.lng); }
-      marker.on("dragend", function () { report(marker.getLatLng()); });
-      map.on("click", function (e) { marker.setLatLng(e.latlng); report(e.latlng); });
+      marker.on("dragend", function () { setAcc(marker.getLatLng(), 0); report(marker.getLatLng()); });
+      map.on("click", function (e) { marker.setLatLng(e.latlng); setAcc(e.latlng, 0); report(e.latlng); });
+
+      // GPS locate — used by the on-map button and (when no start pin) automatically.
+      function locate() { try { map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true, timeout: 12000 }); } catch (e) {} }
+      map.on("locationfound", function (e) {
+        marker.setLatLng(e.latlng); setAcc(e.latlng, e.accuracy); report(e.latlng);
+      });
+
+      // A "locate me" control button sitting on the map.
+      var btn = L.control({ position: "topright" });
+      btn.onAdd = function () {
+        var d = L.DomUtil.create("div");
+        d.style.cssText = "background:#fff;border-radius:8px;padding:6px 9px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3);font-size:16px;line-height:1";
+        d.title = "Use my current location"; d.textContent = "🎯";
+        L.DomEvent.on(d, "click", function (ev) { L.DomEvent.stop(ev); locate(); });
+        return d;
+      };
+      btn.addTo(map);
+
+      if (!hasStart) locate(); // no location yet → try to find the customer automatically
       setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 200);
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 600);
     }).catch(function () { gmapFallbackNote(container); });
     return container;
   }
