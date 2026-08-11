@@ -185,7 +185,7 @@
           el("strong", {}, r.name),
           (r.active === false) ? el("span", { style: "margin-left:6px;font-size:11px;color:var(--red);font-weight:700" }, "SUSPENDED") : document.createTextNode(""),
           el("div", { style: "display:flex;gap:6px;margin-top:4px" }, [
-            el("button", { class: "btn ghost sm", onClick: () => editRiderModal(r) }, "✏️ Edit"),
+            el("button", { class: "btn ghost sm", onClick: () => onboardRiderModal(r) }, "⚙ Onboard"),
             el("button", { class: "btn ghost sm", onClick: () => deleteRiderFlow(r) }, "🗑"),
           ]),
         ]),
@@ -604,6 +604,151 @@
         } }, "Delete"),
       ],
     });
+  }
+
+  // Full admin-driven onboarding: collect + verify docs, set pay, activate, print letters.
+  function onboardRiderModal(r) {
+    const d = r.documents || {};
+    const docs = { dlUrl: d.dlUrl || "", aadhaarUrl: d.aadhaarUrl || "", bikePhotoUrl: d.bikePhotoUrl || "", familyIdUrl: d.familyIdUrl || "" };
+    const ip = (val, ph, type) => el("input", { type: type || "text", value: val || "", placeholder: ph || "", style: "width:100%" });
+    const ta = (val, ph) => { const t = el("textarea", { placeholder: ph || "", style: "width:100%;min-height:46px" }); t.value = val || ""; return t; };
+
+    const nameEl = ip(r.name, "Full name");
+    const phoneEl = ip(d.riderPhone || r.phone, "Phone", "tel");
+    const addrEl = ta(d.riderAddress, "Full address");
+    const dlNumEl = ip(d.dlNumber, "Driving licence number");
+    const dobEl = ip(d.riderDob, "", "date");
+    const vehNumEl = ip(d.vehicleNumber, "Vehicle number plate");
+    const vehTypeEl = ip(r.vehicle || d.vehicleType, "Bike / Scooter / Cycle");
+    const nomName = ip(d.familyName, "Nominee full name");
+    const nomRel = ip(d.familyRelation, "Relation");
+    const nomPhone = ip(d.familyPhone, "Nominee phone", "tel");
+    const nomAddr = ta(d.familyAddress, "Nominee address");
+    const desig = ip(r.designation || "Delivery Partner (Saradhi)", "Designation");
+    const salaryEl = ip(r.salary != null ? r.salary : "", "e.g. 15000", "number");
+    const allowEl = ip(r.allowance != null ? r.allowance : "", "e.g. 2000", "number");
+    const incentiveEl = ta(r.incentive || "₹30 per delivery + performance bonus for 100+ deliveries/month", "Incentive terms");
+
+    function uploadRow(label, key) {
+      const st = el("span", { class: "muted small" }, docs[key] ? "✓ uploaded" : "not uploaded");
+      const view = docs[key] ? el("a", { href: docs[key], target: "_blank", rel: "noopener", class: "small", style: "margin-left:6px" }, "view") : document.createTextNode("");
+      const btn = el("button", { class: "btn ghost sm", type: "button" }, docs[key] ? "Replace" : "Upload");
+      btn.onclick = () => {
+        const inp = el("input", { type: "file", accept: "image/*" });
+        inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; st.textContent = "uploading…"; try { docs[key] = await uploadToCloudinary(f); st.textContent = "✓ uploaded"; } catch (e) { st.textContent = "failed"; toast(e.message || "Upload failed"); } };
+        inp.click();
+      };
+      return el("div", { class: "row between", style: "align-items:center;margin:5px 0" }, [el("span", {}, label), el("span", { style: "display:flex;gap:6px;align-items:center" }, [st, view, btn])]);
+    }
+    const field = (label, node) => el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), node]);
+    const errEl = el("div", { class: "auth-err" });
+
+    function collect() {
+      return {
+        id: r.id, name: nameEl.value.trim(), phone: phoneEl.value.trim(), address: addrEl.value.trim(),
+        dlNumber: dlNumEl.value.trim(), riderDob: dobEl.value, vehicleNumber: vehNumEl.value.trim(), vehicleType: vehTypeEl.value.trim(),
+        nomName: nomName.value.trim(), nomRel: nomRel.value.trim(), nomPhone: nomPhone.value.trim(), nomAddr: nomAddr.value.trim(),
+        designation: desig.value.trim(), salary: Number(salaryEl.value) || 0, allowance: Number(allowEl.value) || 0, incentive: incentiveEl.value.trim(),
+      };
+    }
+    async function saveAll() {
+      await BW.submitRiderDocuments(r.id, {
+        dlUrl: docs.dlUrl, dlNumber: dlNumEl.value.trim(), riderDob: dobEl.value,
+        aadhaarUrl: docs.aadhaarUrl, bikePhotoUrl: docs.bikePhotoUrl, vehicleNumber: vehNumEl.value.trim(), vehicleType: vehTypeEl.value.trim(),
+        riderPhone: phoneEl.value.trim(), riderAddress: addrEl.value.trim(),
+        familyName: nomName.value.trim(), familyRelation: nomRel.value.trim(), familyPhone: nomPhone.value.trim(), familyAddress: nomAddr.value.trim(), familyIdUrl: docs.familyIdUrl,
+      });
+      await BW.updateRiderDetails(r.id, { name: nameEl.value.trim(), phone: phoneEl.value.trim(), vehicle: vehTypeEl.value.trim(), designation: desig.value.trim(), salary: Number(salaryEl.value) || 0, allowance: Number(allowEl.value) || 0, incentive: incentiveEl.value.trim() });
+    }
+
+    const body = el("div", { style: "max-height:64vh;overflow:auto" }, [
+      el("div", { style: "font-weight:800;margin-bottom:6px" }, "Identity & vehicle"),
+      field("Full name", nameEl), field("Phone", phoneEl), field("Address", addrEl),
+      el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("DL number", dlNumEl)]), el("div", { style: "flex:1" }, [field("Date of birth", dobEl)])]),
+      el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Vehicle no.", vehNumEl)]), el("div", { style: "flex:1" }, [field("Vehicle type", vehTypeEl)])]),
+      el("div", { style: "font-weight:800;margin:10px 0 4px" }, "Documents"),
+      uploadRow("Driving licence", "dlUrl"), uploadRow("Aadhaar card", "aadhaarUrl"), uploadRow("Vehicle photo (number plate)", "bikePhotoUrl"), uploadRow("Nominee Aadhaar / ID", "familyIdUrl"),
+      el("div", { style: "font-weight:800;margin:10px 0 4px" }, "Nominee (guarantor)"),
+      el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Name", nomName)]), el("div", { style: "flex:1" }, [field("Relation", nomRel)])]),
+      el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Phone", nomPhone)]), el("div", { style: "flex:2" }, [field("Address", nomAddr)])]),
+      el("div", { style: "font-weight:800;margin:10px 0 4px" }, "Compensation"),
+      field("Designation", desig),
+      el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Monthly salary (₹)", salaryEl)]), el("div", { style: "flex:1" }, [field("Allowance (₹)", allowEl)])]),
+      field("Incentive terms", incentiveEl),
+      errEl,
+    ]);
+
+    const close = UI.modal({
+      title: "Onboard / Manage · " + (r.name || "Saradhi"),
+      body,
+      footer: [
+        el("button", { class: "btn ghost", onClick: () => close() }, "Close"),
+        el("button", { class: "btn ghost", onClick: () => generateLetter(collect(), "offer") }, "📄 Offer letter"),
+        el("button", { class: "btn ghost", onClick: () => generateLetter(collect(), "onboarding") }, "📄 Onboarding letter"),
+        el("button", { class: "btn primary", onClick: async (e) => {
+          const btn = e.target; btn.disabled = true; btn.textContent = "Saving…"; errEl.textContent = "";
+          try { await saveAll(); toast("Saved"); btn.disabled = false; btn.textContent = "Save"; }
+          catch (er) { errEl.textContent = er.message || "Save failed"; btn.disabled = false; btn.textContent = "Save"; }
+        } }, "Save"),
+        el("button", { class: "btn success", onClick: async (e) => {
+          const btn = e.target; btn.disabled = true; btn.textContent = "Activating…"; errEl.textContent = "";
+          try {
+            await saveAll();
+            await BW.verifyRiderItem(r.id, "dl", "verified"); await BW.verifyRiderItem(r.id, "rc", "verified");
+            await BW.verifyRiderItem(r.id, "aadhaar", "verified"); await BW.verifyRiderItem(r.id, "nominee", "verified");
+            await BW.updateRiderDetails(r.id, { active: true, onboardedAt: new Date().toISOString().slice(0, 10) });
+            toast("Saradhi verified & activated ✓"); close(); render();
+          } catch (er) { errEl.textContent = er.message || "Activation failed"; btn.disabled = false; btn.textContent = "✓ Verify & Activate"; }
+        } }, "✓ Verify & Activate"),
+      ],
+    });
+  }
+
+  // Open a printable offer / onboarding letter in a new window (admin saves as PDF / prints).
+  function generateLetter(x, type) {
+    const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+    const sal = x.salary ? ("₹" + Number(x.salary).toLocaleString("en-IN")) : "—";
+    const allw = x.allowance ? ("₹" + Number(x.allowance).toLocaleString("en-IN")) : "—";
+    const isOffer = type === "offer";
+    const title = isOffer ? "Offer Letter" : "Onboarding Letter";
+    const intro = isOffer
+      ? "We are pleased to offer you the position of <b>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</b> with Saardha. The terms of this offer are set out below."
+      : "Welcome to the Saardha team! This letter confirms your onboarding as a <b>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</b>. Your engagement details are set out below.";
+    const esc2 = (s) => String(s == null ? "" : s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+    function esc(s) { return esc2(s); }
+    const html =
+      "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saardha — " + title + "</title>" +
+      "<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1d24;line-height:1.65;max-width:720px;margin:0 auto;padding:36px 28px}" +
+      ".hd{display:flex;align-items:center;gap:12px;border-bottom:2px solid #e62a1f;padding-bottom:12px;margin-bottom:20px}" +
+      ".hd h1{font-size:22px;margin:0;color:#e62a1f}.muted{color:#666;font-size:13px}h2{font-size:16px;margin:22px 0 6px}" +
+      "table{border-collapse:collapse;width:100%;margin:8px 0}td{padding:7px 10px;border:1px solid #e5e5e5;font-size:14px}td:first-child{color:#555;width:42%}" +
+      ".sign{margin-top:40px;display:flex;justify-content:space-between}.note{font-size:12px;color:#777;margin-top:26px}" +
+      "@media print{.noprint{display:none}}button{background:#e62a1f;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer}</style></head><body>" +
+      "<div class='noprint' style='text-align:right;margin-bottom:8px'><button onclick='window.print()'>🖨 Print / Save as PDF</button></div>" +
+      "<div class='hd'><div><h1>Saardha</h1><div class='muted'>Local logistics &amp; premium home delivery</div></div></div>" +
+      "<div class='muted'>Date: " + today + "</div>" +
+      "<h2>" + title + "</h2>" +
+      "<p>Dear " + esc(x.name || "Saradhi") + ",</p><p>" + intro + "</p>" +
+      "<table>" +
+      "<tr><td>Name</td><td>" + esc(x.name || "—") + "</td></tr>" +
+      "<tr><td>Designation</td><td>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</td></tr>" +
+      "<tr><td>Phone</td><td>" + esc(x.phone || "—") + "</td></tr>" +
+      "<tr><td>Address</td><td>" + esc(x.address || "—") + "</td></tr>" +
+      "<tr><td>Vehicle</td><td>" + esc([x.vehicleType, x.vehicleNumber].filter(Boolean).join(" · ") || "—") + "</td></tr>" +
+      "<tr><td>Monthly salary</td><td>" + sal + "</td></tr>" +
+      "<tr><td>Allowance</td><td>" + allw + "</td></tr>" +
+      "<tr><td>Incentive</td><td>" + esc(x.incentive || "—") + "</td></tr>" +
+      "<tr><td>Nominee</td><td>" + esc([x.nomName, x.nomRel, x.nomPhone].filter(Boolean).join(" · ") || "—") + "</td></tr>" +
+      "</table>" +
+      (isOffer
+        ? "<p>This offer is subject to verification of your submitted documents (driving licence, Aadhaar, vehicle and nominee details) and acceptance of the Saardha Delivery Partner Agreement, including the cash-settlement terms.</p>"
+        : "<p>Your documents have been verified and your account is active. You are bound by the Saardha Delivery Partner Agreement, including the cash-settlement obligations. All COD cash you collect belongs to Saardha and must be settled in full and on time.</p>") +
+      "<div class='sign'><div>____________________<br><span class='muted'>Saradhi signature</span></div><div>____________________<br><span class='muted'>For Saardha</span></div></div>" +
+      "<div class='note'>This is a computer-generated letter from the Saardha admin console. Please review with a qualified professional before issuing officially.</div>" +
+      "</body></html>";
+    const w = window.open("", "_blank");
+    if (!w) { toast("Allow pop-ups to open the letter"); return; }
+    w.document.open(); w.document.write(html); w.document.close();
   }
 
   function showCreatedRider(result) {

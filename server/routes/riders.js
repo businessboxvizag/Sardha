@@ -313,6 +313,12 @@ router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     if (b.area    != null) updates.area    = String(b.area).slice(0, 120);
     if (b.shift   != null) updates.shift   = String(b.shift).slice(0, 40);
     if (b.active  != null) updates.active  = !!b.active;   // suspend / reinstate
+    // Compensation / employment terms (used to generate the offer & onboarding letters).
+    if (b.designation != null) updates.designation = String(b.designation).slice(0, 80);
+    if (b.salary      != null) updates.salary      = Number(b.salary) || 0;
+    if (b.allowance   != null) updates.allowance   = Number(b.allowance) || 0;
+    if (b.incentive   != null) updates.incentive   = String(b.incentive).slice(0, 500);
+    if (b.onboardedAt != null) updates.onboardedAt = String(b.onboardedAt).slice(0, 40);
     if (!Object.keys(updates).length) return res.status(400).json({ error: "No fields to update" });
     await ref.update(updates);
     if (updates.name) { try { await db.collection("users").doc(req.params.id).update({ name: updates.name }); } catch (e) {} }
