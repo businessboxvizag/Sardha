@@ -6,6 +6,41 @@ const { hashKey, generateKey } = require("../middleware/partnerAuth");
 
 const router = express.Router();
 
+/* ── Vendor settlement ────────────────────────────────────────
+ * Accounts run this (typically at the 9am & 9pm cycle) to settle a store's
+ * unsettled delivered orders. Marks those orders vendorSettled and records
+ * a settlement entry. Amount = items subtotal − platform commission.       */
+router.post("/settle-vendor", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const vendorId = req.body.vendorId;
+    if (!vendorId) return res.status(400).json({ error: "vendorId required" });
+    const settingsDoc = await db.collection("settings").doc("global").get();
+    const commissionPct = settingsDoc.exists ? (Number(settingsDoc.data().merchantCommissionPct) || 0) : 10;
+
+    const snap = await db.collection("orders").where("vendorId", "==", vendorId).where("status", "==", "DELIVERED").get();
+    const pending = snap.docs.filter((d) => !d.data().vendorSettled);
+    if (!pending.length) return res.json({ ok: true, amount: 0, orderCount: 0, message: "Nothing to settle" });
+
+    let gross = 0;
+    pending.forEach((d) => { gross += Number(d.data().subtotal || 0); });
+    const commission = Math.round(gross * commissionPct / 100);
+    const amount = gross - commission;
+    const at = new Date().toISOString();
+
+    // Mark orders settled (batched) + record the settlement.
+    let batch = db.batch(), n = 0;
+    for (const d of pending) { batch.update(d.ref, { vendorSettled: true, vendorSettledAt: at }); if (++n >= 400) { await batch.commit(); batch = db.batch(); n = 0; } }
+    if (n > 0) await batch.commit();
+    const sref = db.collection("vendor_settlements").doc();
+    await sref.set({ id: sref.id, vendorId, gross, commission, amount, orderCount: pending.length, at, by: req.user.name || "admin" });
+
+    res.json({ ok: true, amount, gross, commission, orderCount: pending.length, at });
+  } catch (err) {
+    console.error("POST /admin/settle-vendor:", err);
+    res.status(500).json({ error: "Failed to settle vendor" });
+  }
+});
+
 /* ── Delivery partners (DaaS) ─────────────────────────────────
  * Admin approves businesses and issues API keys. The raw key is
  * returned ONCE at creation; only its hash is stored.          */

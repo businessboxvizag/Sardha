@@ -36,6 +36,24 @@
       await BW.loadVendorProducts(v.id);
     }
     BW.subscribe(() => render());
+
+    // Alerts: buzz + notify when a customer raises a ticket or replies, and live-refresh
+    // the open ticket thread. Also register for push so it works with the app closed.
+    if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
+    if (window.SaardhaPush) window.SaardhaPush.enable();
+    BW.subscribeTickets((t) => {
+      const last = (t.messages && t.messages[t.messages.length - 1]) || {};
+      if (last.from === "customer" && window.Buzzer) {
+        window.Buzzer.alert("New support message", (t.customerName || "A customer") + ": " + (t.subject || last.text || ""));
+      }
+      // If we're viewing this ticket, refresh it live.
+      if (openTicketDetail._container && openTicketDetail._openId === t.id) {
+        openTicketDetail(openTicketDetail._container, t.id);
+      } else if (state.route === "monitor" && viewMonitor._tab === "tickets") {
+        render();
+      }
+    });
+
     render();
   }
 
@@ -891,14 +909,31 @@
       const m = vendMap[id] || (vendMap[id] = { orders: 0, gross: 0 });
       m.orders++; m.gross += (o.subtotal || 0);
     });
-    const vendRows = Object.keys(vendMap).map((id) => {
-      const m = vendMap[id]; const v = BW.vendor(id); const comm = Math.round(m.gross * commissionPct / 100);
+    // Unsettled payable = all delivered orders (any date) not yet marked settled.
+    const unsettledMap = {};
+    BW.orders().filter((o) => o.status === "DELIVERED" && !o.vendorSettled).forEach((o) => {
+      const id = o.vendorId; if (!id) return;
+      const u = unsettledMap[id] || (unsettledMap[id] = { gross: 0, orders: 0 });
+      u.gross += Number(o.subtotal || 0); u.orders++;
+    });
+    const vendorIds = Array.from(new Set([...Object.keys(vendMap), ...Object.keys(unsettledMap)]));
+    const vendRows = vendorIds.map((id) => {
+      const m = vendMap[id] || { orders: 0, gross: 0 };
+      const u = unsettledMap[id] || { orders: 0, gross: 0 };
+      const v = BW.vendor(id);
+      const comm = Math.round(m.gross * commissionPct / 100);
+      const unsettledNet = u.gross - Math.round(u.gross * commissionPct / 100);
+      const settleBtn = u.orders > 0
+        ? el("button", { class: "btn success sm", onClick: async (e) => { e.target.disabled = true; try { const r = await BW.settleVendor(id); toast("Settled " + money(r.amount) + " (" + r.orderCount + " orders)"); render(); } catch (er) { toast(er.message || "Settle failed"); e.target.disabled = false; } } }, "Settle " + money(unsettledNet))
+        : el("span", { class: "muted small" }, "—");
       return el("tr", {}, [
         el("td", {}, el("strong", {}, v ? v.name : id)),
         el("td", {}, String(m.orders)),
         el("td", {}, money(m.gross)),
         el("td", { class: "muted" }, money(comm)),
         el("td", { style: "color:#1a9d54;font-weight:700" }, money(m.gross - comm)),
+        el("td", { style: unsettledNet > 0 ? "color:var(--red);font-weight:700" : "" }, money(unsettledNet)),
+        el("td", {}, settleBtn),
       ]);
     });
 
@@ -932,11 +967,12 @@
           el("tbody", {}, riderRows.length ? riderRows : [el("tr", {}, el("td", { colspan: "6", class: "muted", style: "text-align:center;padding:20px" }, "No deliveries in this period."))]),
         ]),
       ]),
-      el("h3", { style: "margin:0 0 8px" }, "Merchants — payable"),
-      el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
-        el("table", {}, [
-          el("thead", {}, el("tr", {}, ["Store", "Orders", "Gross sales", "Commission", "Net payable"].map((h) => el("th", {}, h)))),
-          el("tbody", {}, vendRows.length ? vendRows : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:20px" }, "No deliveries in this period."))]),
+      el("h3", { style: "margin:0 0 4px" }, "Merchants — payable & settlement"),
+      el("p", { class: "page-sub", style: "margin:0 0 8px" }, "Working cycle 9am–9pm. Accounts settle each store twice daily (≈9am & 9pm). 'Settle' pays out all delivered orders not yet settled."),
+      el("div", { class: "card", style: "padding:0;overflow-x:auto" }, [
+        el("table", { style: "min-width:760px" }, [
+          el("thead", {}, el("tr", {}, ["Store", "Orders (period)", "Gross sales", "Commission", "Net (period)", "Unsettled", "Settle"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, vendRows.length ? vendRows : [el("tr", {}, el("td", { colspan: "7", class: "muted", style: "text-align:center;padding:20px" }, "No delivered orders yet."))]),
         ]),
       ]),
     ]);
@@ -1150,6 +1186,7 @@
   }
 
   function renderTicketList(container, tickets) {
+    openTicketDetail._openId = null; // showing the list, no single ticket open
     container.innerHTML = "";
     if (!tickets.length) { container.appendChild(el("div", { class: "card" }, [el("p", { class: "muted", style: "text-align:center;padding:24px" }, "No support tickets yet.")])); return; }
     tickets.forEach((t) => {
@@ -1164,6 +1201,7 @@
   }
 
   function openTicketDetail(container, id) {
+    openTicketDetail._container = container; openTicketDetail._openId = id; // for live socket refresh
     container.innerHTML = "";
     container.appendChild(el("div", { class: "muted", style: "padding:12px" }, "Loading…"));
     BW.getTicket(id).then((t) => {
@@ -1670,6 +1708,18 @@
       spSave.disabled = false; spSave.textContent = "Save contact";
     });
 
+    /* --- Festival / seasonal theme --- */
+    const themeSel = el("select", { style: "max-width:220px" });
+    [["auto", "Auto (by date)"], ["none", "None"], ["independence", "Independence Day 🇮🇳"], ["diwali", "Diwali 🪔"]].forEach(([v, l]) =>
+      themeSel.appendChild(el("option", { value: v, ...((s0.festivalTheme || "auto") === v ? { selected: "" } : {}) }, l)));
+    const themeSave = el("button", { class: "btn primary" }, "Save theme");
+    themeSave.addEventListener("click", async () => {
+      themeSave.disabled = true; themeSave.textContent = "Saving…";
+      try { await BW.updateSettings({ festivalTheme: themeSel.value }); await BW.init("admin"); toast("Theme updated"); }
+      catch (err) { toast("Error: " + err.message); }
+      themeSave.disabled = false; themeSave.textContent = "Save theme";
+    });
+
     /* --- Pay-on-delivery UPI (Saardha QR the Saradhi shows at the door) --- */
     const upiVpaEl  = el("input", { type: "text", value: s0.upiVpa || "", placeholder: "yourname@ybl (your UPI ID)", style: "width:100%;margin-bottom:6px" });
     const upiNameEl = el("input", { type: "text", value: s0.upiName || "Saardha", placeholder: "Payee name shown to customer", style: "width:100%;margin-bottom:6px" });
@@ -1770,6 +1820,12 @@
         el("div", { class: "field" }, [el("label", {}, "Rider pay per delivery (₹)"), payEl]),
         el("div", { class: "field" }, [el("label", {}, "Merchant commission (%)"), commEl]),
         el("div", { style: "margin-top:8px" }, [paySave]),
+      ]),
+      el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
+        el("h3", { style: "margin-top:0" }, "Festival theme"),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Shows a themed greeting banner in the customer app. 'Auto' turns on Independence Day around 15 Aug."),
+        el("div", { class: "field" }, [el("label", {}, "Theme"), themeSel]),
+        el("div", { style: "margin-top:8px" }, [themeSave]),
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Pay-on-delivery UPI"),

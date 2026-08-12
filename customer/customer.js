@@ -34,6 +34,13 @@
     // Load gold-coin balance / active reward so checkout and the Games hub reflect it.
     refreshRewards();
 
+    // Live support chat: when support replies, refresh the open ticket instantly.
+    BW.subscribeTickets((t) => {
+      if (state.route === "ticket" && state.ticketId === t.id) viewTicket();
+      const last = (t.messages && t.messages[t.messages.length - 1]) || {};
+      if (last.from === "support" && window.Buzzer) window.Buzzer.notify("Saardha Support replied", last.text || "");
+    });
+
     // Notify the customer live when a fresh order is accepted or declined by the store
     const _lastStatus = {};
     BW.subscribe(() => {
@@ -129,11 +136,7 @@
     const user = BW.Auth.getUser();
 
     root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "Saardha", []));
-
-    // Beta notice — this is a beta version (not a final release).
-    root.appendChild(el("div", {
-      style: "background:#fff3cd;color:#7a5b00;font-size:12px;line-height:1.4;text-align:center;padding:7px 14px;font-weight:600",
-    }, "🚧 Beta version — Saardha is still being improved. Thanks for trying it and sharing feedback!"));
+    festivalRibbon(root);   // themed festival strip (e.g. Independence Day) when active
 
     const nav = el("div", { class: "sidebar" }, [
       navItem("stores",   ICONS.store,   "My Stores"),
@@ -271,7 +274,7 @@
       el("div", { style: "display:flex;align-items:center;gap:8px" }, [
         el("span", { style: "font-size:16px" }, "🚀"),
         el("div", { style: "flex:1;min-width:0" }, [
-          el("div", { style: "font-weight:800;font-size:13px" }, "Pilot launch — thanks for trying Saardha!"),
+          el("div", { style: "font-weight:800;font-size:13px" }, "Beta version — thanks for trying Saardha!"),
           el("div", { class: "marquee" }, el("span", { class: "marquee-in" },
             "A new local delivery app by BusinessBOX, Vizag. We're in testing — your feedback shapes what we build. Spotted a bug or have an idea? Tell us at " + num + ".")),
         ]),
@@ -281,6 +284,31 @@
         el("a", { class: "btn sm", style: "background:rgba(255,255,255,.22);color:#fff;flex:1;text-align:center", href: "https://wa.me/91" + num, target: "_blank", rel: "noopener" }, "💬 WhatsApp"),
       ]),
     ]);
+  }
+
+  // Festival theming — admin picks a theme (Settings), or it auto-detects a festival window.
+  function activeFestival() {
+    const s = (BW.settingsRaw && BW.settingsRaw()) || {};
+    let theme = s.festivalTheme || "";
+    if (!theme || theme === "auto") {
+      const d = new Date();
+      if (d.getMonth() === 7 && d.getDate() >= 13 && d.getDate() <= 16) return "independence"; // 13–16 Aug
+      if (theme === "auto") return "";
+    }
+    return theme === "auto" ? "" : theme;
+  }
+  function festivalRibbon(root) {
+    const theme = activeFestival();
+    if (!theme || theme === "none") return;
+    if (theme === "independence") {
+      root.appendChild(el("div", { style: "background:linear-gradient(90deg,#ff9933 0 33%,#ffffff 33% 66%,#138808 66% 100%)" }, [
+        el("div", { style: "text-align:center;font-weight:800;font-size:13px;color:#0a3d0a;background:rgba(255,255,255,.5);padding:6px 12px" }, "🇮🇳 Happy Independence Day — Jai Hind!"),
+      ]));
+    } else if (theme === "diwali") {
+      root.appendChild(el("div", { style: "background:linear-gradient(90deg,#4a148c,#b71c1c);color:#ffd54f;text-align:center;font-weight:800;font-size:13px;padding:7px 12px" }, "🪔 Happy Diwali from Saardha! ✨"));
+    } else {
+      root.appendChild(el("div", { style: "background:var(--brand);color:#fff;text-align:center;font-weight:700;font-size:13px;padding:7px 12px" }, "🎉 " + theme));
+    }
   }
 
   function viewStores() {

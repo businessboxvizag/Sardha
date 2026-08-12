@@ -14,10 +14,19 @@
 const express = require("express");
 const { db } = require("../config/firebase");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const push = require("../lib/push");
 
 const router = express.Router();
 const COL = "support_tickets";
 const now = () => new Date().toISOString();
+
+// Web Push to every admin (used when a customer opens a ticket or replies).
+async function pushAdmins(payload) {
+  try {
+    const snap = await db.collection("users").where("role", "==", "admin").get();
+    await Promise.all(snap.docs.map((d) => push.sendToUser(d.data().uid || d.id, payload).catch(() => {})));
+  } catch (e) { /* best-effort */ }
+}
 
 // Resolve the signed-in customer's profile id + name.
 async function customerFor(uid) {
@@ -63,6 +72,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     };
     await ref.set(ticket);
     emitTicket(req.app.get("io"), ticket);
+    pushAdmins({ title: "New support ticket", body: (cust.name || "A customer") + ": " + subject, tag: "ticket-" + ref.id, url: "/admin/" });
     res.json(ticket);
   } catch (err) {
     console.error("POST /support:", err);
@@ -146,6 +156,7 @@ router.post("/:id/messages", requireAuth, async (req, res) => {
     await ref.update(updates);
     const updated = { ...t, ...updates };
     emitTicket(req.app.get("io"), updated);
+    if (from === "customer") pushAdmins({ title: "Ticket reply", body: byName + ": " + text.slice(0, 80), tag: "ticket-" + t.id, url: "/admin/" });
     res.json(updated);
   } catch (err) {
     console.error("POST /support/:id/messages:", err);

@@ -23,6 +23,7 @@ router.get("/", async (req, res) => {
       upiQrImageUrl: data.upiQrImageUrl ?? "", // optional: an uploaded static UPI QR image (e.g. PhonePe)
       riderPayPerDelivery: data.riderPayPerDelivery ?? 30,   // ₹ paid to a rider per completed delivery
       merchantCommissionPct: data.merchantCommissionPct ?? 10, // Saardha's % cut of merchant item sales
+      festivalTheme: data.festivalTheme ?? "auto",  // auto | none | independence | diwali | …
       ...data,
     });
   } catch (err) {
@@ -35,7 +36,7 @@ router.put("/", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const allowed = ["deliveryFee", "codCashLimit", "operationalZones",
                      "supportPhone", "supportWhatsapp", "supportEmail", "supportHours",
-                     "upiVpa", "upiName", "upiQrImageUrl", "riderPayPerDelivery", "merchantCommissionPct"];
+                     "upiVpa", "upiName", "upiQrImageUrl", "riderPayPerDelivery", "merchantCommissionPct", "festivalTheme"];
     if (req.body.riderPayPerDelivery !== undefined) req.body.riderPayPerDelivery = Number(req.body.riderPayPerDelivery) || 0;
     if (req.body.merchantCommissionPct !== undefined) req.body.merchantCommissionPct = Math.max(0, Math.min(100, Number(req.body.merchantCommissionPct) || 0));
     const updates = {};

@@ -170,7 +170,22 @@
     };
     _socket.on("booking:updated", upsertBooking);
     _socket.on("booking:assigned", upsertBooking);
+
+    // An order was just assigned to this rider — treat like an update so the app buzzes.
+    _socket.on("order:assigned", (order) => {
+      const idx = _cache.orders.findIndex((o) => o.id === order.id);
+      if (idx >= 0) _cache.orders[idx] = order; else _cache.orders.unshift(order);
+      emit();
+    });
+
+    // Support ticket created / new message — notify ticket listeners (live chat + alerts).
+    _socket.on("support:updated", (ticket) => {
+      _ticketListeners.forEach((fn) => { try { fn(ticket); } catch (e) { console.error(e); } });
+    });
   }
+
+  // Pub/sub for live support-ticket events (separate from the cache emit()).
+  const _ticketListeners = new Set();
 
   /* ââ Init: load all data, connect socket ââââââââââââââââââââ */
   async function init(role) {
@@ -382,6 +397,16 @@
       if (i >= 0) _cache.orders[i] = order;
       emit();
       return order;
+    },
+
+    // Subscribe to live support-ticket events (returns an unsubscribe fn).
+    subscribeTickets: (fn) => { _ticketListeners.add(fn); return () => _ticketListeners.delete(fn); },
+
+    // Admin settles a vendor's unsettled delivered orders; refreshes the order cache.
+    settleVendor: async (vendorId) => {
+      const r = await post("/api/admin/settle-vendor", { vendorId });
+      try { _cache.orders = await get("/api/orders"); emit(); } catch (e) {}
+      return r;
     },
 
     /* ── Web Push ── */

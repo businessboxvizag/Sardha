@@ -376,8 +376,8 @@
   async function autoDispatch(order) {
     try {
       const { rider } = await BW.autoAssignRider(order.id);
-      const distTxt = isFinite(rider.dist) ? " · " + rider.dist.toFixed(1) + " km away" : "";
-      toast("Rider assigned: " + rider.name + distTxt);
+      const distTxt = (rider && typeof rider.dist === "number" && isFinite(rider.dist)) ? " · " + rider.dist.toFixed(1) + " km away" : "";
+      toast("Saradhi assigned: " + ((rider && rider.name) || "a Saradhi") + distTxt);
     } catch (err) {
       toast(err.message || "No available riders right now");
     }
