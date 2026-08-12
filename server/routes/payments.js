@@ -21,11 +21,8 @@ router.post("/create-order", requireAuth, requireRole("customer"), async (req, r
     const activeReward = custSnap.empty ? null : (custSnap.docs[0].data().activeReward || null);
     const { total, discount } = await priceOrder({ vendorId, items, promoCode, reward: activeReward });
 
-    // Don't charge the customer if no Saradhi can deliver (#10)
-    const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();
-    if (availSnap.empty) {
-      return res.status(409).json({ error: "No Saradhi is available right now. Please try again in a few minutes." });
-    }
+    // No rider-availability gate — a Saradhi can stack multiple tasks, so checkout is
+    // never blocked on availability. The order is assigned after payment.
 
     const rzpOrder = await razorpay.instance.orders.create({
       amount: total * 100,          // amount in paise

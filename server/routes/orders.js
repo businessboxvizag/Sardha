@@ -54,6 +54,15 @@ async function nextOrderNo() {
   }
 }
 
+// A Saradhi can hold multiple stacked orders. After one finishes/cancels, they stay
+// "on_delivery" if any OTHER active order is still assigned to them; only when none
+// remain do they go back to "available".
+async function riderStillBusy(riderId, excludeOrderId) {
+  if (!riderId) return false;
+  const snap = await db.collection("orders").where("riderId", "==", riderId).get();
+  return snap.docs.some((d) => d.id !== excludeOrderId && ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(d.data().status));
+}
+
 // COD cash-in-hand limit (admin-configurable in settings; default ₹2000)
 async function getCodLimit() {
   try { const s = await db.collection("settings").doc("global").get(); const d = s.exists ? s.data() : {}; return Number(d.codCashLimit) || 2000; }
@@ -200,14 +209,9 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       }
     }
 
-    // Don't accept an order we can't deliver — require at least one available Saradhi (#10).
-    // Online orders are pre-checked before payment, so we never reject an already-paid order here.
-    if (pm !== "ONLINE") {
-      const availSnap = await db.collection("riders").where("status", "==", "available").limit(1).get();
-      if (availSnap.empty) {
-        return res.status(409).json({ error: "No Saradhi is available right now. Please try again in a few minutes." });
-      }
-    }
+    // NOTE: we intentionally do NOT block an order when no Saradhi is "available".
+    // A Saradhi can hold multiple stacked tasks, so orders are always accepted and
+    // then assigned (a busy Saradhi simply queues the next one) — nothing waits.
 
     // Online payment: authenticate the Razorpay callback BEFORE creating the order.
     let paymentStatus = "PENDING";
@@ -401,11 +405,13 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
       }
     }
 
-    // Free the rider when order completes or is cancelled
+    // Free the rider when order completes or is cancelled — but only if they have no
+    // other active stacked orders; otherwise keep them "on_delivery".
     if (status === "DELIVERED" || status === "CANCELLED") {
       if (order.riderId) {
         const riderRef = db.collection("riders").doc(order.riderId);
-        const riderUpdates = { status: "available" };
+        const stillBusy = await riderStillBusy(order.riderId, order.id);
+        const riderUpdates = { status: stillBusy ? "on_delivery" : "available" };
         if (status === "DELIVERED") {
           const riderDoc = await riderRef.get();
           riderUpdates.deliveriesToday = (riderDoc.data().deliveriesToday || 0) + 1;
@@ -516,7 +522,9 @@ router.patch("/:id/advance", requireAuth, async (req, res) => {
       if (order.riderId) {
         const riderRef = db.collection("riders").doc(order.riderId);
         const rd = (await riderRef.get()).data() || {};
-        const riderUpd = { status: "available", deliveriesToday: (rd.deliveriesToday || 0) + 1 };
+        // Keep the Saradhi "on_delivery" if they still have other stacked orders.
+        const stillBusy = await riderStillBusy(order.riderId, order.id);
+        const riderUpd = { status: stillBusy ? "on_delivery" : "available", deliveriesToday: (rd.deliveriesToday || 0) + 1 };
         // Only physical cash adds to the rider's floating balance — UPI does not.
         if (order.paymentMethod === "COD" && !paidByUpi) {
           const limit = await getCodLimit();
@@ -573,9 +581,10 @@ router.patch("/:id/assign", requireAuth, requireRole("merchant", "admin"), async
     const order = orderDoc.data();
     const now = new Date().toISOString();
 
-    // Free the previously assigned rider (if any)
+    // Free the previously assigned rider — but keep them busy if they still hold other orders.
     if (order.riderId && order.riderId !== riderId) {
-      await db.collection("riders").doc(order.riderId).update({ status: "available" });
+      const busy = await riderStillBusy(order.riderId, order.id);
+      await db.collection("riders").doc(order.riderId).update({ status: busy ? "on_delivery" : "available" });
     }
 
     await db.collection("riders").doc(riderId).update({ status: "on_delivery" });
@@ -624,13 +633,25 @@ router.post("/:id/auto-assign", requireAuth, requireRole("merchant", "admin"), a
     const vLat = vendor?.lat || 0;
     const vLng = vendor?.lng || 0;
 
-    // Fetch all available riders from the shared fleet
-    const ridersSnap = await db.collection("riders").where("status", "==", "available").get();
-    if (ridersSnap.empty) {
-      return res.status(409).json({ error: "No available riders right now. Try again shortly." });
+    // Consider ALL on-duty Saradhis (available OR already on a delivery) — never just
+    // "available" — so a single busy Saradhi can still be assigned and nothing waits.
+    const allRiders = (await db.collection("riders").get()).docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((r) => r.status !== "offline" && r.active !== false);
+    if (!allRiders.length) {
+      return res.status(409).json({ error: "No Saradhi is on duty right now. Bring one online, then dispatch." });
     }
 
-    // Rank by distance to vendor (haversine)
+    // Count current active load per rider so we can balance the stack.
+    const activeSnap = await db.collection("orders").get();
+    const loadByRider = {};
+    activeSnap.docs.forEach((d) => {
+      const o = d.data();
+      if (o.riderId && ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(o.status)) {
+        loadByRider[o.riderId] = (loadByRider[o.riderId] || 0) + 1;
+      }
+    });
+
     function haversine(la1, lo1, la2, lo2) {
       if (!la1 || !lo1 || !la2 || !lo2) return Infinity;
       const R = 6371, toR = (d) => (d * Math.PI) / 180;
@@ -639,16 +660,18 @@ router.post("/:id/auto-assign", requireAuth, requireRole("merchant", "admin"), a
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    const ranked = ridersSnap.docs
-      .map((d) => ({ id: d.id, ...d.data(), dist: haversine(d.data().lat, d.data().lng, vLat, vLng) }))
-      .sort((a, b) => a.dist - b.dist);
+    // Rank: fewest current tasks first, then available before busy, then nearest.
+    const ranked = allRiders
+      .map((r) => ({ ...r, load: loadByRider[r.id] || 0, dist: haversine(r.lat, r.lng, vLat, vLng) }))
+      .sort((a, b) => (a.load - b.load) || ((a.status === "available" ? 0 : 1) - (b.status === "available" ? 0 : 1)) || (a.dist - b.dist));
 
     const rider = ranked[0];
     const now = new Date().toISOString();
 
-    // Free any previously assigned rider
+    // Free any previously assigned rider (only if they have no other active orders).
     if (order.riderId && order.riderId !== rider.id) {
-      await db.collection("riders").doc(order.riderId).update({ status: "available" });
+      const busy = await riderStillBusy(order.riderId, order.id);
+      await db.collection("riders").doc(order.riderId).update({ status: busy ? "on_delivery" : "available" });
     }
 
     await db.collection("riders").doc(rider.id).update({ status: "on_delivery" });
