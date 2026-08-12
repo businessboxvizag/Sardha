@@ -441,9 +441,9 @@
       emit();
       return rider;
     },
-    // Admin deletes a Saradhi (login + record).
-    deleteRider: async (riderId) => {
-      await del("/api/riders/" + riderId);
+    // Admin deletes a Saradhi (login + record). force=true writes off any pending cash.
+    deleteRider: async (riderId, force) => {
+      await api("DELETE", "/api/riders/" + riderId, force ? { force: true } : undefined);
       _cache.riders = _cache.riders.filter((r) => r.id !== riderId);
       emit();
       return true;

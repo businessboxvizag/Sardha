@@ -607,17 +607,27 @@
   }
 
   function deleteRiderFlow(r) {
-    const close = UI.modal({
+    const cash = r.cashInHand || 0;
+    let close;
+    async function doDelete(force) {
+      try { await BW.deleteRider(r.id, force); close(); toast("Saradhi removed"); render(); }
+      catch (e) {
+        if (e.message === "cash_pending") {
+          if (confirm("This Saradhi holds " + money(cash) + " cash-in-hand. Write it off and delete anyway?")) return doDelete(true);
+        } else if ((e.message || "").indexOf("active delivery") >= 0) {
+          toast("Reassign their active delivery first, then delete.");
+        } else { toast(e.message || "Couldn't delete"); }
+      }
+    }
+    close = UI.modal({
       title: "Delete Saradhi?",
       body: el("div", {}, [
-        el("p", { class: "muted small" }, "This permanently removes " + (r.name || "this Saradhi") + " and their login. This can't be undone. (Blocked if they have an active delivery or unsettled cash.)"),
+        el("p", { class: "muted small" }, "This permanently removes " + (r.name || "this Saradhi") + " and their login. This can't be undone."),
+        cash > 0 ? el("p", { class: "small", style: "color:var(--red)" }, "Holds " + money(cash) + " cash-in-hand — you'll be asked to write it off.") : document.createTextNode(""),
       ]),
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
-        el("button", { class: "btn danger", onClick: async () => {
-          try { await BW.deleteRider(r.id); close(); toast("Saradhi removed"); render(); }
-          catch (e) { toast(e.message || "Couldn't delete"); }
-        } }, "Delete"),
+        el("button", { class: "btn danger", onClick: () => doDelete(false) }, "Delete"),
       ],
     });
   }
@@ -659,6 +669,28 @@
     const field = (label, node) => el("div", { class: "field", style: "margin-bottom:8px" }, [el("label", {}, label), node]);
     const errEl = el("div", { class: "auth-err" });
 
+    // Profile photo (avatar).
+    let _photoUrl = r.photoUrl || "";
+    const photoPrev = el("div", { style: "width:64px;height:64px;border-radius:50%;overflow:hidden;background:var(--surface-2,#eee);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px" });
+    function renderPhoto() { photoPrev.innerHTML = ""; if (_photoUrl) photoPrev.appendChild(el("img", { src: _photoUrl, style: "width:100%;height:100%;object-fit:cover" })); else photoPrev.appendChild(document.createTextNode("photo")); }
+    renderPhoto();
+    const photoBtn = el("button", { class: "btn ghost sm", type: "button" }, _photoUrl ? "Change photo" : "Add photo");
+    photoBtn.onclick = () => {
+      const inp = el("input", { type: "file", accept: "image/*" });
+      inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; photoBtn.textContent = "Uploading…"; try { _photoUrl = await uploadToCloudinary(f); renderPhoto(); } catch (e) { toast(e.message || "Upload failed"); } photoBtn.textContent = "Change photo"; };
+      inp.click();
+    };
+
+    // Payment & settlement controls.
+    const cashNow = el("strong", { style: (r.cashInHand || 0) > 0 ? "color:var(--red)" : "" }, money(r.cashInHand || 0));
+    const clearCashBtn = el("button", { class: "btn danger sm", onClick: async () => {
+      if (!confirm("Clear cash-in-hand to ₹0? This records a manual settlement.")) return;
+      try { await BW.updateRiderDetails(r.id, { cashInHand: 0 }); r.cashInHand = 0; cashNow.textContent = money(0); cashNow.style.color = ""; toast("Cash cleared to ₹0"); } catch (e) { toast(e.message || "Failed"); }
+    } }, "Clear cash → ₹0");
+    const resetDelBtn = el("button", { class: "btn ghost sm", onClick: async () => {
+      try { await BW.updateRiderDetails(r.id, { deliveriesToday: 0 }); toast("Today's deliveries reset"); } catch (e) { toast(e.message || "Failed"); }
+    } }, "Reset today's deliveries");
+
     function collect() {
       return {
         id: r.id, name: nameEl.value.trim(), phone: phoneEl.value.trim(), address: addrEl.value.trim(),
@@ -674,10 +706,11 @@
         riderPhone: phoneEl.value.trim(), riderAddress: addrEl.value.trim(),
         familyName: nomName.value.trim(), familyRelation: nomRel.value.trim(), familyPhone: nomPhone.value.trim(), familyAddress: nomAddr.value.trim(), familyIdUrl: docs.familyIdUrl,
       });
-      await BW.updateRiderDetails(r.id, { name: nameEl.value.trim(), phone: phoneEl.value.trim(), vehicle: vehTypeEl.value.trim(), designation: desig.value.trim(), salary: Number(salaryEl.value) || 0, allowance: Number(allowEl.value) || 0, incentive: incentiveEl.value.trim() });
+      await BW.updateRiderDetails(r.id, { name: nameEl.value.trim(), phone: phoneEl.value.trim(), vehicle: vehTypeEl.value.trim(), designation: desig.value.trim(), salary: Number(salaryEl.value) || 0, allowance: Number(allowEl.value) || 0, incentive: incentiveEl.value.trim(), photoUrl: _photoUrl });
     }
 
     const body = el("div", { style: "max-height:64vh;overflow:auto" }, [
+      el("div", { style: "display:flex;align-items:center;gap:12px;margin-bottom:10px" }, [photoPrev, el("div", {}, [el("div", { style: "font-weight:800" }, "Profile photo"), photoBtn])]),
       el("div", { style: "font-weight:800;margin-bottom:6px" }, "Identity & vehicle"),
       field("Full name", nameEl), field("Phone", phoneEl), field("Address", addrEl),
       el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("DL number", dlNumEl)]), el("div", { style: "flex:1" }, [field("Date of birth", dobEl)])]),
@@ -691,6 +724,9 @@
       field("Designation", desig),
       el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Monthly salary (₹)", salaryEl)]), el("div", { style: "flex:1" }, [field("Allowance (₹)", allowEl)])]),
       field("Incentive terms", incentiveEl),
+      el("div", { style: "font-weight:800;margin:10px 0 4px" }, "Payment & settlement"),
+      el("div", { class: "row between", style: "align-items:center;margin-bottom:8px" }, [el("span", { class: "muted" }, "Cash-in-hand (owed to Saardha)"), cashNow]),
+      el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [clearCashBtn, resetDelBtn]),
       errEl,
     ]);
 
