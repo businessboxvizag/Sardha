@@ -47,8 +47,22 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) BW.refreshOrders().then(() => checkNewOrders()).catch(() => {});
     });
+    requestWakeLock();   // keep the screen awake while on duty
 
     render();
+  }
+
+  // Keep the device screen awake while on duty.
+  let _wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ("wakeLock" in navigator) {
+        _wakeLock = await navigator.wakeLock.request("screen");
+        document.addEventListener("visibilitychange", async () => {
+          if (document.visibilityState === "visible") { try { _wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {} }
+        });
+      }
+    } catch (e) {}
   }
 
   // Rider taps this once to unlock alarm sound + system notifications (browsers block

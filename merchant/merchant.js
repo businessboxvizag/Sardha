@@ -108,7 +108,48 @@
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
     if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { checkNewOrders(); render(); });
+
+    // CRITICAL for not missing orders: poll every 12s + re-check when the app returns to
+    // the foreground, in case the background socket was suspended by the phone.
+    setInterval(() => { BW.refreshOrders().then(() => checkNewOrders()).catch(() => {}); }, 12000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) BW.refreshOrders().then(() => checkNewOrders()).catch(() => {});
+    });
+    requestWakeLock();       // keep the screen awake while the store app is open
+    showAlertsPrompt();      // one-tap enable for alarm sound + notifications
+
     render();
+  }
+
+  // Keep the device screen on while the merchant app is open (for a counter tablet/phone).
+  let _wakeLock = null;
+  async function requestWakeLock() {
+    try {
+      if ("wakeLock" in navigator) {
+        _wakeLock = await navigator.wakeLock.request("screen");
+        document.addEventListener("visibilitychange", async () => {
+          if (document.visibilityState === "visible") { try { _wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {} }
+        });
+      }
+    } catch (e) {}
+  }
+
+  // One-tap prompt (browsers block alarm audio until a user gesture).
+  function showAlertsPrompt() {
+    if (localStorage.getItem("bw_m_alerts") === "1" && Notification && Notification.permission === "granted") { /* still show if audio may be locked */ }
+    const bar = el("div", { style: "position:fixed;left:12px;right:12px;bottom:16px;z-index:9000;background:linear-gradient(90deg,#e62a1f,#ff6a3c);color:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 8px 22px rgba(230,42,31,.4);display:flex;align-items:center;gap:12px" }, [
+      el("div", { style: "flex:1" }, [
+        el("div", { style: "font-weight:800" }, "🔔 Turn on order alerts"),
+        el("div", { style: "font-size:12px;opacity:.95" }, "Tap once so new orders ring loudly even when this screen is idle."),
+      ]),
+      el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:800", onClick: () => {
+        try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
+        if (window.SaardhaPush) window.SaardhaPush.enable();
+        try { localStorage.setItem("bw_m_alerts", "1"); } catch (e) {}
+        bar.remove(); toast("🔔 Order alerts on");
+      } }, "Enable"),
+    ]);
+    document.body.appendChild(bar);
   }
 
   /* ----- new-order alarm (buzzer + system notification) ----- */
