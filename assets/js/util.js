@@ -160,7 +160,7 @@
   }
   function pinIcon(L, kind, label) {
     var html = kind === "chariot"
-      ? '<div style="font-size:26px;line-height:1;transform:translate(-13px,-24px)">🛺</div>'
+      ? '<img src="/assets/img/saradhi-chariot.png" alt="Saradhi" style="width:56px;height:auto;transform:translate(-28px,-30px);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{textContent:\'🛺\',style:\'font-size:26px;transform:translate(-13px,-24px)\'}))">'
       : '<div style="width:26px;height:26px;border-radius:50%;background:#e62a1f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transform:translate(-13px,-13px)">' + (label ? String(label).charAt(0) : "") + "</div>";
     return L.divIcon({ html: html, className: "", iconSize: [0, 0] });
   }

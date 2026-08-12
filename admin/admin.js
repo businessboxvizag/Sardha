@@ -31,10 +31,8 @@
   async function boot() {
     await BWAuth.requireLogin("admin");
     await BW.init("admin");
-    // Load products for all vendors (needed by vendor management)
-    for (const v of BW.vendors()) {
-      await BW.loadVendorProducts(v.id);
-    }
+    // Load products for all vendors in PARALLEL (was sequential → very slow with many stores).
+    await Promise.all(BW.vendors().map((v) => BW.loadVendorProducts(v.id).catch(() => {})));
     BW.subscribe(() => render());
 
     // Alerts: buzz + notify when a customer raises a ticket or replies, and live-refresh
@@ -1668,7 +1666,6 @@
         saveBtn.disabled = true;
         saveBtn.textContent = "Saving…";
         await BW.updateSettings({ deliveryFee: val });
-        await BW.init("admin");
         toast("Delivery fee updated to ₹" + val);
         saveBtn.disabled = false;
         saveBtn.textContent = "Save";
@@ -1687,7 +1684,7 @@
       const val = Number(codEl.value);
       if (isNaN(val) || val < 0) { toast("Enter a valid amount"); return; }
       codSave.disabled = true; codSave.textContent = "Saving…";
-      try { await BW.updateSettings({ codCashLimit: val }); await BW.init("admin"); toast("COD limit set to ₹" + val); }
+      try { await BW.updateSettings({ codCashLimit: val }); toast("COD limit set to ₹" + val); }
       catch (err) { toast("Error: " + err.message); }
       codSave.disabled = false; codSave.textContent = "Save";
     });
@@ -1703,7 +1700,7 @@
       spSave.disabled = true; spSave.textContent = "Saving…";
       try {
         await BW.updateSettings({ supportPhone: spPhone.value.trim(), supportWhatsapp: spWa.value.trim(), supportEmail: spEmail.value.trim(), supportHours: spHours.value.trim() });
-        await BW.init("admin"); toast("Support contact saved");
+        toast("Support contact saved");
       } catch (err) { toast("Error: " + err.message); }
       spSave.disabled = false; spSave.textContent = "Save contact";
     });
@@ -1715,7 +1712,7 @@
     const themeSave = el("button", { class: "btn primary" }, "Save theme");
     themeSave.addEventListener("click", async () => {
       themeSave.disabled = true; themeSave.textContent = "Saving…";
-      try { await BW.updateSettings({ festivalTheme: themeSel.value }); await BW.init("admin"); toast("Theme updated"); }
+      try { await BW.updateSettings({ festivalTheme: themeSel.value }); toast("Theme updated"); }
       catch (err) { toast("Error: " + err.message); }
       themeSave.disabled = false; themeSave.textContent = "Save theme";
     });
@@ -1742,7 +1739,7 @@
     const upiSave   = el("button", { class: "btn primary" }, "Save UPI");
     upiSave.addEventListener("click", async () => {
       upiSave.disabled = true; upiSave.textContent = "Saving…";
-      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha", upiQrImageUrl: _upiQrUrl }); await BW.init("admin"); toast("UPI details saved"); }
+      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha", upiQrImageUrl: _upiQrUrl }); toast("UPI details saved"); }
       catch (err) { toast("Error: " + err.message); }
       upiSave.disabled = false; upiSave.textContent = "Save UPI";
     });
@@ -1753,7 +1750,7 @@
     const paySave = el("button", { class: "btn primary" }, "Save payouts");
     paySave.addEventListener("click", async () => {
       paySave.disabled = true; paySave.textContent = "Saving…";
-      try { await BW.updateSettings({ riderPayPerDelivery: Number(payEl.value) || 0, merchantCommissionPct: Number(commEl.value) || 0 }); await BW.init("admin"); toast("Payout settings saved"); }
+      try { await BW.updateSettings({ riderPayPerDelivery: Number(payEl.value) || 0, merchantCommissionPct: Number(commEl.value) || 0 }); toast("Payout settings saved"); }
       catch (err) { toast("Error: " + err.message); }
       paySave.disabled = false; paySave.textContent = "Save payouts";
     });
@@ -1789,7 +1786,7 @@
     const zSave = el("button", { class: "btn primary" }, "Save zones");
     zSave.addEventListener("click", async () => {
       zSave.disabled = true; zSave.textContent = "Saving…";
-      try { await BW.updateSettings({ operationalZones: zones }); await BW.init("admin"); toast("Operational zones saved"); }
+      try { await BW.updateSettings({ operationalZones: zones }); toast("Operational zones saved"); }
       catch (err) { toast("Error: " + err.message); }
       zSave.disabled = false; zSave.textContent = "Save zones";
     });

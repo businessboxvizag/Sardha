@@ -674,7 +674,7 @@
     },
 
     createMerchant: (data) => post("/api/admin/merchants", data),
-    updateSettings: (data) => put("/api/settings", data),
+    updateSettings: async (data) => { const s = await put("/api/settings", data); _cache.settings = s; emit(); return s; },
     createRider: (data) => post("/api/admin/riders", data),
     deleteMerchant: async (vendorId) => {
       await del(`/api/admin/merchants/${vendorId}`);

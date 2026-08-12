@@ -319,8 +319,24 @@ router.patch("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     if (b.allowance   != null) updates.allowance   = Number(b.allowance) || 0;
     if (b.incentive   != null) updates.incentive   = String(b.incentive).slice(0, 500);
     if (b.onboardedAt != null) updates.onboardedAt = String(b.onboardedAt).slice(0, 40);
+    if (b.photoUrl    != null) updates.photoUrl    = String(b.photoUrl).slice(0, 500); // profile photo
+    if (b.deliveriesToday != null) updates.deliveriesToday = Math.max(0, Number(b.deliveriesToday) || 0);
+    // Admin can reset cash-in-hand (e.g. after collecting cash offline). Setting it below the
+    // limit clears the over-limit suspension timer, and we log a manual settlement for the record.
+    let clearedCash = null;
+    if (b.cashInHand != null) {
+      const newCash = Math.max(0, Number(b.cashInHand) || 0);
+      const prev = Number(doc.data().cashInHand || 0);
+      updates.cashInHand = newCash;
+      const limit = await getCodLimit();
+      if (newCash < limit) updates.cashOverLimitSince = null;
+      if (prev > newCash) clearedCash = prev - newCash;
+    }
     if (!Object.keys(updates).length) return res.status(400).json({ error: "No fields to update" });
     await ref.update(updates);
+    if (clearedCash != null && clearedCash > 0) {
+      try { await db.collection("settlements").add({ riderId: req.params.id, amount: clearedCash, paymentId: "manual-admin", by: req.user.name || "admin", at: new Date().toISOString(), method: "manual" }); } catch (e) {}
+    }
     if (updates.name) { try { await db.collection("users").doc(req.params.id).update({ name: updates.name }); } catch (e) {} }
     const updated = toRider(await ref.get());
     const io = req.app.get("io"); if (io) io.to("admin").emit("rider:updated", updated);
@@ -338,13 +354,15 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     const doc = await ref.get();
     if (!doc.exists) return res.status(404).json({ error: "Rider not found" });
     const rd = doc.data();
-    // Guard: don't delete a rider mid-delivery or holding company cash.
+    const force = req.body && req.body.force === true;
+    // Guard: never delete a rider mid-delivery.
     const oSnap = await db.collection("orders").where("riderId", "==", req.params.id).get();
     if (oSnap.docs.some((d) => ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"].includes(d.data().status))) {
       return res.status(400).json({ error: "This Saradhi has an active delivery. Reassign it first." });
     }
-    if ((rd.cashInHand || 0) > 0) {
-      return res.status(400).json({ error: "Settle this Saradhi's cash-in-hand (₹" + (rd.cashInHand || 0) + ") before deleting." });
+    // Holding cash blocks deletion UNLESS the admin explicitly forces it (writes off the cash).
+    if (!force && (rd.cashInHand || 0) > 0) {
+      return res.status(400).json({ error: "cash_pending", cashInHand: rd.cashInHand || 0 });
     }
     await ref.delete();
     try { await db.collection("users").doc(req.params.id).delete(); } catch (e) {}

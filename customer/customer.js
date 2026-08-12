@@ -297,15 +297,57 @@
     }
     return theme === "auto" ? "" : theme;
   }
+  // Inject festival animation keyframes once (waving flag, shimmer sweep, falling confetti, glow).
+  let _festStyles = false;
+  function ensureFestivalStyles() {
+    if (_festStyles) return; _festStyles = true;
+    const st = document.createElement("style");
+    st.textContent =
+      "@keyframes bwFlagWave{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}" +
+      "@keyframes bwShine{0%{background-position:-180% 0}100%{background-position:180% 0}}" +
+      "@keyframes bwFall{0%{transform:translateY(-12px) rotate(0);opacity:0}12%{opacity:1}100%{transform:translateY(52px) rotate(260deg);opacity:0}}" +
+      "@keyframes bwGlow{0%,100%{text-shadow:0 0 5px #ffb300}50%{text-shadow:0 0 16px #ffe082}}" +
+      ".bw-fest{position:relative;overflow:hidden}" +
+      ".bw-fest .fflag{display:inline-block;animation:bwFlagWave 1.3s ease-in-out infinite;transform-origin:bottom left}" +
+      ".bw-fest .fshine{position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);background-size:200% 100%;animation:bwShine 3.2s linear infinite;pointer-events:none}" +
+      ".bw-fest .fconf{position:absolute;top:0;width:7px;height:7px;border-radius:2px;animation:bwFall linear infinite;pointer-events:none}";
+    document.head.appendChild(st);
+  }
+
   function festivalRibbon(root) {
     const theme = activeFestival();
     if (!theme || theme === "none") return;
+    ensureFestivalStyles();
     if (theme === "independence") {
-      root.appendChild(el("div", { style: "background:linear-gradient(90deg,#ff9933 0 33%,#ffffff 33% 66%,#138808 66% 100%)" }, [
-        el("div", { style: "text-align:center;font-weight:800;font-size:13px;color:#0a3d0a;background:rgba(255,255,255,.5);padding:6px 12px" }, "🇮🇳 Happy Independence Day — Jai Hind!"),
+      const strip = el("div", { class: "bw-fest", style: "height:46px;background:linear-gradient(90deg,#ff9933 0 33%,#ffffff 33% 66%,#138808 66% 100%);display:flex;align-items:center;justify-content:center" });
+      const colors = ["#ff9933", "#ffffff", "#138808", "#0a3d0a"];
+      for (let i = 0; i < 14; i++) {
+        const c = el("span", { class: "fconf" });
+        c.style.left = (Math.random() * 100) + "%";
+        c.style.background = colors[i % colors.length];
+        c.style.animationDuration = (1.8 + Math.random() * 1.8) + "s";
+        c.style.animationDelay = (Math.random() * 2.6) + "s";
+        strip.appendChild(c);
+      }
+      strip.appendChild(el("div", { style: "position:relative;z-index:1;font-weight:800;font-size:13px;color:#0a3d0a;background:rgba(255,255,255,.6);padding:4px 14px;border-radius:20px" }, [
+        el("span", { class: "fflag", style: "margin-right:6px" }, "🇮🇳"),
+        "Happy Independence Day — Jai Hind!",
       ]));
+      strip.appendChild(el("div", { class: "fshine" }));
+      root.appendChild(strip);
     } else if (theme === "diwali") {
-      root.appendChild(el("div", { style: "background:linear-gradient(90deg,#4a148c,#b71c1c);color:#ffd54f;text-align:center;font-weight:800;font-size:13px;padding:7px 12px" }, "🪔 Happy Diwali from Saardha! ✨"));
+      const strip = el("div", { class: "bw-fest", style: "height:44px;background:linear-gradient(90deg,#3a0ca3,#7209b7,#b5179e);display:flex;align-items:center;justify-content:center" });
+      ["#ffd54f", "#ff8f00", "#fff59d"].forEach((col, i) => {
+        for (let k = 0; k < 4; k++) {
+          const c = el("span", { class: "fconf" });
+          c.style.left = (Math.random() * 100) + "%"; c.style.background = col;
+          c.style.animationDuration = (1.6 + Math.random() * 1.6) + "s"; c.style.animationDelay = (Math.random() * 2.4) + "s";
+          strip.appendChild(c);
+        }
+      });
+      strip.appendChild(el("div", { style: "position:relative;z-index:1;font-weight:800;font-size:13px;color:#ffd54f;animation:bwGlow 1.6s ease-in-out infinite" }, "🪔 Happy Diwali from Saardha! ✨"));
+      strip.appendChild(el("div", { class: "fshine" }));
+      root.appendChild(strip);
     } else {
       root.appendChild(el("div", { style: "background:var(--brand);color:#fff;text-align:center;font-weight:700;font-size:13px;padding:7px 12px" }, "🎉 " + theme));
     }
