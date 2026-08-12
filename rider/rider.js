@@ -39,6 +39,26 @@
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
     if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { syncRider(); checkNewOrders(); render(); });
+
+    // Fallback: poll for new assignments every 20s in case a socket event was missed
+    // (mobile browsers suspend background sockets). Also re-check when the app returns
+    // to the foreground. This guarantees the buzzer fires on a new task.
+    setInterval(() => { BW.refreshOrders().then(() => checkNewOrders()).catch(() => {}); }, 20000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) BW.refreshOrders().then(() => checkNewOrders()).catch(() => {});
+    });
+
+    render();
+  }
+
+  // Rider taps this once to unlock alarm sound + system notifications (browsers block
+  // audio until a user gesture). Also re-subscribes to push.
+  let _alertsOn = false;
+  function enableAlerts() {
+    try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
+    if (window.SaardhaPush) window.SaardhaPush.enable();
+    _alertsOn = true;
+    toast("🔔 Alerts on — you'll be buzzed on new tasks");
     render();
   }
 
@@ -119,6 +139,7 @@
     const orders = myOrders();
     root.innerHTML = "";
     root.appendChild(renderTopBar());
+    if (!_alertsOn) root.appendChild(renderAlertsBanner());
     root.appendChild(renderStatusCard());
     root.appendChild(renderKycCard());
     root.appendChild(renderCashCard());
@@ -480,6 +501,14 @@
     return topbar("Saradhi", [
       el("span", { class: "topbar-name" }, me ? (me.name || me.email) : ""),
       el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Logout"),
+    ]);
+  }
+
+  function renderAlertsBanner() {
+    return el("div", { class: "rider-status-card", style: "margin-top:12px;background:linear-gradient(90deg,#e62a1f,#ff6a3c);color:#fff;cursor:pointer", onClick: enableAlerts }, [
+      el("div", { style: "font-weight:800;font-size:15px" }, "🔔 Turn on task alerts"),
+      el("div", { style: "font-size:12.5px;opacity:.95;margin:3px 0 10px" }, "Tap once to allow the alarm sound + notifications so you never miss a new delivery."),
+      el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:800", onClick: enableAlerts }, "Enable alerts"),
     ]);
   }
 
