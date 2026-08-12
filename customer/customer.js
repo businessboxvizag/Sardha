@@ -137,6 +137,7 @@
 
     root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "Saardha", []));
     festivalRibbon(root);   // themed festival strip (e.g. Independence Day) when active
+    festivalOverlay();      // full-screen floating petals + flying flags
 
     const nav = el("div", { class: "sidebar" }, [
       navItem("stores",   ICONS.store,   "My Stores"),
@@ -307,11 +308,73 @@
       "@keyframes bwShine{0%{background-position:-180% 0}100%{background-position:180% 0}}" +
       "@keyframes bwFall{0%{transform:translateY(-12px) rotate(0);opacity:0}12%{opacity:1}100%{transform:translateY(52px) rotate(260deg);opacity:0}}" +
       "@keyframes bwGlow{0%,100%{text-shadow:0 0 5px #ffb300}50%{text-shadow:0 0 16px #ffe082}}" +
+      // Full-screen ambient effects: petals rising, flags flying across, sparkles twinkling.
+      "@keyframes bwPetal{0%{transform:translateY(30px) rotate(0);opacity:0}10%{opacity:.85}88%{opacity:.85}100%{transform:translateY(-112vh) rotate(360deg);opacity:0}}" +
+      "@keyframes bwFly{0%{transform:translateX(-18vw) rotate(-8deg)}50%{transform:translateX(48vw) rotate(8deg)}100%{transform:translateX(118vw) rotate(-8deg)}}" +
+      "@keyframes bwTwinkle{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1.2)}}" +
       ".bw-fest{position:relative;overflow:hidden}" +
       ".bw-fest .fflag{display:inline-block;animation:bwFlagWave 1.3s ease-in-out infinite;transform-origin:bottom left}" +
       ".bw-fest .fshine{position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);background-size:200% 100%;animation:bwShine 3.2s linear infinite;pointer-events:none}" +
-      ".bw-fest .fconf{position:absolute;top:0;width:7px;height:7px;border-radius:2px;animation:bwFall linear infinite;pointer-events:none}";
+      ".bw-fest .fconf{position:absolute;top:0;width:7px;height:7px;border-radius:2px;animation:bwFall linear infinite;pointer-events:none}" +
+      "#bw-fest-overlay{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:9990}" +
+      "#bw-fest-overlay .petal{position:absolute;bottom:-24px;border-radius:50%;animation:bwPetal linear infinite}" +
+      "#bw-fest-overlay .flyflag{position:absolute;left:0;animation:bwFly linear infinite;filter:drop-shadow(0 2px 3px rgba(0,0,0,.25))}" +
+      "#bw-fest-overlay .spark{position:absolute;border-radius:50%;animation:bwTwinkle ease-in-out infinite}";
     document.head.appendChild(st);
+  }
+
+  // Full-screen festive overlay (floating petals + flying flags). Created once; harmless
+  // pointer-events:none so it never blocks taps. Removed if the theme turns off.
+  function festivalOverlay() {
+    const theme = activeFestival();
+    const existing = document.getElementById("bw-fest-overlay");
+    if (!theme || theme === "none") { if (existing) existing.remove(); return; }
+    if (existing) return;
+    ensureFestivalStyles();
+    const ov = el("div", { id: "bw-fest-overlay" });
+    if (theme === "independence") {
+      const colors = ["#ff9933", "#ffffff", "#138808"];
+      for (let i = 0; i < 22; i++) {
+        const p = el("div", { class: "petal" });
+        const s = 6 + Math.random() * 9;
+        p.style.left = (Math.random() * 100) + "%";
+        p.style.width = p.style.height = s + "px";
+        p.style.background = colors[i % 3];
+        p.style.boxShadow = "0 0 4px rgba(0,0,0,.15)";
+        p.style.animationDuration = (6 + Math.random() * 7) + "s";
+        p.style.animationDelay = (Math.random() * 9) + "s";
+        ov.appendChild(p);
+      }
+      for (let i = 0; i < 5; i++) {
+        const f = el("div", { class: "flyflag" }, "🇮🇳");
+        f.style.top = (8 + Math.random() * 74) + "%";
+        f.style.fontSize = (22 + Math.random() * 18) + "px";
+        f.style.animationDuration = (9 + Math.random() * 9) + "s";
+        f.style.animationDelay = (Math.random() * 11) + "s";
+        ov.appendChild(f);
+      }
+    } else if (theme === "diwali") {
+      const colors = ["#ffd54f", "#ff8f00", "#fff59d", "#ffab40"];
+      for (let i = 0; i < 26; i++) {
+        const sp = el("div", { class: "spark" });
+        const s = 4 + Math.random() * 6;
+        sp.style.left = (Math.random() * 100) + "%";
+        sp.style.top = (Math.random() * 100) + "%";
+        sp.style.width = sp.style.height = s + "px";
+        sp.style.background = colors[i % colors.length];
+        sp.style.boxShadow = "0 0 8px " + colors[i % colors.length];
+        sp.style.animationDuration = (1.2 + Math.random() * 2) + "s";
+        sp.style.animationDelay = (Math.random() * 2) + "s";
+        ov.appendChild(sp);
+      }
+      for (let i = 0; i < 4; i++) {
+        const d = el("div", { class: "flyflag" }, "🪔");
+        d.style.top = (10 + Math.random() * 70) + "%"; d.style.fontSize = (20 + Math.random() * 16) + "px";
+        d.style.animationDuration = (10 + Math.random() * 8) + "s"; d.style.animationDelay = (Math.random() * 10) + "s";
+        ov.appendChild(d);
+      }
+    }
+    document.body.appendChild(ov);
   }
 
   function festivalRibbon(root) {
