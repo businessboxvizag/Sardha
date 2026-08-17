@@ -2769,6 +2769,10 @@
   }
 
   function render() {
+    // Don't rebuild the screen (wiping a form the user is filling — checkout, address,
+    // ticket reply) while an input/textarea/select is focused.
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT") && root.contains && root.contains(ae)) return;
     switch (state.route) {
       case "vendor":        return viewVendor();
       case "track":         return viewTrack();

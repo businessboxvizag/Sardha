@@ -1133,6 +1133,9 @@
   }
 
   function render() {
+    // Don't rebuild the screen (wiping a form in progress) while an input is focused.
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT") && document.getElementById("root") && document.getElementById("root").contains(ae)) return;
     switch (state.route) {
       case "inventory": return viewInventory();
       case "analytics": return viewAnalytics();

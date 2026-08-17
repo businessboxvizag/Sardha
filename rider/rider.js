@@ -150,6 +150,11 @@
   }
 
   function render() {
+    // Don't wipe a form the Saradhi is actively filling (KYC docs, delivery details).
+    // If an input/textarea/select in the app is focused, skip this re-render; the next
+    // one (after they move on) will reflect any changes.
+    const ae = document.activeElement;
+    if (ae && root.contains(ae) && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT")) return;
     const orders = myOrders();
     root.innerHTML = "";
     root.appendChild(renderTopBar());
