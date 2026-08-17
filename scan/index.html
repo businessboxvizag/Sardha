@@ -162,6 +162,96 @@
       return true;
     }
 
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+    async function fetchAllVendors() {
+      try { const res = await fetch(API_BASE + "/api/public/vendors"); if (res.ok) return await res.json(); } catch {}
+      return [];
+    }
+
+    function distKm(la1, lo1, la2, lo2) {
+      if (la1 == null || lo1 == null || la2 == null || lo2 == null) return Infinity;
+      const R = 6371, toR = (d) => (d * Math.PI) / 180;
+      const dLa = toR(la2 - la1), dLo = toR(lo2 - lo1);
+      const a = Math.sin(dLa / 2) ** 2 + Math.cos(toR(la1)) * Math.cos(toR(la2)) * Math.sin(dLo / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // Universal-QR landing: location-aware, filterable picker (scales to many stores).
+    async function showStorePicker() {
+      const card = document.getElementById("card");
+      card.innerHTML = `
+        <div class="app-logo">🚚</div>
+        <div class="app-name">Saardha</div>
+        <div class="app-tagline" id="pickerTag">Choose your store</div>
+        <input id="storeSearch" placeholder="🔍 Search store name / area…" autocomplete="off"
+          style="width:100%;padding:12px 14px;border-radius:10px;border:1px solid #2a2a3a;background:#0f0f13;color:#f0f0f0;margin:16px 0 10px;font-size:15px" />
+        <div id="storeCats" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:8px"></div>
+        <div id="storeList" style="max-height:48vh;overflow:auto;text-align:left"><div class="loading">Loading stores…</div></div>
+        <a class="btn btn-ghost" href="/customer/" style="margin-top:12px">Open app without a store</a>
+      `;
+      const vendors = await fetchAllVendors();
+      const listEl = document.getElementById("storeList");
+      const searchEl = document.getElementById("storeSearch");
+      const catsEl = document.getElementById("storeCats");
+      const tagEl = document.getElementById("pickerTag");
+      let myPos = null, activeCat = "";
+
+      // Category filter chips (derived from the stores).
+      const cats = Array.from(new Set(vendors.map((v) => (v.category || "").trim()).filter(Boolean))).sort();
+      function renderCats() {
+        catsEl.innerHTML = "";
+        [["", "All"]].concat(cats.map((c) => [c, c])).forEach(([val, label]) => {
+          const chip = document.createElement("button");
+          chip.textContent = label;
+          chip.style.cssText = "flex:0 0 auto;padding:6px 12px;border-radius:16px;border:1px solid #2a2a3a;font-size:12px;cursor:pointer;white-space:nowrap;background:" + (activeCat === val ? "#f5a623" : "#252535") + ";color:" + (activeCat === val ? "#0f0f13" : "#ddd");
+          chip.onclick = () => { activeCat = val; renderCats(); renderList(searchEl.value); };
+          catsEl.appendChild(chip);
+        });
+      }
+      renderCats();
+
+      function renderList(q) {
+        const query = (q || "").toLowerCase().trim();
+        let filtered = vendors.filter((v) =>
+          (!activeCat || (v.category || "") === activeCat) &&
+          (!query || (String(v.name) + " " + String(v.category) + " " + String(v.area)).toLowerCase().includes(query)));
+        if (myPos) filtered = filtered.map((v) => ({ ...v, _d: distKm(myPos.lat, myPos.lng, v.lat, v.lng) })).sort((a, b) => a._d - b._d);
+        if (!vendors.length) { listEl.innerHTML = '<div class="loading">No stores available yet.</div>'; return; }
+        if (!filtered.length) { listEl.innerHTML = '<div class="loading">No stores match. Try a different search or category.</div>'; return; }
+        // Cap the visible rows so the list is never a giant scroll; search/filter narrows further.
+        const shown = filtered.slice(0, 40);
+        listEl.innerHTML = "";
+        shown.forEach((v) => {
+          const near = (myPos && isFinite(v._d)) ? '<span style="color:#4caf50;font-size:11px;margin-left:6px">· ' + v._d.toFixed(1) + ' km</span>' : "";
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:#252535;margin-bottom:8px;cursor:pointer";
+          row.innerHTML = '<div style="font-size:26px">' + esc(v.img || "🏪") + '</div>' +
+            '<div style="flex:1;min-width:0"><div style="font-weight:700">' + esc(v.name) + near + '</div>' +
+            '<div style="font-size:12px;color:#888">' + esc(v.category || "") + " · " + esc(v.area || "") + '</div></div>' +
+            '<div style="color:#f5a623;font-size:18px">→</div>';
+          row.onclick = () => { addVendor(v.id); window.location.href = customerUrl(v); };
+          listEl.appendChild(row);
+        });
+        if (filtered.length > shown.length) {
+          const more = document.createElement("div");
+          more.style.cssText = "text-align:center;color:#666;font-size:12px;padding:6px";
+          more.textContent = "+ " + (filtered.length - shown.length) + " more — search to narrow down";
+          listEl.appendChild(more);
+        }
+      }
+      renderList("");
+      if (searchEl) searchEl.addEventListener("input", (e) => renderList(e.target.value));
+
+      // Ask for location → sort nearest-first (the store you're standing at floats to the top).
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (p) => { myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; if (tagEl) tagEl.textContent = "Stores near you"; renderList(searchEl.value); },
+          () => {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        );
+      }
+    }
+
     async function fetchVendor(id) {
       try {
         const res = await fetch(API_BASE + "/api/public/vendors/" + id);
@@ -239,22 +329,9 @@
       const params = new URLSearchParams(location.search);
       const vendorId = params.get("v");
 
-      /* ── No vendor param — generic splash ── */
+      /* ── No vendor param (universal Saardha QR) — show the store picker ── */
       if (!vendorId) {
-        if (isAndroid() && !isInstalled()) {
-          showAndroidInstall(null);
-        } else if (isIOS() && !isInstalled()) {
-          showIOSInstall(null);
-        } else {
-          card.innerHTML = `
-            <div class="app-logo">🚚</div>
-            <div class="app-name">Saardha</div>
-            <div class="app-tagline">On-demand local delivery</div>
-            <p style="color:#666;font-size:14px;margin-top:8px">
-              Scan a store's QR code to get started.
-            </p>
-          `;
-        }
+        await showStorePicker();
         return;
       }
 

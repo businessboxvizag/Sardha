@@ -316,6 +316,24 @@
     return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&ecc=M&format=png&data="
       + encodeURIComponent(APP_BASE + "/scan/?v=" + vendorId);
   }
+  // ONE universal QR for the whole platform — customers scan it and pick their store.
+  function masterQrUrl() {
+    return "https://api.qrserver.com/v1/create-qr-code/?size=600x600&ecc=M&format=png&data="
+      + encodeURIComponent(APP_BASE + "/scan/");
+  }
+  function printMasterQr() {
+    const w = window.open("", "_blank");
+    if (!w) { toast("Allow pop-ups to print the QR"); return; }
+    const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saardha QR</title>" +
+      "<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:40px}h1{color:#e62a1f;margin:0 0 4px}p{color:#555;margin:2px 0 20px}img{width:340px;height:340px}.tag{font-size:18px;font-weight:700;margin-top:14px}.sub{color:#777;font-size:13px;margin-top:6px}" +
+      "@media print{button{display:none}}button{margin-top:20px;background:#e62a1f;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer}</style></head><body>" +
+      "<h1>Saardha</h1><p>Scan to order — local home delivery</p>" +
+      "<img src='" + masterQrUrl() + "' alt='Saardha QR'/>" +
+      "<div class='tag'>📷 Scan &amp; choose your store</div>" +
+      "<div class='sub'>One QR for every Saardha store</div>" +
+      "<button onclick='window.print()'>🖨 Print</button></body></html>";
+    w.document.open(); w.document.write(html); w.document.close();
+  }
 
   function viewVendors() {
     const vendors = BW.vendors();
@@ -355,6 +373,18 @@
           el("p", { class: "page-sub", style: "margin:0" }, "Create and manage merchant stores. Each store gets a unique QR code."),
         ]),
         el("button", { class: "btn primary", onClick: createStore }, "+ Create Store"),
+      ]),
+      // Single universal QR — print once, works for every store.
+      el("div", { class: "card", style: "margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap" }, [
+        el("img", { src: masterQrUrl(), alt: "Saardha universal QR", style: "width:120px;height:120px;border-radius:8px;background:#fff" }),
+        el("div", { style: "flex:1;min-width:200px" }, [
+          el("div", { style: "font-weight:800;font-size:16px" }, "🎯 One Saardha QR for all stores"),
+          el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Print this once and place it anywhere. Customers scan it and pick their store from the list — no separate QR per shop needed."),
+          el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
+            el("button", { class: "btn primary sm", onClick: printMasterQr }, "🖨 Print / download"),
+            el("a", { class: "btn ghost sm", href: masterQrUrl(), download: "saardha-qr.png", target: "_blank", rel: "noopener" }, "Save PNG"),
+          ]),
+        ]),
       ]),
       vendors.length === 0
         ? el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No stores yet. Create one to get started."])
