@@ -562,6 +562,67 @@
     }
   }
 
+  // Inline price element (price + optional struck MRP + % off).
+  function priceEl(p) {
+    if (p.mrp && p.mrp > p.price) {
+      return el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+        el("span", { style: "font-weight:800" }, money(p.price)),
+        el("span", { style: "text-decoration:line-through;color:var(--muted);font-size:12px" }, money(p.mrp)),
+        el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
+      ]);
+    }
+    return el("div", { style: "font-weight:800" }, money(p.price));
+  }
+
+  // Flipkart/Amazon-style product card (big image on top). Tapping the image zooms in.
+  function productCard(p, v, cols, ctrlBox) {
+    const img = p.photoUrl
+      ? el("img", { src: p.photoUrl, alt: p.name, loading: "lazy", style: "width:100%;height:160px;object-fit:cover;border-radius:12px;cursor:zoom-in" })
+      : el("div", { style: "width:100%;height:160px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:44px;background:" + cols[0] + ";color:" + cols[1] }, v.img || "🛍");
+    if (p.photoUrl) img.addEventListener("click", () => openProductPreview(p, v));
+    return el("div", { class: "card", style: "padding:8px;display:flex;flex-direction:column" }, [
+      img,
+      el("div", { style: "font-weight:600;font-size:14px;margin:8px 0 3px;line-height:1.3", onClick: () => openProductPreview(p, v) }, p.name),
+      priceEl(p),
+      p.unit ? el("div", { class: "muted small", style: "margin-top:2px" }, "per " + p.unit) : document.createTextNode(""),
+      el("div", { style: "margin-top:8px;display:flex;justify-content:flex-end" }, [ctrlBox]),
+    ]);
+  }
+
+  // Product detail / zoomable image preview with add-to-cart.
+  function openProductPreview(p, v) {
+    let close;
+    const ctrlWrap = el("div", {});
+    function renderCtrl() {
+      ctrlWrap.innerHTML = "";
+      const qty = state.cart[p.id] || 0;
+      if (!qty) {
+        ctrlWrap.appendChild(el("button", { class: "btn primary", style: "width:100%", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "🛒 Add to cart"));
+      } else {
+        ctrlWrap.appendChild(el("div", { style: "display:flex;align-items:center;gap:16px;justify-content:center" }, [
+          el("button", { class: "btn ghost", onClick: () => { setQty(p.id, qty - 1); refreshItem(p.id); renderCtrl(); } }, "−"),
+          el("span", { style: "font-weight:800;font-size:18px" }, String(qty)),
+          el("button", { class: "btn ghost", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "+"),
+        ]));
+      }
+    }
+    renderCtrl();
+    const media = p.photoUrl
+      ? el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;max-height:62vh;object-fit:contain;border-radius:12px;background:#111" })
+      : el("div", { style: "width:100%;height:200px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--surface-2,#eee)" }, v.img || "🛍");
+    close = UI.modal({
+      title: p.name,
+      body: el("div", {}, [
+        media,
+        el("div", { style: "margin-top:12px;font-size:18px" }, [priceEl(p)]),
+        p.unit ? el("div", { class: "muted small", style: "margin-top:2px" }, "per " + p.unit) : document.createTextNode(""),
+        p.description ? el("p", { class: "muted small", style: "margin-top:10px;line-height:1.5" }, p.description) : document.createTextNode(""),
+        el("div", { style: "margin-top:16px" }, [ctrlWrap]),
+      ]),
+      footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Close")],
+    });
+  }
+
   let _lastViewedStore = null;
   function viewVendor() {
     const v = BW.vendor(state.vendorId);
@@ -571,32 +632,33 @@
     const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
     const showPhotos = v.showItemPhotos !== false;   // store toggle (default: show)
 
-    const listEl = state.vendorLoading ? skeletonItems(6) : el("div", { style: "padding:0 2px" });
+    const listEl = state.vendorLoading
+      ? skeletonItems(6)
+      : el("div", { style: showPhotos ? "display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 4px" : "padding:0 2px" });
     if (!state.vendorLoading) products.forEach((p, i) => {
       const cols = TILE_COLORS[i % TILE_COLORS.length];
       const ctrlBox = el("div", { id: "it-" + p.id, class: "item-ctrl" }, [itemCtrl(p)]);
-      listEl.appendChild(el("div", { class: "item-row" }, [
-        el("span", { class: "veg-dot" }, el("span", {})),
-        el("div", { class: "item-info" }, [
-          el("div", { class: "item-name" }, p.name),
-          (p.mrp && p.mrp > p.price)
-            ? el("div", { class: "item-price", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
-                el("span", {}, money(p.price)),
-                el("span", { style: "text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12px" }, money(p.mrp)),
-                el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
-              ])
-            : el("div", { class: "item-price" }, money(p.price)),
-          p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
-        ]),
-        showPhotos
-          ? el("div", { class: "item-thumb-wrap" }, [
-              p.photoUrl
-                ? el("div", { class: "item-thumb", style: "padding:0;overflow:hidden" }, el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;height:100%;object-fit:cover" }))
-                : el("div", { class: "item-thumb", style: "background:" + cols[0] + ";color:" + cols[1] }, v.img || "🍽"),
-              ctrlBox,
-            ])
-          : el("div", { class: "item-thumb-wrap", style: "min-width:auto;justify-content:flex-end" }, [ctrlBox]),
-      ]));
+      if (showPhotos) {
+        // Image-forward store → big product card (Flipkart/Amazon style), tap image to zoom.
+        listEl.appendChild(productCard(p, v, cols, ctrlBox));
+      } else {
+        // Clean text list (store turned photos off).
+        listEl.appendChild(el("div", { class: "item-row" }, [
+          el("span", { class: "veg-dot" }, el("span", {})),
+          el("div", { class: "item-info" }, [
+            el("div", { class: "item-name" }, p.name),
+            (p.mrp && p.mrp > p.price)
+              ? el("div", { class: "item-price", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+                  el("span", {}, money(p.price)),
+                  el("span", { style: "text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12px" }, money(p.mrp)),
+                  el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
+                ])
+              : el("div", { class: "item-price" }, money(p.price)),
+            p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
+          ]),
+          el("div", { class: "item-thumb-wrap", style: "min-width:auto;justify-content:flex-end" }, [ctrlBox]),
+        ]));
+      }
     });
 
     const closed = v.active === false || v.status === "inactive";
