@@ -55,7 +55,18 @@
     render();
   }
 
-  function go(route) { state.route = route; window.scrollTo(0, 0); render(); }
+  let _navPop = false;
+  function go(route) {
+    state.route = route;
+    if (!_navPop && route !== "overview") { try { history.pushState({ r: route }, "", "#" + route); } catch (e) {} }
+    window.scrollTo(0, 0);
+    render();
+  }
+  window.addEventListener("popstate", function (ev) {
+    _navPop = true;
+    go(ev.state && ev.state.r ? ev.state.r : "overview");
+    _navPop = false;
+  });
 
   function shell(active, body) {
     root.innerHTML = "";

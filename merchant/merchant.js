@@ -117,6 +117,7 @@
     });
     requestWakeLock();       // keep the screen awake while the store app is open
     showAlertsPrompt();      // one-tap enable for alarm sound + notifications
+    mountFloatingHome();     // movable circle → tap to jump back to orders
 
     render();
   }
@@ -253,10 +254,46 @@
     ]));
   }
 
+  let _navPop = false;
   function go(route, extra = {}) {
     Object.assign(state, { route }, extra);
+    // Android Back steps back one screen instead of exiting. "orders" is home/base.
+    if (!_navPop && route !== "orders") {
+      try { history.pushState({ r: route, e: extra }, "", "#" + route); } catch (e) {}
+    }
     window.scrollTo(0, 0);
     render();
+  }
+  window.addEventListener("popstate", function (ev) {
+    _navPop = true;
+    const s = ev.state;
+    if (s && s.r) go(s.r, s.e || {}); else go("orders");
+    _navPop = false;
+  });
+
+  // Draggable floating "back to orders" bubble — always on screen, movable out of the way.
+  function mountFloatingHome() {
+    if (document.getElementById("m-fab")) return;
+    const fab = document.createElement("div");
+    fab.id = "m-fab";
+    fab.style.cssText = "position:fixed;right:16px;bottom:90px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#e62a1f,#ff6a3c);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 6px 18px rgba(230,42,31,.45);z-index:9500;cursor:pointer;touch-action:none;user-select:none";
+    fab.textContent = "🧾";
+    fab.title = "Back to orders";
+    let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    function down(x, y) { dragging = true; moved = false; sx = x; sy = y; const r = fab.getBoundingClientRect(); ox = r.left; oy = r.top; }
+    function move(x, y) {
+      if (!dragging) return;
+      const dx = x - sx, dy = y - sy;
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved = true;
+      let nl = Math.max(6, Math.min(window.innerWidth - 62, ox + dx));
+      let nt = Math.max(60, Math.min(window.innerHeight - 62, oy + dy));
+      fab.style.left = nl + "px"; fab.style.top = nt + "px"; fab.style.right = "auto"; fab.style.bottom = "auto";
+    }
+    function up() { if (dragging && !moved) { go("orders"); } dragging = false; }
+    fab.addEventListener("pointerdown", (e) => { fab.setPointerCapture(e.pointerId); down(e.clientX, e.clientY); });
+    fab.addEventListener("pointermove", (e) => move(e.clientX, e.clientY));
+    fab.addEventListener("pointerup", up);
+    document.body.appendChild(fab);
   }
 
   function shell(active, body) {

@@ -111,14 +111,26 @@
   }
 
   /* ----- navigation ----- */
+  let _navPop = false;   // true while handling a browser Back, so we don't re-push history
   function go(route, extra = {}) {
     // Stop any active camera scan before leaving the scan view
     if (window._scanCleanup) { window._scanCleanup(); window._scanCleanup = null; }
     stopEtaPolling();
     Object.assign(state, { route }, extra);
+    // Push a browser history entry so Android's Back button steps back one screen
+    // instead of exiting the app. Home ("stores") is the base — Back there exits.
+    if (!_navPop && route !== "stores") {
+      try { history.pushState({ r: route, e: extra }, "", "#" + route); } catch (e) {}
+    }
     window.scrollTo(0, 0);
     render();
   }
+  window.addEventListener("popstate", function (ev) {
+    _navPop = true;
+    const s = ev.state;
+    if (s && s.r) go(s.r, s.e || {}); else go("stores");
+    _navPop = false;
+  });
 
   /* ----- nav icons ----- */
   const ICONS = {
