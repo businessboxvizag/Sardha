@@ -1053,6 +1053,9 @@
     // Pharmacy prescription toggle
     const rxCb = el("input", { type: "checkbox" });
     rxCb.checked = !!v.requiresPrescription;
+    // Show item photos to customers (Flipkart/Amazon-style) or a clean list. Default on.
+    const photosCb = el("input", { type: "checkbox" });
+    photosCb.checked = v.showItemPhotos !== false;
 
     // Store photos: a cover image + a small gallery customers can browse.
     let _photoUrl = v.photoUrl || (typeof v.img === "string" && /^https?:/.test(v.img) ? v.img : null);
@@ -1131,6 +1134,7 @@
           businessPhone: bizPhoneEl.value.trim(),
           prepMins: Number(prepEl.value) || 15,
           storeDiscountPct: Math.max(0, Math.min(90, Number(discEl.value) || 0)),
+          showItemPhotos: photosCb.checked,
           promos: _promos,
           requiresPrescription: rxCb.checked,
           lat: _lat, lng: _lng, mapsUrl: _mapsUrl,
@@ -1165,6 +1169,7 @@
           el("div", { style: "flex:1" }, [fieldRow("Store-wide discount %", discEl, "Optional. Shown on your storefront.")]),
         ]),
         el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [rxCb, el("span", { class: "small" }, "This is a pharmacy — require prescription + selfie at checkout")]),
+        el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [photosCb, el("span", { class: "small" }, "Show item photos to customers (image-forward, like Flipkart/Amazon). Turn off for a clean text list.")]),
       ]),
       el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:4px" }, "Promo codes"),

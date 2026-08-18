@@ -569,6 +569,7 @@
     if (BW.track && _lastViewedStore !== v.id) { _lastViewedStore = v.id; BW.track("view_store", { vendorId: v.id, name: v.name }); }
     const products = BW.products(v.id);
     const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
+    const showPhotos = v.showItemPhotos !== false;   // store toggle (default: show)
 
     const listEl = state.vendorLoading ? skeletonItems(6) : el("div", { style: "padding:0 2px" });
     if (!state.vendorLoading) products.forEach((p, i) => {
@@ -587,12 +588,14 @@
             : el("div", { class: "item-price" }, money(p.price)),
           p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
         ]),
-        el("div", { class: "item-thumb-wrap" }, [
-          p.photoUrl
-            ? el("div", { class: "item-thumb", style: "padding:0;overflow:hidden" }, el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;height:100%;object-fit:cover" }))
-            : el("div", { class: "item-thumb", style: "background:" + cols[0] + ";color:" + cols[1] }, v.img || "🍽"),
-          ctrlBox,
-        ]),
+        showPhotos
+          ? el("div", { class: "item-thumb-wrap" }, [
+              p.photoUrl
+                ? el("div", { class: "item-thumb", style: "padding:0;overflow:hidden" }, el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;height:100%;object-fit:cover" }))
+                : el("div", { class: "item-thumb", style: "background:" + cols[0] + ";color:" + cols[1] }, v.img || "🍽"),
+              ctrlBox,
+            ])
+          : el("div", { class: "item-thumb-wrap", style: "min-width:auto;justify-content:flex-end" }, [ctrlBox]),
       ]));
     });
 
