@@ -61,6 +61,24 @@
     { value: "bag",     label: "Per bag / sack"   },
     { value: "strip",   label: "Per strip"        },
   ];
+  // Food / restaurant / sweets units (sweets sold by weight, tiffins by plate/piece, etc.)
+  const FOOD_UNITS = [
+    { value: "plate",      label: "Per plate"           },
+    { value: "half plate", label: "Per half plate"      },
+    { value: "full plate", label: "Per full plate"      },
+    { value: "piece",      label: "Per piece / pcs"     },
+    { value: "kg",         label: "Per kg"              },
+    { value: "500g",       label: "Per 500 g"           },
+    { value: "250g",       label: "Per 250 g"           },
+    { value: "g",          label: "Per gram (g)"        },
+    { value: "cup",        label: "Per cup"             },
+    { value: "glass",      label: "Per glass"           },
+    { value: "bowl",       label: "Per bowl"            },
+    { value: "packet",     label: "Per packet / parcel" },
+    { value: "box",        label: "Per box"             },
+    { value: "dozen",      label: "Per dozen (12)"      },
+    { value: "combo",      label: "Per combo / meal"    },
+  ];
 
   const CATEGORY_OPTIONS = [
     { value: "Restaurant",   label: "Restaurant" },
@@ -718,8 +736,16 @@
       ]));
 
     } else {
-      /* Food + everything else: price + optional qty-available */
-      fields.push(el("div", { class: "field" }, [el("label", {}, "Price (₹)"), priceEl]));
+      /* Food + everything else: "Price per [unit]" (plate / piece / kg / gram…) + optional qty */
+      unitEl = el("select", {});
+      FOOD_UNITS.forEach((u) =>
+        unitEl.appendChild(el("option", { value: u.value, ...(p && p.unit === u.value ? { selected: "" } : {}) }, u.label))
+      );
+      fields.push(el("div", { class: "field" }, [
+        el("label", {}, "Price (₹) — sold per"),
+        el("div", { class: "row", style: "gap:8px;align-items:center" }, [priceEl, unitEl]),
+        el("div", { class: "muted small", style: "margin-top:4px" }, "e.g. ₹120 per plate · ₹400 per kg · ₹15 per piece"),
+      ]));
       if (food) {
         qtyEl = el("input", {
           type: "number",
@@ -727,7 +753,7 @@
           placeholder: "e.g. 20",
           min: "0",
         });
-        fields.push(el("div", { class: "field" }, [el("label", {}, "Quantity available"), qtyEl]));
+        fields.push(el("div", { class: "field" }, [el("label", {}, "Quantity available (optional)"), qtyEl]));
       }
     }
 
@@ -773,7 +799,7 @@
         };
         if (pharma) { payload.unit = unitEl.value; if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value); }
         else if (general) { payload.unit = unitEl.value || "piece"; if (stockEl.value !== "") payload.qty = Number(stockEl.value); }
-        else if (food && qtyEl && qtyEl.value !== "") { payload.qty = Number(qtyEl.value); }
+        else { payload.unit = unitEl ? unitEl.value : (p && p.unit) || null; if (food && qtyEl && qtyEl.value !== "") payload.qty = Number(qtyEl.value); }
         if (photoData) { try { payload.photoUrl = await uploadToCloudinary(photoData); } catch (e) { toast("Photo upload failed: " + (e.message || "")); } }
         else if (p && p.photoUrl) { payload.photoUrl = p.photoUrl; }
         await BW.upsertProduct(payload);

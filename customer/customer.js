@@ -585,7 +585,7 @@
                 el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
               ])
             : el("div", { class: "item-price" }, money(p.price)),
-          el("div", { class: "item-unit" }, "per " + p.unit),
+          p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
         ]),
         el("div", { class: "item-thumb-wrap" }, [
           p.photoUrl
