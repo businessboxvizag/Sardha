@@ -130,9 +130,10 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       }
     }
 
-    const { name, price, mrp, unit, qty, photoUrl } = req.body;
+    const { name, price, mrp, unit, qty, photoUrl, photos } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
 
+    const photoList = Array.isArray(photos) ? photos.filter(Boolean).slice(0, 5) : (photoUrl ? [photoUrl] : []);
     const ref = db.collection("products").doc();
     const product = {
       id: ref.id,
@@ -143,7 +144,7 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       mrp: (mrp !== undefined && Number(mrp) > Number(price || 0)) ? Number(mrp) : null,
       unit: unit || "item",
       ...(qty !== undefined ? { qty: Number(qty) } : {}),
-      ...(photoUrl ? { photoUrl } : {}),
+      ...(photoList.length ? { photoUrl: photoList[0], photos: photoList } : {}),
       available: true,
       createdAt: new Date().toISOString(),
     };
@@ -173,11 +174,16 @@ router.put("/:vid/products/:pid", requireAuth, requireRole("merchant", "admin"),
       return res.status(403).json({ error: "Product does not belong to this vendor" });
     }
 
-    const allowed = ["name", "price", "mrp", "unit", "qty", "available", "photoUrl"];
+    const allowed = ["name", "price", "mrp", "unit", "qty", "available", "photoUrl", "photos"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     if (updates.price !== undefined) updates.price = Number(updates.price);
     if (updates.qty   !== undefined) updates.qty   = Number(updates.qty);
+    // Keep photos as an array (max 5) and sync the primary photoUrl to the first one.
+    if (updates.photos !== undefined) {
+      updates.photos = Array.isArray(updates.photos) ? updates.photos.filter(Boolean).slice(0, 5) : [];
+      updates.photoUrl = updates.photos[0] || null;
+    }
     // MRP only kept when it's above the sale price; otherwise cleared.
     if (updates.mrp !== undefined) {
       const salePrice = updates.price !== undefined ? updates.price : Number(doc.data().price || 0);

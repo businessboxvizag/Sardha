@@ -576,12 +576,17 @@
 
   // Flipkart/Amazon-style product card (big image on top). Tapping the image zooms in.
   function productCard(p, v, cols, ctrlBox) {
+    const nPhotos = productPhotos(p).length;
     const img = p.photoUrl
       ? el("img", { src: p.photoUrl, alt: p.name, loading: "lazy", style: "width:100%;height:160px;object-fit:cover;border-radius:12px;cursor:zoom-in" })
       : el("div", { style: "width:100%;height:160px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:44px;background:" + cols[0] + ";color:" + cols[1] }, v.img || "🛍");
     if (p.photoUrl) img.addEventListener("click", () => openProductPreview(p, v));
-    return el("div", { class: "card", style: "padding:8px;display:flex;flex-direction:column" }, [
+    const imgWrap = el("div", { style: "position:relative" }, [
       img,
+      nPhotos > 1 ? el("div", { style: "position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px" }, "📷 " + nPhotos) : document.createTextNode(""),
+    ]);
+    return el("div", { class: "card", style: "padding:8px;display:flex;flex-direction:column" }, [
+      imgWrap,
       el("div", { style: "font-weight:600;font-size:14px;margin:8px 0 3px;line-height:1.3", onClick: () => openProductPreview(p, v) }, p.name),
       priceEl(p),
       p.unit ? el("div", { class: "muted small", style: "margin-top:2px" }, "per " + p.unit) : document.createTextNode(""),
@@ -589,31 +594,62 @@
     ]);
   }
 
-  // Product detail / zoomable image preview with add-to-cart.
+  function productPhotos(p) {
+    return (Array.isArray(p.photos) && p.photos.length) ? p.photos.filter(Boolean) : (p.photoUrl ? [p.photoUrl] : []);
+  }
+
+  // Fullscreen image viewer — image shown fully; swipe / arrows to move between angles.
+  function openLightbox(photos, start) {
+    let idx = start || 0;
+    const overlay = el("div", { style: "position:fixed;inset:0;z-index:11000;background:#000;display:flex;align-items:center;justify-content:center;touch-action:pan-y" });
+    const img = el("img", { src: photos[idx], alt: "", style: "max-width:100%;max-height:100%;object-fit:contain" });
+    overlay.appendChild(img);
+    const dotsWrap = el("div", { style: "position:absolute;bottom:16px;left:0;right:0;display:flex;gap:6px;justify-content:center" });
+    function dots() { dotsWrap.innerHTML = ""; photos.forEach((_, i) => dotsWrap.appendChild(el("span", { style: "width:8px;height:8px;border-radius:50%;background:" + (i === idx ? "#fff" : "rgba(255,255,255,.4)") }))); }
+    function show(i) { idx = (i + photos.length) % photos.length; img.src = photos[idx]; dots(); }
+    overlay.appendChild(el("button", { style: "position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);color:#fff;border:none;font-size:20px;width:40px;height:40px;border-radius:50%;cursor:pointer", onClick: () => overlay.remove() }, "✕"));
+    if (photos.length > 1) {
+      overlay.appendChild(el("button", { style: "position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:none;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer", onClick: () => show(idx - 1) }, "‹"));
+      overlay.appendChild(el("button", { style: "position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:none;font-size:26px;width:44px;height:44px;border-radius:50%;cursor:pointer", onClick: () => show(idx + 1) }, "›"));
+    }
+    dots(); overlay.appendChild(dotsWrap);
+    let sx = 0;
+    overlay.addEventListener("touchstart", (e) => { sx = e.touches[0].clientX; }, { passive: true });
+    overlay.addEventListener("touchend", (e) => { const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 40) show(idx + (dx < 0 ? 1 : -1)); });
+    document.body.appendChild(overlay);
+  }
+
+  // Product detail — main image + angle thumbnails; tap image to open fullscreen.
   function openProductPreview(p, v) {
-    let close;
+    const photos = productPhotos(p);
+    let close, mainIdx = 0;
+    const mainImg = photos.length
+      ? el("img", { src: photos[0], alt: p.name, style: "width:100%;max-height:56vh;object-fit:contain;border-radius:12px;background:#111;cursor:zoom-in" })
+      : el("div", { style: "width:100%;height:200px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--surface-2,#eee)" }, v.img || "🛍");
+    if (photos.length) mainImg.addEventListener("click", () => openLightbox(photos, mainIdx));
+    const thumbs = el("div", { style: "display:flex;gap:8px;overflow-x:auto;margin-top:10px" });
+    function renderThumbs() {
+      thumbs.innerHTML = "";
+      photos.forEach((url, i) => thumbs.appendChild(el("img", { src: url, alt: "", style: "width:54px;height:54px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none;border:" + (i === mainIdx ? "2px solid var(--brand)" : "1px solid var(--border)"), onClick: () => { mainIdx = i; mainImg.src = url; renderThumbs(); } })));
+    }
+    if (photos.length > 1) renderThumbs();
     const ctrlWrap = el("div", {});
     function renderCtrl() {
       ctrlWrap.innerHTML = "";
       const qty = state.cart[p.id] || 0;
-      if (!qty) {
-        ctrlWrap.appendChild(el("button", { class: "btn primary", style: "width:100%", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "🛒 Add to cart"));
-      } else {
-        ctrlWrap.appendChild(el("div", { style: "display:flex;align-items:center;gap:16px;justify-content:center" }, [
-          el("button", { class: "btn ghost", onClick: () => { setQty(p.id, qty - 1); refreshItem(p.id); renderCtrl(); } }, "−"),
-          el("span", { style: "font-weight:800;font-size:18px" }, String(qty)),
-          el("button", { class: "btn ghost", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "+"),
-        ]));
-      }
+      if (!qty) ctrlWrap.appendChild(el("button", { class: "btn primary", style: "width:100%", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "🛒 Add to cart"));
+      else ctrlWrap.appendChild(el("div", { style: "display:flex;align-items:center;gap:16px;justify-content:center" }, [
+        el("button", { class: "btn ghost", onClick: () => { setQty(p.id, qty - 1); refreshItem(p.id); renderCtrl(); } }, "−"),
+        el("span", { style: "font-weight:800;font-size:18px" }, String(qty)),
+        el("button", { class: "btn ghost", onClick: () => { addToCart(p); refreshItem(p.id); renderCtrl(); } }, "+"),
+      ]));
     }
     renderCtrl();
-    const media = p.photoUrl
-      ? el("img", { src: p.photoUrl, alt: p.name, style: "width:100%;max-height:62vh;object-fit:contain;border-radius:12px;background:#111" })
-      : el("div", { style: "width:100%;height:200px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:56px;background:var(--surface-2,#eee)" }, v.img || "🛍");
     close = UI.modal({
       title: p.name,
       body: el("div", {}, [
-        media,
+        mainImg,
+        photos.length > 1 ? thumbs : document.createTextNode(""),
         el("div", { style: "margin-top:12px;font-size:18px" }, [priceEl(p)]),
         p.unit ? el("div", { class: "muted small", style: "margin-top:2px" }, "per " + p.unit) : document.createTextNode(""),
         p.description ? el("p", { class: "muted small", style: "margin-top:10px;line-height:1.5" }, p.description) : document.createTextNode(""),

@@ -764,23 +764,35 @@
       el("div", { class: "muted small", style: "margin-top:4px" }, "Set higher than the price above to show customers a struck-through MRP and a % off."),
     ]));
 
-    let photoData = null;
-    const photoPreview = el("div", { class: "prod-photo-prev" }, (p && p.photoUrl) ? el("img", { src: p.photoUrl, alt: "" }) : document.createTextNode("📷"));
-    const fileEl = el("input", { type: "file", accept: "image/*", style: "display:none" });
-    fileEl.addEventListener("change", async () => {
-      const f = fileEl.files && fileEl.files[0]; if (!f) return;
-      try {
-        photoData = await resizeImage(f, 720, 0.72);
-        photoPreview.innerHTML = ""; photoPreview.appendChild(el("img", { src: photoData, alt: "" }));
-      } catch (e) { toast("Couldn't read that image"); }
+    // Up to 5 photos per item (main + angles). Each uploads immediately; first = main image.
+    let _photos = (p && Array.isArray(p.photos) && p.photos.length) ? p.photos.slice(0, 5) : (p && p.photoUrl ? [p.photoUrl] : []);
+    const photosWrap = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" });
+    const photoFile = el("input", { type: "file", accept: "image/*", style: "display:none" });
+    function renderPhotos() {
+      photosWrap.innerHTML = "";
+      _photos.forEach((url, i) => {
+        photosWrap.appendChild(el("div", { style: "position:relative;width:62px;height:62px;border-radius:10px;overflow:hidden;border:" + (i === 0 ? "2px solid var(--brand)" : "1px solid var(--border)") }, [
+          el("img", { src: url, alt: "", style: "width:100%;height:100%;object-fit:cover" }),
+          el("button", { class: "btn danger sm", type: "button", style: "position:absolute;top:1px;right:1px;padding:0 5px;line-height:1.5", onClick: () => { _photos.splice(i, 1); renderPhotos(); } }, "✕"),
+          i === 0 ? el("div", { style: "position:absolute;bottom:0;left:0;right:0;background:var(--brand);color:#fff;font-size:9px;text-align:center" }, "MAIN") : document.createTextNode(""),
+        ]));
+      });
+      if (_photos.length < 5) {
+        photosWrap.appendChild(el("button", { class: "btn ghost sm", type: "button", style: "width:62px;height:62px;font-size:22px", onClick: () => photoFile.click() }, "+"));
+      }
+    }
+    photoFile.addEventListener("change", async () => {
+      const f = photoFile.files && photoFile.files[0]; if (!f) return;
+      toast("Uploading photo…");
+      try { const data = await resizeImage(f, 1000, 0.74); const url = await uploadToCloudinary(data); _photos.push(url); renderPhotos(); }
+      catch (e) { toast("Upload failed: " + (e.message || "")); }
+      photoFile.value = "";
     });
+    renderPhotos();
     fields.push(el("div", { class: "field" }, [
-      el("label", {}, "Photo (optional)"),
-      el("div", { class: "row", style: "gap:12px;align-items:center" }, [
-        photoPreview,
-        el("button", { class: "btn ghost sm", type: "button", onClick: () => fileEl.click() }, "Upload photo"),
-        fileEl,
-      ]),
+      el("label", {}, "Photos (up to 5 — add different angles)"),
+      photosWrap, photoFile,
+      el("div", { class: "muted small", style: "margin-top:4px" }, "First photo is the main image. Great for clothing, accessories, etc."),
     ]));
 
     // In quick-add mode, adding one item keeps the form open (reset) so the
@@ -800,8 +812,9 @@
         if (pharma) { payload.unit = unitEl.value; if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value); }
         else if (general) { payload.unit = unitEl.value || "piece"; if (stockEl.value !== "") payload.qty = Number(stockEl.value); }
         else { payload.unit = unitEl ? unitEl.value : (p && p.unit) || null; if (food && qtyEl && qtyEl.value !== "") payload.qty = Number(qtyEl.value); }
-        if (photoData) { try { payload.photoUrl = await uploadToCloudinary(photoData); } catch (e) { toast("Photo upload failed: " + (e.message || "")); } }
-        else if (p && p.photoUrl) { payload.photoUrl = p.photoUrl; }
+        // Photos already uploaded to Cloudinary — send the array (first = main image).
+        payload.photos = _photos.slice(0, 5);
+        payload.photoUrl = _photos[0] || null;
         await BW.upsertProduct(payload);
         if (keepOpen && isNew) {
           addedCount++;
@@ -809,7 +822,7 @@
           counter.style.display = ""; counter.textContent = addedCount + " item" + (addedCount === 1 ? "" : "s") + " added this session";
           nameEl.value = ""; priceEl.value = ""; mrpEl.value = "";
           if (packQtyEl) packQtyEl.value = ""; if (stockEl) stockEl.value = ""; if (qtyEl) qtyEl.value = "";
-          photoData = null; photoPreview.innerHTML = ""; photoPreview.appendChild(document.createTextNode("📷"));
+          _photos = []; renderPhotos();
           nameEl.focus();
         } else {
           toast(isNew ? "Item added" : "Item updated");
