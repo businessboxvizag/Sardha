@@ -179,7 +179,11 @@
     // Floating cart bar — slides up whenever the cart has items (but not on the cart page itself)
     if (cartCount() > 0 && active !== "cart") {
       const sub = cartTotal();
-      const tot = sub + Math.round(sub * 0.18) + (BW.deliveryFee ? BW.deliveryFee() : 15);
+      const _c = BW.currentCustomer();
+      const _freeDel = !!(_c && (Number(_c.orderCount || 0) < 10 || (_c.activeReward && _c.activeReward.type === "FREE_DELIVERY")));
+      const _rw10 = (_c && _c.activeReward && _c.activeReward.type === "PERCENT10") ? Math.round(sub * 0.10) : 0;
+      const _net = Math.max(0, sub - _rw10);
+      const tot = _net + Math.round(_net * 0.18) + (_freeDel ? 0 : (BW.deliveryFee ? BW.deliveryFee() : 15));
       root.appendChild(el("div", { class: "cart-bar", onClick: () => go("cart") }, [
         el("span", {}, cartCount() + (cartCount() === 1 ? " item" : " items") + " · " + money(tot)),
         el("span", {}, "View cart →"),
@@ -553,7 +557,11 @@
     if (ex) ex.remove();
     if (cartCount() > 0) {
       const sub = cartTotal();
-      const tot = sub + Math.round(sub * 0.18) + (BW.deliveryFee ? BW.deliveryFee() : 15);
+      const _c = BW.currentCustomer();
+      const _freeDel = !!(_c && (Number(_c.orderCount || 0) < 10 || (_c.activeReward && _c.activeReward.type === "FREE_DELIVERY")));
+      const _rw10 = (_c && _c.activeReward && _c.activeReward.type === "PERCENT10") ? Math.round(sub * 0.10) : 0;
+      const _net = Math.max(0, sub - _rw10);
+      const tot = _net + Math.round(_net * 0.18) + (_freeDel ? 0 : (BW.deliveryFee ? BW.deliveryFee() : 15));
       const bar = el("div", { class: "cart-bar", onClick: () => go("cart") }, [
         el("span", {}, cartCount() + (cartCount() === 1 ? " item" : " items") + " · " + money(tot)),
         el("span", {}, "View cart →"),
