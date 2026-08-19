@@ -18,8 +18,8 @@ router.post("/create-order", requireAuth, requireRole("customer"), async (req, r
     const { vendorId, items, promoCode } = req.body;
     // Include any redeemed reward so the charged amount matches order placement.
     const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
-    const activeReward = custSnap.empty ? null : (custSnap.docs[0].data().activeReward || null);
-    const { total, discount } = await priceOrder({ vendorId, items, promoCode, reward: activeReward });
+    const cust = custSnap.empty ? {} : custSnap.docs[0].data();
+    const { total, discount } = await priceOrder({ vendorId, items, promoCode, reward: cust.activeReward || null, freeDelivery: Number(cust.orderCount || 0) < 10 });
 
     // No rider-availability gate — a Saradhi can stack multiple tasks, so checkout is
     // never blocked on availability. The order is assigned after payment.

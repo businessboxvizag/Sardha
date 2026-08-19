@@ -80,7 +80,7 @@ function computeDiscount(vendor, subtotal, promoCode) {
  *   promoError, discountedSubtotal, gst, deliveryFee, total
  * }>}
  */
-async function priceOrder({ vendorId, items, promoCode, reward }) {
+async function priceOrder({ vendorId, items, promoCode, reward, freeDelivery }) {
   if (!vendorId || !Array.isArray(items) || !items.length) {
     const e = new Error("vendorId and items required"); e.code = 400; throw e;
   }
@@ -132,6 +132,10 @@ async function priceOrder({ vendorId, items, promoCode, reward }) {
     rewardApplied = { type: "FREE_DELIVERY", amount: baseDeliveryFee };
   }
 
+  // Launch promo: a new customer's first N orders ship free (caller decides eligibility).
+  const firstOrdersFreeDelivery = !!freeDelivery && baseDeliveryFee > 0;
+  if (freeDelivery) deliveryFee = 0;
+
   const netSubtotal = Math.max(0, discountedSubtotal - rewardAmount);
   const gst = Math.round(netSubtotal * GST_RATE);
   const total = netSubtotal + gst + deliveryFee;
@@ -144,6 +148,7 @@ async function priceOrder({ vendorId, items, promoCode, reward }) {
     promoError: discount.promoError || null,
     discountedSubtotal,
     reward: rewardApplied,      // null, or { type, amount } — what the coins reward saved
+    firstOrdersFreeDelivery,    // true when the first-N-orders free-delivery promo applied
     gst,
     deliveryFee,
     total,

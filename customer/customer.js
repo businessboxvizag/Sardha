@@ -776,7 +776,8 @@
       const rewardAmt = (_rw && _rw.type === "PERCENT10") ? Math.round(discountedSub * 0.10) : 0;
       const rewardFreeDel = !!(_rw && _rw.type === "FREE_DELIVERY");
       const netSub = Math.max(0, discountedSub - rewardAmt);
-      const feeFinal = rewardFreeDel ? 0 : fee;
+      const freeDelFirst = !!(BW.currentCustomer() && Number(BW.currentCustomer().orderCount || 0) < 10);
+      const feeFinal = (rewardFreeDel || freeDelFirst) ? 0 : fee;
       const gst = Math.round(netSub * 0.18);
       const total = netSub + gst + feeFinal;
 
@@ -829,7 +830,7 @@
         el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none" }, [
-        el("span", { class: "muted" }, "Delivery fee"), rewardFreeDel ? el("span", { style: "color:var(--brand)" }, "FREE 🎁") : el("span", {}, money(fee)),
+        el("span", { class: "muted" }, "Delivery fee"), (rewardFreeDel || freeDelFirst) ? el("span", { style: "color:var(--brand)" }, freeDelFirst ? "FREE 🎉" : "FREE 🎁") : el("span", {}, money(fee)),
       ]));
       linesWrap.appendChild(el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
         el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(total)),
@@ -936,7 +937,8 @@
       const rewardAmtP = (_rwP && _rwP.type === "PERCENT10") ? Math.round(discountedSub * 0.10) : 0;
       const rewardFreeDelP = !!(_rwP && _rwP.type === "FREE_DELIVERY");
       const netSubP = Math.max(0, discountedSub - rewardAmtP);
-      const feeFinalP = rewardFreeDelP ? 0 : fee;
+      const freeDelFirstP = !!(BW.currentCustomer() && Number(BW.currentCustomer().orderCount || 0) < 10);
+      const feeFinalP = (rewardFreeDelP || freeDelFirstP) ? 0 : fee;
       const gst = Math.round(netSubP * 0.18);
 
       // Promo code entry
@@ -965,7 +967,7 @@
         disc > 0 ? el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, discLabel), el("span", { style: "color:var(--brand)" }, "− " + money(disc))]) : document.createTextNode(""),
         rewardAmtP > 0 ? el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "🎁 Reward (10% off)"), el("span", { style: "color:var(--brand)" }, "− " + money(rewardAmtP))]) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "GST (18%)"), el("span", {}, money(gst))]),
-        el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Delivery fee"), rewardFreeDelP ? el("span", { style: "color:var(--brand)" }, "FREE 🎁") : el("span", {}, money(fee))]),
+        el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Delivery fee"), (rewardFreeDelP || freeDelFirstP) ? el("span", { style: "color:var(--brand)" }, freeDelFirstP ? "FREE 🎉" : "FREE 🎁") : el("span", {}, money(fee))]),
         el("div", { class: "line", style: "border:none;font-size:16px;padding-top:4px" }, [
           el("strong", {}, "Total"), el("strong", { style: "color:var(--brand)" }, money(netSubP + gst + feeFinalP)),
         ]),

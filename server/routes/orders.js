@@ -6,6 +6,8 @@ const { notifyPartner } = require("../lib/webhooks");
 const { priceOrder } = require("../lib/pricing");
 const push = require("../lib/push");
 
+const FREE_DELIVERY_FIRST_N = 10;   // launch promo: a customer's first 10 orders ship free
+
 const router = express.Router();
 
 const STATUS_FLOW = [
@@ -153,14 +155,15 @@ router.post("/quote", requireAuth, requireRole("customer"), async (req, res) => 
     const { vendorId, items, promoCode } = req.body;
     // Preview any redeemed reward too, so the shown total matches what will be charged.
     const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
-    const activeReward = custSnap.empty ? null : (custSnap.docs[0].data().activeReward || null);
-    const p = await priceOrder({ vendorId, items, promoCode, reward: activeReward });
+    const cust = custSnap.empty ? {} : custSnap.docs[0].data();
+    const p = await priceOrder({ vendorId, items, promoCode, reward: cust.activeReward || null, freeDelivery: Number(cust.orderCount || 0) < FREE_DELIVERY_FIRST_N });
     res.json({
       subtotal: p.subtotal,
       discount: p.discount,
       promoError: p.promoError,
       discountedSubtotal: p.discountedSubtotal,
       reward: p.reward,
+      firstOrdersFreeDelivery: p.firstOrdersFreeDelivery,
       gst: p.gst,
       deliveryFee: p.deliveryFee,
       total: p.total,
@@ -195,7 +198,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     let priced;
     try {
       // A redeemed gold-coin reward (if any) is read from the customer doc — never trusted from the client.
-      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode, reward: customer.activeReward });
+      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode, reward: customer.activeReward, freeDelivery: Number(customer.orderCount || 0) < FREE_DELIVERY_FIRST_N });
     } catch (e) {
       return res.status(e.code || 400).json({ error: e.message || "Could not price this order" });
     }
@@ -294,12 +297,12 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.
 
-    // Gold-coins: consume the reward if one was applied. (Coins are earned by playing
-    // a game during an ACTIVE delivery — see /api/rewards/win — not granted here.)
-    if (reward) {
-      try { await db.collection("customers").doc(customer.id).update({ activeReward: null }); }
-      catch (e) { console.error("post-order reward clear failed:", e && e.message); }
-    }
+    // Count this order (drives the first-10-orders free-delivery promo) and consume any reward.
+    try {
+      const custUpd = { orderCount: Number(customer.orderCount || 0) + 1 };
+      if (reward) custUpd.activeReward = null;
+      await db.collection("customers").doc(customer.id).update(custUpd);
+    } catch (e) { console.error("post-order customer update failed:", e && e.message); }
 
     // Emit / return a version WITHOUT the sensitive Rx images or OTP.
     const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;
