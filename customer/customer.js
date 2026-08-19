@@ -1679,11 +1679,38 @@
         const v = url.searchParams.get("v");
         if (v) return v;
         const m = url.pathname.match(/\/scan\/([^/?#]+)/);
-        return m ? m[1] : null;
+        if (m) return m[1];
+        // Universal Saardha QR (a /scan URL with no store id) → open the store picker.
+        if (/\/scan\/?$/.test(url.pathname)) return "__UNIVERSAL__";
+        return null;
       } catch {
         // A raw vendor id (not a URL) is also acceptable
         return /^[A-Za-z0-9_-]{3,}$/.test((urlStr || "").trim()) ? urlStr.trim() : null;
       }
+    }
+
+    // Universal-QR scan → let the customer pick their store in-app (nearest first).
+    function openStorePicker() {
+      const vendors = (BW.vendors() || []).filter((v) => v.active !== false && v.status !== "inactive" && v.status !== "pending_setup");
+      let close, myPos = null;
+      const searchEl = el("input", { type: "text", placeholder: "🔍 Search store / area…", style: "width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px" });
+      const listWrap = el("div", { style: "max-height:52vh;overflow:auto" });
+      function renderList(q) {
+        const query = (q || "").toLowerCase().trim();
+        let list = vendors.filter((v) => !query || ((v.name || "") + " " + (v.category || "") + " " + (v.area || "")).toLowerCase().includes(query));
+        if (myPos) list = list.map((v) => ({ ...v, _d: haversineKm(myPos.lat, myPos.lng, v.lat, v.lng) })).sort((a, b) => a._d - b._d);
+        listWrap.innerHTML = "";
+        if (!list.length) { listWrap.appendChild(el("div", { class: "muted small" }, "No stores match.")); return; }
+        list.slice(0, 40).forEach((v) => listWrap.appendChild(el("div", { class: "card", style: "display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;padding:10px", onClick: () => { addVendorById(v.id); close(); go("vendor", { vendorId: v.id }); } }, [
+          el("div", { style: "font-size:22px" }, v.img || "🏪"),
+          el("div", { style: "flex:1;min-width:0" }, [el("div", { style: "font-weight:700" }, v.name), el("div", { class: "muted small" }, (v.category || "") + " · " + (v.area || "") + (myPos && isFinite(v._d) ? " · " + v._d.toFixed(1) + " km" : ""))]),
+          el("div", { style: "color:var(--brand)" }, "→"),
+        ])));
+      }
+      renderList("");
+      searchEl.addEventListener("input", (e) => renderList(e.target.value));
+      if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { myPos = { lat: p.coords.latitude, lng: p.coords.longitude }; renderList(searchEl.value); }, () => {}, { timeout: 8000 });
+      close = UI.modal({ title: "Choose your store", body: el("div", {}, [searchEl, listWrap]), footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Close")] });
     }
 
     // Decode a QR from a canvas — BarcodeDetector where available (Chromium),
@@ -1734,7 +1761,8 @@
               decodeCanvas(canvas, ctx).then((raw) => {
                 if (!raw) return;
                 const vendorId = processUrl(raw);
-                if (vendorId) { stopCamera(); addVendorById(vendorId); onSuccess(vendorId); }
+                if (vendorId === "__UNIVERSAL__") { stopCamera(); openStorePicker(); }
+                else if (vendorId) { stopCamera(); addVendorById(vendorId); onSuccess(vendorId); }
                 else { resultEl.textContent = "QR found but not a Saardha store. Try again."; }
               });
             }
@@ -1798,7 +1826,8 @@
       decodeCanvas(canvas, ctx).then((raw) => {
         if (!raw) { resultEl.textContent = "No QR code found in that image. Try a clearer photo."; return; }
         const vendorId = processUrl(raw);
-        if (vendorId) { addVendorById(vendorId); onSuccess(vendorId); }
+        if (vendorId === "__UNIVERSAL__") { openStorePicker(); }
+        else if (vendorId) { addVendorById(vendorId); onSuccess(vendorId); }
         else { resultEl.textContent = "QR found but it's not a Saardha store code."; }
       });
     }
