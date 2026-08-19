@@ -33,7 +33,8 @@
     await BW.init("admin");
     // Load products for all vendors in PARALLEL (was sequential → very slow with many stores).
     await Promise.all(BW.vendors().map((v) => BW.loadVendorProducts(v.id).catch(() => {})));
-    BW.subscribe(() => render());
+    BW.subscribe(() => { render(); updateEscalationBanner(); });
+    setInterval(updateEscalationBanner, 60 * 1000);   // re-evaluate the 5-min threshold each minute
 
     // Alerts: buzz + notify when a customer raises a ticket or replies, and live-refresh
     // the open ticket thread. Also register for push so it works with the app closed.
@@ -52,7 +53,35 @@
       }
     });
 
+    updateEscalationBanner();
     render();
+  }
+
+  // Red "needs attention" banner: orders a merchant hasn't accepted within 5 minutes.
+  // Server also alerts admins by push/email — this is the in-panel view + buzzer.
+  function updateEscalationBanner() {
+    const stale = BW.orders().filter((o) => o.status === S.PLACED && (Date.now() - new Date(o.createdAt).getTime()) > 5 * 60 * 1000);
+    let bar = document.getElementById("adm-escalate");
+    if (!stale.length) { if (bar) bar.remove(); return; }
+    const fresh = !bar;
+    if (!bar) {
+      bar = el("div", { id: "adm-escalate", style: "position:fixed;left:12px;right:12px;top:8px;z-index:9600;background:#b71c1c;color:#fff;border-radius:10px;padding:10px 14px;box-shadow:0 6px 18px rgba(0,0,0,.35);display:flex;align-items:center;gap:10px;flex-wrap:wrap" });
+      document.body.appendChild(bar);
+      if (window.Buzzer) window.Buzzer.alert("Orders not accepted", stale.length + " order(s) waiting > 5 min — call the store");
+    }
+    const o = stale[0]; const v = BW.vendor(o.vendorId) || {};
+    const phone = (v.businessPhone || v.ownerPhone || "").replace(/[^0-9+]/g, "");
+    bar.innerHTML = "";
+    bar.appendChild(el("div", { style: "flex:1;min-width:180px" }, [
+      el("div", { style: "font-weight:800" }, "⚠️ " + stale.length + " order" + (stale.length > 1 ? "s" : "") + " not accepted (>5 min)"),
+      el("div", { style: "font-size:12px;opacity:.92" }, "#" + (o.orderNo || "") + " · " + (v.name || "store") + " · " + (phone || "no phone")),
+    ]));
+    if (phone) {
+      bar.appendChild(el("a", { class: "btn sm", style: "background:#fff;color:#b71c1c;font-weight:700", href: "tel:" + phone }, "📞 Call"));
+      bar.appendChild(el("a", { class: "btn sm", style: "background:rgba(255,255,255,.25);color:#fff", href: "https://wa.me/" + phone.replace(/^\+/, ""), target: "_blank", rel: "noopener" }, "💬 WhatsApp"));
+    }
+    bar.appendChild(el("button", { class: "btn sm", style: "background:rgba(255,255,255,.18);color:#fff", onClick: () => { go("monitor"); viewMonitor._tab = "orders"; renderAllOrders._status = "PLACED"; render(); } }, "View"));
+    void fresh;
   }
 
   let _navPop = false;

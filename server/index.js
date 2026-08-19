@@ -163,8 +163,46 @@ async function seedAdmin() {
   }
 }
 
+/* ── Escalate unaccepted orders ───────────────────────────────
+ * If a merchant hasn't accepted an order within 5 minutes of it being placed,
+ * alert every admin (Web Push + email) so the team can call the store. Each
+ * order is escalated only once. Runs every minute while the server is awake. */
+async function escalateStaleOrders() {
+  try {
+    const { db } = require("./config/firebase");
+    const push = require("./lib/push");
+    const { sendMail } = require("./lib/mailer");
+    const cutoff = Date.now() - 5 * 60 * 1000;
+    const snap = await db.collection("orders").where("status", "==", "PLACED").get();
+    const stale = snap.docs.filter((d) => !d.data().escalatedAt && new Date(d.data().createdAt).getTime() < cutoff);
+    if (!stale.length) return;
+
+    // Admin recipients (uids for push, emails for mail).
+    const adminSnap = await db.collection("users").where("role", "==", "admin").get();
+    const adminUids = adminSnap.docs.map((d) => d.id);
+    const adminEmails = adminSnap.docs.map((d) => d.data().email).filter(Boolean);
+
+    for (const d of stale) {
+      const o = d.data();
+      await d.ref.update({ escalatedAt: new Date().toISOString() });
+      let vendor = {};
+      try { const vd = await db.collection("vendors").doc(o.vendorId).get(); vendor = vd.exists ? vd.data() : {}; } catch (e) {}
+      const store = vendor.name || "a store";
+      const phone = vendor.businessPhone || vendor.ownerPhone || "—";
+      const title = "⚠️ Order not accepted";
+      const body = "#" + (o.orderNo || "") + " at " + store + " — waiting 5+ min. Call " + phone;
+      adminUids.forEach((uid) => push.sendToUser(uid, { title, body, tag: "escalate-" + o.id, url: "/admin/" }).catch(() => {}));
+      const html = "<p><b>Order #" + (o.orderNo || "") + "</b> at <b>" + store + "</b> hasn't been accepted for over 5 minutes.</p>" +
+        "<p>Store phone: <b>" + phone + "</b></p><p>Please call the merchant and ask them to accept it in the Saardha merchant app.</p>";
+      if (adminEmails.length) sendMail(adminEmails.join(","), "⚠️ Saardha: order not accepted (" + store + ")", html);
+      console.log("[escalate] order", o.orderNo, "at", store, "→ admins notified");
+    }
+  } catch (e) { console.error("escalateStaleOrders:", e.message); }
+}
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Saardha API running on http://localhost:${PORT}`);
   seedAdmin();
+  setInterval(escalateStaleOrders, 60 * 1000);   // check every minute
 });

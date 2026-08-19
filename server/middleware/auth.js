@@ -21,9 +21,11 @@ async function requireAuth(req, res, next) {
   }
   req.user = payload; // { uid, email, role, name, sid }
 
-  // Single-device sign-in (#2): the token's session must still be the active one.
-  // Older tokens without a sid are left valid so nobody is force-logged-out on deploy.
-  if (payload.sid && payload.uid) {
+  // Single-device sign-in ONLY for customers. Merchants & admins may be logged in on
+  // multiple devices at once (counter tablet + phone, multiple staff, etc.), so we
+  // skip the session-supersede check for those roles.
+  const enforceSingleDevice = payload.role !== "merchant" && payload.role !== "admin";
+  if (enforceSingleDevice && payload.sid && payload.uid) {
     try {
       const doc = await db.collection("users").doc(payload.uid).get();
       const current = doc.exists ? doc.data().sessionId : null;

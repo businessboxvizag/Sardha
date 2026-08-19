@@ -92,22 +92,64 @@
   function cartTotal() {
     return cartLines().reduce((s, l) => s + l.price * l.qty, 0);
   }
+  let _celebratedFreeDel = false;
   function addToCart(product) {
     if (state.cartVendor && state.cartVendor !== product.vendorId) {
       if (!confirm("Your cart has items from another vendor. Start a new cart?")) return;
       state.cart = {};
     }
+    const wasEmpty = cartCount() === 0;
     state.cartVendor = product.vendorId;
     state.cart[product.id] = (state.cart[product.id] || 0) + 1;
     if (BW.track) BW.track("add_to_cart", { product: product.name, vendorId: product.vendorId, price: product.price });
     toast(product.name + " added");
     render();
+    // First item + eligible for the first-10-orders free delivery → celebrate.
+    const c = BW.currentCustomer();
+    if (wasEmpty && !_celebratedFreeDel && c && Number(c.orderCount || 0) < 10) {
+      _celebratedFreeDel = true;
+      celebrateFreeDelivery();
+    }
   }
   function setQty(pid, qty) {
     if (qty <= 0) delete state.cart[pid];
     else state.cart[pid] = qty;
-    if (cartCount() === 0) state.cartVendor = null;
+    if (cartCount() === 0) { state.cartVendor = null; _celebratedFreeDel = false; }
     render();
+  }
+
+  let _celebStyles = false;
+  function ensureCelebrateStyles() {
+    if (_celebStyles) return; _celebStyles = true;
+    const st = document.createElement("style");
+    st.textContent =
+      "@keyframes bwFadeIn{from{opacity:0}to{opacity:1}}" +
+      "@keyframes bwPop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}" +
+      "@keyframes bwConfFall{0%{transform:translateY(-20px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(540deg);opacity:0}}";
+    document.head.appendChild(st);
+  }
+
+  // Party-popper celebration when a customer unlocks free delivery on their first item.
+  function celebrateFreeDelivery() {
+    ensureCelebrateStyles();
+    const ov = el("div", { style: "position:fixed;inset:0;z-index:10500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);animation:bwFadeIn .2s ease" });
+    const colors = ["#ff9933", "#ffd54f", "#4caf50", "#e62a1f", "#3C3489", "#0C447C"];
+    const burst = el("div", { style: "position:absolute;inset:0;overflow:hidden;pointer-events:none" });
+    for (let i = 0; i < 40; i++) {
+      const p = el("div", {});
+      const s = 7 + Math.random() * 7;
+      p.style.cssText = "position:absolute;top:-20px;left:" + (Math.random() * 100) + "%;width:" + s + "px;height:" + s + "px;border-radius:2px;background:" + colors[i % colors.length] + ";animation:bwConfFall " + (1.4 + Math.random() * 1.6) + "s ease-in forwards;animation-delay:" + (Math.random() * 0.5) + "s";
+      burst.appendChild(p);
+    }
+    ov.appendChild(burst);
+    ov.appendChild(el("div", { style: "position:relative;background:#fff;border-radius:18px;padding:26px 24px;text-align:center;max-width:300px;box-shadow:0 12px 40px rgba(0,0,0,.35);animation:bwPop .35s cubic-bezier(.2,.9,.3,1.4)" }, [
+      el("div", { style: "font-size:52px;line-height:1" }, "🎉"),
+      el("div", { style: "font-weight:900;font-size:20px;margin-top:6px;color:var(--brand)" }, "FREE Delivery unlocked!"),
+      el("div", { style: "color:#555;font-size:13.5px;margin-top:6px;line-height:1.5" }, "You've got free delivery on this order — one of your first 10. Enjoy! 🛵"),
+      el("button", { class: "btn primary", style: "margin-top:16px;width:100%", onClick: () => ov.remove() }, "Yay, continue"),
+    ]));
+    document.body.appendChild(ov);
+    setTimeout(() => { if (ov.parentNode) ov.remove(); }, 4500);
   }
 
   /* ----- navigation ----- */
