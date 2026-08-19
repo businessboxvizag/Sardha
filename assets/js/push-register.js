@@ -31,12 +31,21 @@
       }
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
+      // If the device subscribed earlier with a DIFFERENT/placeholder VAPID key, that
+      // subscription is dead — drop it and re-subscribe with the current key.
+      let savedKey = null;
+      try { savedKey = localStorage.getItem("bw_push_key"); } catch (e) {}
+      if (sub && savedKey && savedKey !== key) {
+        try { await sub.unsubscribe(); } catch (e) {}
+        sub = null;
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlB64ToUint8Array(key),
         });
       }
+      try { localStorage.setItem("bw_push_key", key); } catch (e) {}
       if (global.BW && BW.savePushSubscription) {
         await BW.savePushSubscription(sub.toJSON ? sub.toJSON() : sub);
       }

@@ -68,10 +68,12 @@
   // Rider taps this once to unlock alarm sound + system notifications (browsers block
   // audio until a user gesture). Also re-subscribes to push.
   let _alertsOn = false;
+  try { _alertsOn = localStorage.getItem("bw_r_alerts") === "1"; } catch (e) {}
   function enableAlerts() {
     try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
     if (window.SaardhaPush) window.SaardhaPush.enable();
     _alertsOn = true;
+    try { localStorage.setItem("bw_r_alerts", "1"); } catch (e) {}
     toast("🔔 Alerts on — you'll be buzzed on new tasks");
     render();
   }

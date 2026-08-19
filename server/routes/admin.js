@@ -8,23 +8,20 @@ const router = express.Router();
 
 /* ── Vendor settlement ────────────────────────────────────────
  * Accounts run this (typically at the 9am & 9pm cycle) to settle a store's
- * unsettled delivered orders. Marks those orders vendorSettled and records
- * a settlement entry. Amount = items subtotal − platform commission.       */
+ * unsettled delivered orders. The merchant is paid the ITEM COST only — GST and
+ * the delivery fee belong to Saardha and are NOT part of the merchant payout.  */
 router.post("/settle-vendor", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const vendorId = req.body.vendorId;
     if (!vendorId) return res.status(400).json({ error: "vendorId required" });
-    const settingsDoc = await db.collection("settings").doc("global").get();
-    const commissionPct = settingsDoc.exists ? (Number(settingsDoc.data().merchantCommissionPct) || 0) : 10;
 
     const snap = await db.collection("orders").where("vendorId", "==", vendorId).where("status", "==", "DELIVERED").get();
     const pending = snap.docs.filter((d) => !d.data().vendorSettled);
     if (!pending.length) return res.json({ ok: true, amount: 0, orderCount: 0, message: "Nothing to settle" });
 
-    let gross = 0;
-    pending.forEach((d) => { gross += Number(d.data().subtotal || 0); });
-    const commission = Math.round(gross * commissionPct / 100);
-    const amount = gross - commission;
+    // Merchant payout = sum of item subtotals (no commission; GST/delivery are Saardha's).
+    let amount = 0;
+    pending.forEach((d) => { amount += Number(d.data().subtotal || 0); });
     const at = new Date().toISOString();
 
     // Mark orders settled (batched) + record the settlement.
@@ -32,9 +29,9 @@ router.post("/settle-vendor", requireAuth, requireRole("admin"), async (req, res
     for (const d of pending) { batch.update(d.ref, { vendorSettled: true, vendorSettledAt: at }); if (++n >= 400) { await batch.commit(); batch = db.batch(); n = 0; } }
     if (n > 0) await batch.commit();
     const sref = db.collection("vendor_settlements").doc();
-    await sref.set({ id: sref.id, vendorId, gross, commission, amount, orderCount: pending.length, at, by: req.user.name || "admin" });
+    await sref.set({ id: sref.id, vendorId, amount, orderCount: pending.length, at, by: req.user.name || "admin" });
 
-    res.json({ ok: true, amount, gross, commission, orderCount: pending.length, at });
+    res.json({ ok: true, amount, gross: amount, orderCount: pending.length, at });
   } catch (err) {
     console.error("POST /admin/settle-vendor:", err);
     res.status(500).json({ error: "Failed to settle vendor" });

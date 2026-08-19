@@ -153,19 +153,26 @@
     } catch (e) {}
   }
 
-  // One-tap prompt (browsers block alarm audio until a user gesture).
+  // One-time "enable alerts" prompt. Once enabled it never shows again; audio then
+  // unlocks automatically on any tap, and push keeps working in the background.
   function showAlertsPrompt() {
-    if (localStorage.getItem("bw_m_alerts") === "1" && Notification && Notification.permission === "granted") { /* still show if audio may be locked */ }
+    let already = false;
+    try { already = localStorage.getItem("bw_m_alerts") === "1"; } catch (e) {}
+    if (already) {
+      // Already enabled once — keep the push subscription fresh silently, no prompt.
+      if (window.SaardhaPush) window.SaardhaPush.enable();
+      return;
+    }
     const bar = el("div", { style: "position:fixed;left:12px;right:12px;bottom:16px;z-index:9000;background:linear-gradient(90deg,#e62a1f,#ff6a3c);color:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 8px 22px rgba(230,42,31,.4);display:flex;align-items:center;gap:12px" }, [
       el("div", { style: "flex:1" }, [
-        el("div", { style: "font-weight:800" }, "🔔 Turn on order alerts"),
-        el("div", { style: "font-size:12px;opacity:.95" }, "Tap once so new orders ring loudly even when this screen is idle."),
+        el("div", { style: "font-weight:800" }, "🔔 Turn on order alerts (one time)"),
+        el("div", { style: "font-size:12px;opacity:.95" }, "Tap once to get a loud alarm + notification on every new order — even when the phone is locked."),
       ]),
       el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:800", onClick: () => {
         try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
         if (window.SaardhaPush) window.SaardhaPush.enable();
         try { localStorage.setItem("bw_m_alerts", "1"); } catch (e) {}
-        bar.remove(); toast("🔔 Order alerts on");
+        bar.remove(); toast("🔔 Order alerts on — for good");
       } }, "Enable"),
     ]);
     document.body.appendChild(bar);
@@ -391,6 +398,12 @@
     ]);
   }
 
+  // The merchant's amount is the ITEM COST only (GST + delivery fee are Saardha's).
+  function itemCost(o) {
+    if (o && o.subtotal != null) return o.subtotal;
+    return (o && o.items || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
+  }
+
   function orderCard(o) {
     const cust = BW.customers().find((c) => c.id === o.customerId);
     const itemCount = o.items.reduce((s, l) => s + l.qty, 0);
@@ -418,7 +431,7 @@
         el("strong", {}, "#" + (o.orderNo || o.id.slice(-6).toUpperCase())),
         statusBadge(o.status),
       ]),
-      el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " · " + itemCount + " items · " + money(o.total)),
+      el("div", { class: "muted small", style: "margin:6px 0" }, (cust ? cust.name : "Customer") + " · " + itemCount + " items · " + money(itemCost(o))),
       el("div", { class: "small muted" }, o.items.map((l) => l.qty + "× " + l.name).join(", ")),
       riderName ? el("div", { class: "small muted", style: "margin-top:6px" }, "Rider: " + riderName) : document.createTextNode(""),
       actions.length ? el("div", { class: "row", style: "gap:8px;margin-top:10px" }, actions) : document.createTextNode(""),
@@ -435,7 +448,8 @@
         ...o.items.map((l) => el("div", { class: "row between small", style: "padding:5px 0" }, [
           el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
         ])),
-        el("div", { class: "line", style: "border:none" }, [el("strong", {}, "Total"), el("strong", {}, money(o.total))]),
+        el("div", { class: "line", style: "border:none" }, [el("strong", {}, "Your payout (item cost)"), el("strong", {}, money(itemCost(o)))]),
+        el("div", { class: "muted small", style: "margin-top:4px" }, "GST & delivery fee are collected by Saardha and aren't part of your payout."),
       ]),
       cust ? el("div", { class: "muted small", style: "margin-top:10px" }, "Customer: " + cust.name + " · " + (cust.phone || "")) : document.createTextNode(""),
       cust ? el("div", { class: "muted small" }, "Deliver to: " + cust.address) : document.createTextNode(""),
@@ -957,9 +971,10 @@
     const delivered = inRange.filter((o) => o.status === "DELIVERED");
     const cod = nonCancelled.filter((o) => o.paymentMethod !== "ONLINE");
     const online = nonCancelled.filter((o) => o.paymentMethod === "ONLINE");
-    const revenue = nonCancelled.reduce((s, o) => s + (o.total || 0), 0);
-    const codRev = cod.reduce((s, o) => s + (o.total || 0), 0);
-    const onlineRev = online.reduce((s, o) => s + (o.total || 0), 0);
+    // Merchant earnings = item cost only (GST + delivery fee belong to Saardha).
+    const revenue = nonCancelled.reduce((s, o) => s + itemCost(o), 0);
+    const codRev = cod.reduce((s, o) => s + itemCost(o), 0);
+    const onlineRev = online.reduce((s, o) => s + itemCost(o), 0);
     const aov = nonCancelled.length ? revenue / nonCancelled.length : 0;
 
     const periodBtn = (id, label) => el("button", {
@@ -983,12 +998,12 @@
 
     shell("analytics", [
       el("h1", { class: "page-title" }, "Analytics"),
-      el("p", { class: "page-sub" }, "Your store's sales and payment breakdown."),
+      el("p", { class: "page-sub" }, "Your earnings are the item cost only — GST & delivery fee are collected by Saardha."),
       el("div", { style: "display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" }, [
         periodBtn("today", "Today"), periodBtn("7d", "This week"), periodBtn("30d", "This month"),
       ]),
       el("div", { class: "grid cols-4" }, [
-        stat("Revenue", money(Math.round(revenue)), nonCancelled.length + " orders"),
+        stat("Earnings (item cost)", money(Math.round(revenue)), nonCancelled.length + " orders"),
         stat("Delivered", String(delivered.length), ""),
         stat("Avg order", money(Math.round(aov)), ""),
         stat("Cancelled", String(inRange.length - nonCancelled.length), ""),
@@ -1002,9 +1017,9 @@
         ]),
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Summary"),
-          kv("Gross revenue", money(Math.round(revenue))),
-          kv("COD collected", money(Math.round(codRev))),
-          kv("Online received", money(Math.round(onlineRev))),
+          kv("Earnings (item cost)", money(Math.round(revenue))),
+          kv("From cash orders", money(Math.round(codRev))),
+          kv("From online orders", money(Math.round(onlineRev))),
           kv("Total orders", String(nonCancelled.length)),
         ]),
       ]),

@@ -168,7 +168,7 @@
   // markers: [{ lat, lng, label, icon }] — returns a container with a live OSM map.
   function gmap(opts) {
     opts = opts || {};
-    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2)" });
+    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2);position:relative;z-index:0;isolation:isolate" });
     loadLeaflet().then(function (L) {
       var pts = (opts.markers || []).filter(function (m) { return m && m.lat != null && m.lng != null; });
       var center = opts.center || (pts[0] ? [Number(pts[0].lat), Number(pts[0].lng)] : [17.6868, 83.2185]);
@@ -242,7 +242,7 @@
   // set the drop point; calls opts.onPick(lat, lng). Returns null if no Maps key.
   function mapPicker(opts) {
     opts = opts || {};
-    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2);position:relative" });
+    var container = el("div", { class: "gmap-embed", style: "width:100%;height:" + (opts.height || 220) + "px;border-radius:12px;overflow:hidden;background:var(--surface-2);position:relative;z-index:0;isolation:isolate" });
     loadLeaflet().then(function (L) {
       var hasStart = opts.lat != null && opts.lng != null;
       var start = [Number(opts.lat) || 17.6868, Number(opts.lng) || 83.2185]; // default Visakhapatnam

@@ -953,8 +953,8 @@
     // Totals
     let grossSales = 0, deliveryFees = 0, gstSum = 0;
     delivered.forEach((o) => { grossSales += (o.subtotal || 0); deliveryFees += (o.deliveryFee || 0); gstSum += (o.gst || 0); });
-    const commission = Math.round(grossSales * commissionPct / 100);
-    const merchantPayable = grossSales - commission;
+    const platformRevenue = gstSum + deliveryFees;   // Saardha keeps GST + delivery fee
+    const merchantPayable = grossSales;              // merchants are paid the full item cost
     const riderPayouts = delivered.length * payPerDelivery;
 
     // Per-rider
@@ -996,17 +996,14 @@
       const m = vendMap[id] || { orders: 0, gross: 0 };
       const u = unsettledMap[id] || { orders: 0, gross: 0 };
       const v = BW.vendor(id);
-      const comm = Math.round(m.gross * commissionPct / 100);
-      const unsettledNet = u.gross - Math.round(u.gross * commissionPct / 100);
+      const unsettledNet = u.gross;   // merchant is owed the full item cost
       const settleBtn = u.orders > 0
         ? el("button", { class: "btn success sm", onClick: async (e) => { e.target.disabled = true; try { const r = await BW.settleVendor(id); toast("Settled " + money(r.amount) + " (" + r.orderCount + " orders)"); render(); } catch (er) { toast(er.message || "Settle failed"); e.target.disabled = false; } } }, "Settle " + money(unsettledNet))
         : el("span", { class: "muted small" }, "—");
       return el("tr", {}, [
         el("td", {}, el("strong", {}, v ? v.name : id)),
         el("td", {}, String(m.orders)),
-        el("td", {}, money(m.gross)),
-        el("td", { class: "muted" }, money(comm)),
-        el("td", { style: "color:#1a9d54;font-weight:700" }, money(m.gross - comm)),
+        el("td", { style: "color:#1a9d54;font-weight:700" }, money(m.gross)),
         el("td", { style: unsettledNet > 0 ? "color:var(--red);font-weight:700" : "" }, money(unsettledNet)),
         el("td", {}, settleBtn),
       ]);
@@ -1023,17 +1020,15 @@
 
     return shell("earnings", [
       el("div", { class: "row between", style: "align-items:center" }, [
-        el("div", {}, [el("h1", { class: "page-title" }, "Earnings & Settlements"), el("p", { class: "page-sub" }, "Delivered orders only · rider pay ₹" + payPerDelivery + "/delivery · commission " + commissionPct + "%")]),
+        el("div", {}, [el("h1", { class: "page-title" }, "Earnings & Settlements"), el("p", { class: "page-sub" }, "Merchants get item cost only · Saardha keeps GST + delivery · Saradhis are salaried (no commission)")]),
         el("button", { class: "btn ghost sm", onClick: () => go("settings") }, "Change rates"),
       ]),
       chips,
       el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px" }, [
         card("Delivered orders", String(delivered.length)),
-        card("Gross sales", money(grossSales), "items only"),
-        card("Platform commission", money(commission), commissionPct + "% of sales"),
-        card("Delivery fees", money(deliveryFees)),
-        card("Rider payouts", money(riderPayouts), delivered.length + " × ₹" + payPerDelivery),
-        card("Merchant payable", money(merchantPayable)),
+        card("Item sales (merchant payable)", money(merchantPayable), "item cost — paid to stores"),
+        card("Saardha revenue", money(platformRevenue), "GST " + money(gstSum) + " + delivery " + money(deliveryFees)),
+        card("Rider payouts", money(riderPayouts), delivered.length + " × ₹" + payPerDelivery + " (incentive)"),
       ]),
       el("h3", { style: "margin:0 0 8px" }, "Riders — earnings & cash to settle"),
       el("div", { class: "card", style: "padding:0;overflow:hidden;margin-bottom:20px" }, [
@@ -1045,9 +1040,9 @@
       el("h3", { style: "margin:0 0 4px" }, "Merchants — payable & settlement"),
       el("p", { class: "page-sub", style: "margin:0 0 8px" }, "Working cycle 9am–9pm. Accounts settle each store twice daily (≈9am & 9pm). 'Settle' pays out all delivered orders not yet settled."),
       el("div", { class: "card", style: "padding:0;overflow-x:auto" }, [
-        el("table", { style: "min-width:760px" }, [
-          el("thead", {}, el("tr", {}, ["Store", "Orders (period)", "Gross sales", "Commission", "Net (period)", "Unsettled", "Settle"].map((h) => el("th", {}, h)))),
-          el("tbody", {}, vendRows.length ? vendRows : [el("tr", {}, el("td", { colspan: "7", class: "muted", style: "text-align:center;padding:20px" }, "No delivered orders yet."))]),
+        el("table", { style: "min-width:620px" }, [
+          el("thead", {}, el("tr", {}, ["Store", "Orders (period)", "Item sales (period)", "Unsettled (payable)", "Settle"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, vendRows.length ? vendRows : [el("tr", {}, el("td", { colspan: "5", class: "muted", style: "text-align:center;padding:20px" }, "No delivered orders yet."))]),
         ]),
       ]),
     ]);
