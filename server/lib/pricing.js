@@ -32,42 +32,55 @@ function clampPct(n) {
  *   { amount, source: 'store'|'promo'|'none', code, pct, promoError }
  * promoError is a customer-facing string ONLY when a code was supplied but rejected.
  */
-function computeDiscount(vendor, subtotal, promoCode) {
+function computeDiscount(vendor, subtotal, promoCode, opts = {}) {
+  const platformPromos = Array.isArray(opts.platformPromos) ? opts.platformPromos : [];
+  const usedPromos = Array.isArray(opts.usedPromos) ? opts.usedPromos.map(normalizeCode) : [];
+
   const storePct = clampPct(vendor.storeDiscountPct);
   const storeAmt = Math.round((subtotal * storePct) / 100);
 
   let promoAmt = 0;
-  let promo = null;
+  let promo = null;          // { code, pct, isPlatform }
   let promoError = null;
 
   const code = normalizeCode(promoCode);
   if (code) {
-    const list = Array.isArray(vendor.promos) ? vendor.promos : [];
-    const found = list.find((p) => normalizeCode(p.code) === code);
+    // A code can be either a store's own promo OR a Saardha-wide platform code
+    // (e.g. the daily Instagram offer). Store promos take priority if both exist.
+    const storeList = Array.isArray(vendor.promos) ? vendor.promos : [];
+    const storeFound = storeList.find((p) => normalizeCode(p.code) === code);
+    const platformFound = platformPromos.find((p) => normalizeCode(p.code) === code);
+    const found = storeFound || platformFound;
+    const isPlatform = !storeFound && !!platformFound;
+
     if (!found) {
-      promoError = "That code isn't valid for this store.";
+      promoError = "That code isn't valid.";
     } else if (found.active === false) {
       promoError = "That code is no longer active.";
     } else if (found.expiresAt && new Date(found.expiresAt) < new Date()) {
       promoError = "That code has expired.";
+    } else if (isPlatform && Number(found.totalCap) > 0 && Number(found.usedCount || 0) >= Number(found.totalCap)) {
+      promoError = "That code has reached its limit.";
+    } else if (isPlatform && found.perCustomerOnce && usedPromos.includes(code)) {
+      promoError = "You've already used that code.";
     } else if (found.minSubtotal && subtotal < Number(found.minSubtotal)) {
       promoError = `Add ₹${Number(found.minSubtotal) - subtotal} more to use ${code}.`;
     } else {
       const pct = clampPct(found.pct);
       promoAmt = Math.round((subtotal * pct) / 100);
-      promo = { code, pct };
+      promo = { code, pct, isPlatform };
     }
   }
 
   // Bigger of the two — never stack.
   if (promo && promoAmt > 0 && promoAmt >= storeAmt) {
-    return { amount: promoAmt, source: "promo", code: promo.code, pct: promo.pct, promoError: null };
+    return { amount: promoAmt, source: "promo", code: promo.code, pct: promo.pct, isPlatform: promo.isPlatform, promoError: null };
   }
   if (storeAmt > 0) {
     // A valid-but-smaller promo still "worked", it was just beaten by the store %.
-    return { amount: storeAmt, source: "store", code: null, pct: storePct, promoError };
+    return { amount: storeAmt, source: "store", code: null, pct: storePct, isPlatform: false, promoError };
   }
-  return { amount: 0, source: "none", code: null, pct: 0, promoError };
+  return { amount: 0, source: "none", code: null, pct: 0, isPlatform: false, promoError };
 }
 
 /**
@@ -80,7 +93,7 @@ function computeDiscount(vendor, subtotal, promoCode) {
  *   promoError, discountedSubtotal, gst, deliveryFee, total
  * }>}
  */
-async function priceOrder({ vendorId, items, promoCode, reward, freeDelivery }) {
+async function priceOrder({ vendorId, items, promoCode, reward, freeDelivery, usedPromos }) {
   if (!vendorId || !Array.isArray(items) || !items.length) {
     const e = new Error("vendorId and items required"); e.code = 400; throw e;
   }
@@ -113,11 +126,13 @@ async function priceOrder({ vendorId, items, promoCode, reward, freeDelivery }) 
     subtotal += lineTotal;
   }
 
-  const discount = computeDiscount(vendor, subtotal, promoCode);
-  const discountedSubtotal = Math.max(0, subtotal - discount.amount);
-
   const settingsDoc = await db.collection("settings").doc("global").get();
-  const baseDeliveryFee = settingsDoc.exists ? (settingsDoc.data().deliveryFee ?? 15) : 15;
+  const settings = settingsDoc.exists ? settingsDoc.data() : {};
+  const baseDeliveryFee = settings.deliveryFee ?? 15;
+  const platformPromos = Array.isArray(settings.platformPromos) ? settings.platformPromos : [];
+
+  const discount = computeDiscount(vendor, subtotal, promoCode, { platformPromos, usedPromos });
+  const discountedSubtotal = Math.max(0, subtotal - discount.amount);
 
   // Gold-coin reward (platform-borne, validated by the caller from the customer doc):
   //   FREE_DELIVERY → delivery fee waived; PERCENT10 → extra 10% off items.
@@ -144,7 +159,7 @@ async function priceOrder({ vendorId, items, promoCode, reward, freeDelivery }) 
     vendor,
     resolvedItems,
     subtotal,
-    discount: { amount: discount.amount, source: discount.source, code: discount.code, pct: discount.pct },
+    discount: { amount: discount.amount, source: discount.source, code: discount.code, pct: discount.pct, isPlatform: !!discount.isPlatform },
     promoError: discount.promoError || null,
     discountedSubtotal,
     reward: rewardApplied,      // null, or { type, amount } — what the coins reward saved

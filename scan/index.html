@@ -137,8 +137,18 @@
       const btn = document.getElementById("installBtn");
       if (btn) btn.textContent = "📲 Install Saardha";
     });
-    // After a successful install, open the app straight into their store
+    // Lightweight install/open analytics (no auth) — mirrors assets/js/api.js.
+    function sendMetric(type) {
+      try {
+        fetch(API_BASE + "/api/public/metric", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: type, app: "scan" }), keepalive: true,
+        }).catch(function () {});
+      } catch (e) {}
+    }
+    // After a successful install, count it and open the app straight into their store
     window.addEventListener("appinstalled", () => {
+      if (!localStorage.getItem("bw_install_reported")) { localStorage.setItem("bw_install_reported", "1"); sendMetric("install"); }
       window.location.href = customerUrl(currentVendor);
     });
     async function triggerInstall() {

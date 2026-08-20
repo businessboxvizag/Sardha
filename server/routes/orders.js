@@ -156,7 +156,7 @@ router.post("/quote", requireAuth, requireRole("customer"), async (req, res) => 
     // Preview any redeemed reward too, so the shown total matches what will be charged.
     const custSnap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
     const cust = custSnap.empty ? {} : custSnap.docs[0].data();
-    const p = await priceOrder({ vendorId, items, promoCode, reward: cust.activeReward || null, freeDelivery: Number(cust.orderCount || 0) < FREE_DELIVERY_FIRST_N });
+    const p = await priceOrder({ vendorId, items, promoCode, reward: cust.activeReward || null, freeDelivery: Number(cust.orderCount || 0) < FREE_DELIVERY_FIRST_N, usedPromos: cust.usedPromos || [] });
     res.json({
       subtotal: p.subtotal,
       discount: p.discount,
@@ -198,7 +198,7 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     let priced;
     try {
       // A redeemed gold-coin reward (if any) is read from the customer doc — never trusted from the client.
-      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode, reward: customer.activeReward, freeDelivery: Number(customer.orderCount || 0) < FREE_DELIVERY_FIRST_N });
+      priced = await priceOrder({ vendorId, items, promoCode: req.body.promoCode, reward: customer.activeReward, freeDelivery: Number(customer.orderCount || 0) < FREE_DELIVERY_FIRST_N, usedPromos: customer.usedPromos || [] });
     } catch (e) {
       return res.status(e.code || 400).json({ error: e.message || "Could not price this order" });
     }
@@ -301,8 +301,27 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
     try {
       const custUpd = { orderCount: Number(customer.orderCount || 0) + 1 };
       if (reward) custUpd.activeReward = null;
+      // Record a Saardha-wide (platform) promo redemption on the customer for per-customer-once codes.
+      if (discount && discount.isPlatform && discount.code) {
+        const used = Array.isArray(customer.usedPromos) ? customer.usedPromos.slice() : [];
+        if (!used.includes(discount.code)) used.push(discount.code);
+        custUpd.usedPromos = used;
+      }
       await db.collection("customers").doc(customer.id).update(custUpd);
     } catch (e) { console.error("post-order customer update failed:", e && e.message); }
+
+    // Increment the platform promo's global redemption counter (drives the total cap + admin stats).
+    if (discount && discount.isPlatform && discount.code) {
+      try {
+        const sref = db.collection("settings").doc("global");
+        await db.runTransaction(async (tx) => {
+          const s = await tx.get(sref);
+          const list = (s.exists && Array.isArray(s.data().platformPromos)) ? s.data().platformPromos : [];
+          const i = list.findIndex((p) => String(p.code).trim().toUpperCase() === discount.code);
+          if (i >= 0) { list[i] = { ...list[i], usedCount: Number(list[i].usedCount || 0) + 1 }; tx.update(sref, { platformPromos: list }); }
+        });
+      } catch (e) { console.error("promo usedCount increment failed:", e && e.message); }
+    }
 
     // Emit / return a version WITHOUT the sensitive Rx images or OTP.
     const { deliveryOtp: _o, prescriptionUrl: _p, selfieUrl: _s, ...safeOrder } = order;

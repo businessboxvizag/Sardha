@@ -114,6 +114,7 @@
       navItem("partners",  "Pa", "Partners"),
       navItem("services",  "Sv", "Services"),
       navItem("fleet",     "Sa", "Saradhis"),
+      navItem("offers",    "%",  "Offers"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
     ]);
@@ -162,6 +163,22 @@
       d ? el("span", { class: "d" }, d) : document.createTextNode(""),
     ]);
 
+    // PWA analytics — fetch once, then re-render when they arrive.
+    const M = viewOverview._metrics;
+    if (M === undefined) {
+      viewOverview._metrics = null;
+      BW.getMetrics().then((m) => { viewOverview._metrics = m || null; if (state.route === "overview") render(); }).catch(() => {});
+    }
+    function last7(kind) {
+      if (!M || !M.daily) return 0;
+      let sum = 0;
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+        sum += Number((M.daily[day] || {})[kind] || 0);
+      }
+      return sum;
+    }
+
     const recent = orders.slice(0, 8).map((o) => {
       const v    = BW.vendor(o.vendorId);
       const cust = BW.customers().find((c) => c.id === o.customerId);
@@ -192,6 +209,13 @@
         stat("Cancelled",     String(O.cancelled), Math.round(O.cancelRate * 100) + "% rate"),
         stat("Repeat rate",   Math.round(O.repeatRate * 100) + "%", "returning buyers"),
         stat("Saradhis online", O.ridersOnline + " / " + riders.length, ""),
+      ]),
+      el("h3", { style: "margin:24px 0 10px" }, "App analytics"),
+      el("div", { class: "grid cols-4" }, [
+        stat("App installs",  M ? String(M.installs || 0) : "…", "+" + last7("installs") + " this week"),
+        stat("App opens",     M ? String(M.opens || 0) : "…", "+" + last7("opens") + " this week"),
+        stat("Customers",     String(O.totalCustomers), "registered"),
+        stat("Installs (7d)", M ? String(last7("installs")) : "…", "last 7 days"),
       ]),
       el("h3", { style: "margin:24px 0 10px" }, "Recent orders"),
       el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
@@ -1209,6 +1233,7 @@
       case "customers": return viewCustomers();
       case "partners":  return viewPartners();
       case "services":  return viewServices();
+      case "offers":    return viewOffers();
       case "settings":  return viewSettings();
       case "monitor":   return viewMonitor();
       default:          return viewOverview();
@@ -1591,6 +1616,108 @@
 
   /* ====================== SETTINGS ====================== */
   /* ====================== DELIVERY PARTNERS ====================== */
+  /* ====================== OFFERS (platform promo codes) ====================== */
+  async function viewOffers() {
+    let promos = [];
+    try { promos = await BW.listPromos(); } catch (e) { promos = viewOffers._cache || []; }
+    viewOffers._cache = promos;
+
+    const edit = viewOffers._edit || null;   // code being edited, or null for a new one
+
+    const codeEl  = el("input", { placeholder: "e.g. SAAR20", value: edit ? edit.code : "", autocapitalize: "characters", maxlength: "20", style: "text-transform:uppercase" });
+    if (edit) codeEl.disabled = true;         // code is the key — don't rename, just edit fields
+    const pctEl   = el("input", { type: "number", min: "1", max: "90", value: edit ? edit.pct : "20", style: "max-width:90px" });
+    const minEl   = el("input", { type: "number", min: "0", value: edit ? (edit.minSubtotal || 0) : "0", style: "max-width:110px" });
+    const capEl   = el("input", { type: "number", min: "0", value: edit ? (edit.totalCap || 0) : "0", style: "max-width:110px" });
+    const expEl   = el("input", { type: "date", value: edit && edit.expiresAt ? String(edit.expiresAt).slice(0, 10) : "" });
+    const onceEl  = el("input", { type: "checkbox" }); onceEl.checked = edit ? edit.perCustomerOnce !== false : true;
+    const activeEl = el("input", { type: "checkbox" }); activeEl.checked = edit ? edit.active !== false : true;
+    const noteEl  = el("input", { placeholder: "Internal note (optional)", value: edit ? (edit.note || "") : "", maxlength: "140" });
+
+    const saveBtn = el("button", { class: "btn primary" }, edit ? "Save changes" : "Create code");
+    saveBtn.addEventListener("click", async () => {
+      const code = (codeEl.value || "").trim().toUpperCase();
+      if (!/^[A-Z0-9]{3,20}$/.test(code)) { toast("Code must be 3–20 letters/numbers, no spaces."); return; }
+      const pct = Number(pctEl.value);
+      if (!(pct >= 1 && pct <= 90)) { toast("Enter a percent between 1 and 90."); return; }
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      try {
+        await BW.savePromo({
+          code, pct,
+          minSubtotal: Number(minEl.value) || 0,
+          totalCap: Number(capEl.value) || 0,
+          expiresAt: expEl.value ? new Date(expEl.value + "T23:59:59").toISOString() : null,
+          perCustomerOnce: onceEl.checked,
+          active: activeEl.checked,
+          note: noteEl.value.trim(),
+        });
+        viewOffers._edit = null;
+        toast(edit ? "Code updated" : "Code created");
+        render();
+      } catch (e) { toast("Error: " + (e.message || "failed")); saveBtn.disabled = false; saveBtn.textContent = edit ? "Save changes" : "Create code"; }
+    });
+
+    const formCard = el("div", { class: "card", style: "max-width:680px;margin-bottom:16px" }, [
+      el("h3", { style: "margin-top:0" }, edit ? ("Edit " + edit.code) : "Create a promo code"),
+      el("div", { style: "display:flex;gap:12px;flex-wrap:wrap" }, [
+        el("div", { class: "field" }, [el("label", {}, "Code"), codeEl]),
+        el("div", { class: "field" }, [el("label", {}, "Discount %"), pctEl]),
+        el("div", { class: "field" }, [el("label", {}, "Min order ₹"), minEl]),
+      ]),
+      el("div", { style: "display:flex;gap:12px;flex-wrap:wrap" }, [
+        el("div", { class: "field" }, [el("label", {}, "Expires on"), expEl]),
+        el("div", { class: "field" }, [el("label", {}, "Total uses cap (0 = unlimited)"), capEl]),
+      ]),
+      el("label", { style: "display:flex;align-items:center;gap:8px;margin:6px 0" }, [onceEl, el("span", {}, "One use per customer")]),
+      el("label", { style: "display:flex;align-items:center;gap:8px;margin:6px 0" }, [activeEl, el("span", {}, "Active (customers can use it now)")]),
+      el("div", { class: "field" }, [el("label", {}, "Note"), noteEl]),
+      el("div", { style: "display:flex;gap:8px" }, [
+        saveBtn,
+        edit ? el("button", { class: "btn ghost", onClick: () => { viewOffers._edit = null; render(); } }, "Cancel") : null,
+      ].filter(Boolean)),
+      el("p", { class: "muted small", style: "margin-bottom:0" }, "Codes work across every store. Saardha absorbs the discount — merchants still receive full item cost."),
+    ]);
+
+    function captionFor(p) {
+      const exp = p.expiresAt ? (" Valid till " + new Date(p.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + ".") : " Today only.";
+      const minTxt = p.minSubtotal ? (" Min order ₹" + p.minSubtotal + ".") : "";
+      return "🎉 Today's Saardha offer!\nUse code " + p.code + " for " + p.pct + "% OFF your order." + minTxt + exp + "\nOrder now on the Saardha app 🚚\n#Saardha #LocalDelivery #Offer";
+    }
+
+    const rows = promos.map((p) => {
+      const expired = p.expiresAt && new Date(p.expiresAt) < new Date();
+      const live = p.active !== false && !expired;
+      const status = expired ? "expired" : (p.active !== false ? "live" : "paused");
+      const capTxt = Number(p.totalCap) > 0 ? (Number(p.usedCount || 0) + " / " + p.totalCap) : String(Number(p.usedCount || 0));
+      return el("tr", {}, [
+        el("td", {}, el("strong", {}, p.code)),
+        el("td", {}, p.pct + "%"),
+        el("td", { class: "muted small" }, (p.minSubtotal ? "min ₹" + p.minSubtotal : "—") + (p.perCustomerOnce !== false ? " · 1/cust" : "")),
+        el("td", { class: "muted small" }, p.expiresAt ? new Date(p.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "no expiry"),
+        el("td", {}, capTxt),
+        el("td", {}, el("span", { class: "badge " + (live ? "DELIVERED" : "") }, status)),
+        el("td", {}, el("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, [
+          el("button", { class: "btn ghost sm", onClick: () => { if (navigator.clipboard) navigator.clipboard.writeText(captionFor(p)).then(() => toast("Instagram caption copied")); } }, "📋 Caption"),
+          el("button", { class: "btn ghost sm", onClick: async () => { try { await BW.savePromo({ ...p, active: !(p.active !== false) }); toast("Updated"); render(); } catch (e) { toast(e.message); } } }, p.active !== false ? "Pause" : "Resume"),
+          el("button", { class: "btn ghost sm", onClick: () => { viewOffers._edit = p; render(); } }, "Edit"),
+          el("button", { class: "btn ghost sm", onClick: async () => { if (!confirm("Delete code " + p.code + "?")) return; try { await BW.deletePromo(p.code); toast("Deleted"); render(); } catch (e) { toast(e.message); } } }, "Delete"),
+        ])),
+      ]);
+    });
+
+    shell("offers", [
+      el("h1", { class: "page-title" }, "Offers & Promo Codes"),
+      el("p", { class: "page-sub" }, "Create a fresh code each day, post it to your Instagram story, and followers redeem it at checkout."),
+      formCard,
+      el("div", { class: "card", style: "padding:0;overflow:hidden;overflow-x:auto" }, [
+        el("table", {}, [
+          el("thead", {}, el("tr", {}, ["Code", "Off", "Rules", "Expires", "Used", "Status", ""].map((h) => el("th", {}, h)))),
+          el("tbody", {}, rows.length ? rows : [el("tr", {}, el("td", { colspan: "7", class: "muted", style: "text-align:center;padding:20px" }, "No codes yet. Create your first offer above."))]),
+        ]),
+      ]),
+    ]);
+  }
+
   function viewPartners() {
     const partners = BW.partners ? BW.partners() : [];
     const orders = BW.orders();

@@ -341,4 +341,88 @@ router.post("/riders", requireAuth, requireRole("admin"), async (req, res) => {
   }
 });
 
+/* ── PWA analytics (installs + app opens) ───────────────────────── */
+router.get("/metrics", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const s = await db.collection("metrics").doc("global").get();
+    res.json(s.exists ? s.data() : { installs: 0, opens: 0, daily: {}, byApp: {} });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load metrics" });
+  }
+});
+
+/* ── Platform promo codes (Saardha-wide daily offers) ─────────────
+ * These are the codes shared on Instagram stories etc. They work across every
+ * store; Saardha absorbs the discount (merchants still receive full item cost).
+ * Stored as settings.global.platformPromos = [{ code, pct, minSubtotal,
+ * expiresAt, perCustomerOnce, totalCap, usedCount, active, note, createdAt }]. */
+function normPromoCode(c) { return String(c || "").trim().toUpperCase(); }
+
+router.get("/promos", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const s = await db.collection("settings").doc("global").get();
+    const list = (s.exists && Array.isArray(s.data().platformPromos)) ? s.data().platformPromos : [];
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load promos" });
+  }
+});
+
+// Create OR update a code (upsert keyed by code). Body: { code, pct, minSubtotal,
+// expiresAt, perCustomerOnce, totalCap, active, note }.
+router.post("/promos", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const code = normPromoCode(req.body.code);
+    if (!code || !/^[A-Z0-9]{3,20}$/.test(code)) {
+      return res.status(400).json({ error: "Code must be 3–20 letters/numbers, no spaces." });
+    }
+    const pct = Math.max(1, Math.min(90, Number(req.body.pct) || 0));
+    if (!pct) return res.status(400).json({ error: "Enter a discount percent (1–90)." });
+
+    const entry = {
+      code,
+      pct,
+      minSubtotal: Math.max(0, Number(req.body.minSubtotal) || 0),
+      expiresAt: req.body.expiresAt || null,
+      perCustomerOnce: req.body.perCustomerOnce !== false,   // default: once per customer
+      totalCap: Math.max(0, Number(req.body.totalCap) || 0), // 0 = unlimited
+      active: req.body.active !== false,
+      note: (req.body.note || "").slice(0, 140),
+    };
+
+    const sref = db.collection("settings").doc("global");
+    await db.runTransaction(async (tx) => {
+      const s = await tx.get(sref);
+      const list = (s.exists && Array.isArray(s.data().platformPromos)) ? s.data().platformPromos.slice() : [];
+      const i = list.findIndex((p) => normPromoCode(p.code) === code);
+      if (i >= 0) {
+        list[i] = { ...list[i], ...entry, usedCount: Number(list[i].usedCount || 0), createdAt: list[i].createdAt || new Date().toISOString() };
+      } else {
+        list.push({ ...entry, usedCount: 0, createdAt: new Date().toISOString() });
+      }
+      if (s.exists) tx.update(sref, { platformPromos: list });
+      else tx.set(sref, { platformPromos: list }, { merge: true });
+    });
+    res.json({ ok: true, code });
+  } catch (err) {
+    console.error("POST /admin/promos:", err);
+    res.status(500).json({ error: "Failed to save promo" });
+  }
+});
+
+router.delete("/promos/:code", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const code = normPromoCode(req.params.code);
+    const sref = db.collection("settings").doc("global");
+    await db.runTransaction(async (tx) => {
+      const s = await tx.get(sref);
+      const list = (s.exists && Array.isArray(s.data().platformPromos)) ? s.data().platformPromos : [];
+      tx.update(sref, { platformPromos: list.filter((p) => normPromoCode(p.code) !== code) });
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete promo" });
+  }
+});
+
 module.exports = router;

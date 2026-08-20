@@ -681,6 +681,14 @@
       return del("/api/admin/clear-demo");
     },
 
+    // PWA analytics (admin)
+    getMetrics:  () => get("/api/admin/metrics"),
+
+    // Platform-wide promo codes (Saardha daily offers, shared on Instagram etc.)
+    listPromos:  () => get("/api/admin/promos"),
+    savePromo:   (data) => post("/api/admin/promos", data),
+    deletePromo: (code) => del(`/api/admin/promos/${encodeURIComponent(code)}`),
+
     createMerchant: (data) => post("/api/admin/merchants", data),
     updateSettings: async (data) => { const s = await put("/api/settings", data); _cache.settings = s; emit(); return s; },
     createRider: (data) => post("/api/admin/riders", data),
@@ -730,4 +738,31 @@
   };
 
   global.BW = API;
+
+  /* ── PWA install / open analytics (no auth, fire-and-forget) ──────
+     Reports when the app is installed (Add to Home Screen) and each time it's
+     launched as an installed app. De-duped client-side: install once per device,
+     open once per browser session — so admin counts stay meaningful. */
+  (function reportPwaMetrics() {
+    try {
+      const appName = (location.pathname.match(/\/(customer|merchant|rider|admin|scan)(\/|$)/) || [])[1] || "other";
+      const sendMetric = (type) => {
+        try {
+          fetch(API_BASE + "/api/public/metric", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type, app: appName }), keepalive: true,
+          }).catch(() => {});
+        } catch (e) {}
+      };
+      const standalone = window.navigator.standalone === true
+        || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+      if (standalone) {
+        if (!localStorage.getItem("bw_install_reported")) { localStorage.setItem("bw_install_reported", "1"); sendMetric("install"); }
+        if (!sessionStorage.getItem("bw_open_reported")) { sessionStorage.setItem("bw_open_reported", "1"); sendMetric("open"); }
+      }
+      window.addEventListener("appinstalled", () => {
+        if (!localStorage.getItem("bw_install_reported")) { localStorage.setItem("bw_install_reported", "1"); sendMetric("install"); }
+      });
+    } catch (e) { /* analytics must never break the app */ }
+  })();
 })(window);
