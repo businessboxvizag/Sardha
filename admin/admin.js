@@ -1717,10 +1717,10 @@
         el("td", { class: "muted small" }, (p.minSubtotal ? "min ₹" + p.minSubtotal : "—") + (p.perCustomerOnce !== false ? " · 1/cust" : "")),
         el("td", { class: "muted small" }, p.expiresAt ? new Date(p.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "no expiry"),
         el("td", {}, capTxt),
-        el("td", {}, el("span", { class: "badge " + (live ? "DELIVERED" : "") }, status)),
+        el("td", {}, el("span", { style: "font-weight:800;font-size:11px;padding:2px 8px;border-radius:20px;color:#fff;background:" + (live ? "#16a34a" : expired ? "#9ca3af" : "#dc2626") }, live ? "LIVE" : status.toUpperCase())),
         el("td", {}, el("div", { style: "display:flex;gap:6px;flex-wrap:wrap" }, [
           el("button", { class: "btn ghost sm", onClick: () => { if (navigator.clipboard) navigator.clipboard.writeText(captionFor(p)).then(() => toast("Instagram caption copied")); } }, "📋 Caption"),
-          el("button", { class: "btn ghost sm", onClick: async () => { try { await BW.savePromo({ ...p, active: !(p.active !== false) }); toast("Updated"); render(); } catch (e) { toast(e.message); } } }, p.active !== false ? "Pause" : "Resume"),
+          el("button", { class: "btn " + (p.active !== false ? "ghost" : "primary") + " sm", onClick: async () => { try { await BW.savePromo({ ...p, active: !(p.active !== false) }); toast(p.active !== false ? "Paused" : "Activated ✓"); render(); } catch (e) { toast(e.message); } } }, p.active !== false ? "⏸ Pause" : "▶ Activate"),
           el("button", { class: "btn ghost sm", onClick: () => { viewOffers._edit = p; render(); } }, "Edit"),
           el("button", { class: "btn ghost sm", onClick: async () => { if (!confirm("Delete code " + p.code + "?")) return; try { await BW.deletePromo(p.code); toast("Deleted"); render(); } catch (e) { toast(e.message); } } }, "Delete"),
         ])),

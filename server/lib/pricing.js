@@ -45,30 +45,42 @@ function computeDiscount(vendor, subtotal, promoCode, opts = {}) {
 
   const code = normalizeCode(promoCode);
   if (code) {
-    // A code can be either a store's own promo OR a Saardha-wide platform code
-    // (e.g. the daily Instagram offer). Store promos take priority if both exist.
+    // A code can be a store's own promo OR a Saardha-wide platform code (the daily
+    // Instagram offer). We validate BOTH and use whichever is usable — so an inactive
+    // store code with the same name can never shadow a valid platform code.
     const storeList = Array.isArray(vendor.promos) ? vendor.promos : [];
     const storeFound = storeList.find((p) => normalizeCode(p.code) === code);
     const platformFound = platformPromos.find((p) => normalizeCode(p.code) === code);
-    const found = storeFound || platformFound;
-    const isPlatform = !storeFound && !!platformFound;
 
-    if (!found) {
-      promoError = "That code isn't valid.";
-    } else if (found.active === false) {
-      promoError = "That code is no longer active.";
-    } else if (found.expiresAt && new Date(found.expiresAt) < new Date()) {
-      promoError = "That code has expired.";
-    } else if (isPlatform && Number(found.totalCap) > 0 && Number(found.usedCount || 0) >= Number(found.totalCap)) {
-      promoError = "That code has reached its limit.";
-    } else if (isPlatform && found.perCustomerOnce && usedPromos.includes(code)) {
-      promoError = "You've already used that code.";
-    } else if (found.minSubtotal && subtotal < Number(found.minSubtotal)) {
-      promoError = `Add ₹${Number(found.minSubtotal) - subtotal} more to use ${code}.`;
+    // Returns { pct } if usable, else { error }.
+    function evaluate(p, isPlatform) {
+      if (!p) return null;
+      if (p.active === false) return { error: "That code is no longer active." };
+      if (p.expiresAt && new Date(p.expiresAt) < new Date()) return { error: "That code has expired." };
+      if (isPlatform && Number(p.totalCap) > 0 && Number(p.usedCount || 0) >= Number(p.totalCap)) return { error: "That code has reached its limit." };
+      if (isPlatform && p.perCustomerOnce && usedPromos.includes(code)) return { error: "You've already used that code." };
+      if (p.minSubtotal && subtotal < Number(p.minSubtotal)) return { error: `Add ₹${Number(p.minSubtotal) - subtotal} more to use ${code}.` };
+      return { pct: clampPct(p.pct) };
+    }
+
+    const storeEval = evaluate(storeFound, false);
+    const platformEval = evaluate(platformFound, true);
+
+    // Prefer whichever is usable; if both, take the bigger %. If neither, surface an error.
+    const candidates = [];
+    if (storeEval && storeEval.pct != null) candidates.push({ pct: storeEval.pct, isPlatform: false });
+    if (platformEval && platformEval.pct != null) candidates.push({ pct: platformEval.pct, isPlatform: true });
+
+    if (candidates.length) {
+      const best = candidates.sort((a, b) => b.pct - a.pct)[0];
+      promoAmt = Math.round((subtotal * best.pct) / 100);
+      promo = { code, pct: best.pct, isPlatform: best.isPlatform };
+    } else if (platformEval && platformEval.error) {
+      promoError = platformEval.error;
+    } else if (storeEval && storeEval.error) {
+      promoError = storeEval.error;
     } else {
-      const pct = clampPct(found.pct);
-      promoAmt = Math.round((subtotal * pct) / 100);
-      promo = { code, pct, isPlatform };
+      promoError = "That code isn't valid.";
     }
   }
 
