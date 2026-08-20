@@ -520,6 +520,25 @@
       ]),
     ]);
 
+    // Category filter — chips built from the categories of the visible stores.
+    const cats = Array.from(new Set(
+      BW.vendors().filter((v) => visibleIds.includes(v.id)).map((v) => (v.category || "").trim()).filter(Boolean)
+    )).sort();
+    if (state.storeCat && cats.indexOf(state.storeCat) < 0) state.storeCat = "";  // reset if it disappeared
+    const catBar = el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;-webkit-overflow-scrolling:touch" });
+    function renderCats() {
+      catBar.innerHTML = "";
+      [["", "All"]].concat(cats.map((c) => [c, c])).forEach(([val, label]) => {
+        const on = (state.storeCat || "") === val;
+        catBar.appendChild(el("button", {
+          type: "button",
+          style: "flex:0 0 auto;white-space:nowrap;padding:6px 14px;border-radius:18px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid " + (on ? "var(--brand)" : "var(--border)") + ";background:" + (on ? "var(--brand)" : "transparent") + ";color:" + (on ? "#fff" : "var(--text)"),
+          onClick: () => { state.storeCat = val; renderCats(); renderGrid(); },
+        }, label));
+      });
+    }
+    renderCats();
+
     const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
     const removedWrap = el("div", { id: "removedWrap" });
     shell("stores", [
@@ -529,6 +548,7 @@
       servicesEntry(),
       countHint,
       searchBar,
+      cats.length > 1 ? catBar : document.createTextNode(""),
       grid,
       removedWrap,
     ]);
@@ -539,13 +559,15 @@
       const g = document.getElementById("vendorGrid");
       if (!g) return;
       g.innerHTML = "";
+      const q = (state.search || "").toLowerCase();
       const list = BW.vendors().filter((v) => {
         if (!visibleIds.includes(v.id)) return false;
-        return !state.search || (v.name + v.category + v.area).toLowerCase().includes(state.search.toLowerCase());
+        if (state.storeCat && (v.category || "").trim() !== state.storeCat) return false;
+        return !q || (v.name + v.category + v.area).toLowerCase().includes(q);
       });
       if (!list.length) {
         g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, ""),
-          state.search ? "No stores match your search." : "You've removed all stores. Scan a shop's QR — or restore one below."]));
+          (state.search || state.storeCat) ? "No stores match this filter." : "You've removed all stores. Scan a shop's QR — or restore one below."]));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));

@@ -326,7 +326,26 @@
     const user = BW.Auth.getUser();
 
     const logoutBtn = el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Sign out");
-    root.appendChild(topbar("Merchant · " + (user ? user.name : ""), [logoutBtn]));
+
+    // Open/Closed switch right in the header — one tap to start/stop taking orders.
+    const sv = BW.vendor(state.vendorId) || {};
+    const rightItems = [];
+    if (sv.id) {
+      const isOpen = sv.active !== false;
+      const openToggle = el("button", {
+        class: "btn sm " + (isOpen ? "success" : "danger"),
+        style: "font-weight:700",
+        title: isOpen ? "Store is OPEN — tap to close" : "Store is CLOSED — tap to open",
+        onClick: async () => {
+          openToggle.disabled = true;
+          try { await BW.upsertVendor({ id: sv.id, active: !isOpen, status: !isOpen ? "active" : "inactive" }); toast(!isOpen ? "Store opened ✓" : "Store closed"); render(); }
+          catch (e) { toast("Error: " + (e.message || "")); openToggle.disabled = false; }
+        },
+      }, isOpen ? "🟢 Open" : "🔴 Closed");
+      rightItems.push(openToggle);
+    }
+    rightItems.push(logoutBtn);
+    root.appendChild(topbar("Merchant · " + (user ? user.name : ""), rightItems));
 
     const pending = BW.orders({ vendorId: state.vendorId, status: S.PLACED }).length;
     const nav = el("div", { class: "sidebar" }, [
