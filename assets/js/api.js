@@ -316,6 +316,14 @@
     /* Init */
     init,
 
+    /* Public (no-auth) vendor list — used by the in-app store picker as a fallback
+       when the authed cache is empty (e.g. universal-QR scan before data loads). */
+    apiBase:       () => API_BASE,
+    publicVendors: async () => {
+      try { const res = await fetch(API_BASE + "/api/public/vendors"); if (res.ok) return await res.json(); } catch (e) {}
+      return [];
+    },
+
     /* ââ Synchronous reads from cache ââ */
     vendors:       () => [..._cache.vendors],
     deliveryFee:   () => (_cache.settings && _cache.settings.deliveryFee != null) ? Number(_cache.settings.deliveryFee) : 15,

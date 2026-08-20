@@ -1742,8 +1742,11 @@
     }
 
     // Universal-QR scan → let the customer pick their store in-app (nearest first).
-    function openStorePicker() {
-      const vendors = (BW.vendors() || []).filter((v) => v.active !== false && v.status !== "inactive" && v.status !== "pending_setup");
+    async function openStorePicker() {
+      const activeOnly = (arr) => (arr || []).filter((v) => v.active !== false && v.status !== "inactive" && v.status !== "pending_setup");
+      let vendors = activeOnly(BW.vendors());
+      // Cache empty (data not loaded yet / public scan) → fetch the public vendor list.
+      if (!vendors.length && BW.publicVendors) { try { vendors = activeOnly(await BW.publicVendors()); } catch (e) {} }
       let close, myPos = null;
       const searchEl = el("input", { type: "text", placeholder: "🔍 Search store / area…", style: "width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px" });
       const listWrap = el("div", { style: "max-height:52vh;overflow:auto" });
