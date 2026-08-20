@@ -49,6 +49,26 @@ router.get("/vendors/:id", async (req, res) => {
  * into a single metrics/global doc with all-time totals and per-day buckets.
  * Clients de-duplicate (install once/device, open once/session) so counts are sane.
  */
+/**
+ * GET /api/public/promos
+ * Active, non-expired Saardha-wide promo codes (safe fields only) so the customer
+ * app can SHOW today's offer with a one-tap Apply. Validation still happens server
+ * side at checkout — this is only for display.
+ */
+router.get("/promos", async (req, res) => {
+  try {
+    const s = await db.collection("settings").doc("global").get();
+    const list = (s.exists && Array.isArray(s.data().platformPromos)) ? s.data().platformPromos : [];
+    const now = new Date();
+    const out = list
+      .filter((p) => p.active !== false && (!p.expiresAt || new Date(p.expiresAt) >= now) && (!(Number(p.totalCap) > 0) || Number(p.usedCount || 0) < Number(p.totalCap)))
+      .map((p) => ({ code: p.code, pct: p.pct, minSubtotal: Number(p.minSubtotal) || 0, expiresAt: p.expiresAt || null }));
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load offers" });
+  }
+});
+
 router.post("/metric", async (req, res) => {
   try {
     const type = req.body && req.body.type;

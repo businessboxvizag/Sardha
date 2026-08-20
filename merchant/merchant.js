@@ -674,14 +674,21 @@
   async function uploadToCloudinary(dataUrl) {
     const cfg = (BW.config && BW.config()) || {};
     const cloud = cfg.cloudinaryCloud, preset = cfg.cloudinaryPreset;
-    if (!cloud || !preset) throw new Error("Image uploads aren't set up yet");
-    const fd = new FormData();
-    fd.append("file", dataUrl);
-    fd.append("upload_preset", preset);
-    const r = await fetch("https://api.cloudinary.com/v1_1/" + cloud + "/image/upload", { method: "POST", body: fd });
-    const d = await r.json();
-    if (!d.secure_url) throw new Error((d.error && d.error.message) || "Upload failed");
-    return d.secure_url;
+    // Try Cloudinary first (proper CDN hosting). If it isn't configured OR the upload
+    // is rejected (e.g. a signed/misconfigured preset), fall back to storing the
+    // already-resized image inline so the photo still saves and shows to customers.
+    if (cloud && preset) {
+      try {
+        const fd = new FormData();
+        fd.append("file", dataUrl);
+        fd.append("upload_preset", preset);
+        const r = await fetch("https://api.cloudinary.com/v1_1/" + cloud + "/image/upload", { method: "POST", body: fd });
+        const d = await r.json();
+        if (d && d.secure_url) return d.secure_url;
+        console.warn("Cloudinary upload rejected, using inline image:", d && d.error && d.error.message);
+      } catch (e) { console.warn("Cloudinary upload failed, using inline image:", e && e.message); }
+    }
+    return dataUrl;   // inline data-URL fallback (already resized ≈100–200 KB)
   }
 
   function editProduct(p, quickAdd) {

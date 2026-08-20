@@ -153,4 +153,50 @@ router.post("/me/shops", requireAuth, requireRole("customer"), async (req, res) 
   }
 });
 
+/* ── Hidden stores ──────────────────────────────────────────────
+ * New model: EVERY store is shown to every customer by default. A customer can
+ * "remove" a store they don't want — that just hides it (adds it to hiddenShops).
+ * Scanning the shop's QR again un-hides it. Nothing is ever locked. */
+router.get("/me/hidden-shops", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.json([]);
+    res.json(snap.docs[0].data().hiddenShops || []);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch hidden stores" });
+  }
+});
+
+// Hide (remove) a store from the customer's view.
+router.post("/me/hidden-shops", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const { vendorId } = req.body;
+    if (!vendorId) return res.status(400).json({ error: "vendorId required" });
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: "Profile not found" });
+    const ref = snap.docs[0].ref;
+    await ref.update({ hiddenShops: admin.firestore.FieldValue.arrayUnion(vendorId) });
+    const updated = await ref.get();
+    res.json(updated.data().hiddenShops || []);
+  } catch (err) {
+    console.error("POST /customers/me/hidden-shops:", err);
+    res.status(500).json({ error: "Failed to hide store" });
+  }
+});
+
+// Un-hide (restore) a store — used when a removed store's QR is scanned again.
+router.delete("/me/hidden-shops/:vendorId", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const snap = await db.collection("customers").where("userId", "==", req.user.uid).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: "Profile not found" });
+    const ref = snap.docs[0].ref;
+    await ref.update({ hiddenShops: admin.firestore.FieldValue.arrayRemove(req.params.vendorId) });
+    const updated = await ref.get();
+    res.json(updated.data().hiddenShops || []);
+  } catch (err) {
+    console.error("DELETE /customers/me/hidden-shops:", err);
+    res.status(500).json({ error: "Failed to restore store" });
+  }
+});
+
 module.exports = router;

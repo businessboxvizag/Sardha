@@ -6,16 +6,38 @@
   const { el, money, timeAgo, clockTime, toast, topbar, project, statusBadge } = UI;
 
   // Upload an image file to Cloudinary (unsigned preset from /api/config).
+  // Resize an image File down to a data URL (keeps the inline fallback small).
+  function resizeToDataUrl(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w >= h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", quality || 0.72));
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
   async function uploadToCloudinary(file) {
     const cfg = (BW.config && BW.config()) || {};
-    if (!cfg.cloudinaryCloud || !cfg.cloudinaryPreset) throw new Error("Image uploads aren't set up");
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("upload_preset", cfg.cloudinaryPreset);
-    const r = await fetch("https://api.cloudinary.com/v1_1/" + cfg.cloudinaryCloud + "/image/upload", { method: "POST", body: fd });
-    const d = await r.json();
-    if (!d.secure_url) throw new Error((d.error && d.error.message) || "Upload failed");
-    return d.secure_url;
+    if (cfg.cloudinaryCloud && cfg.cloudinaryPreset) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("upload_preset", cfg.cloudinaryPreset);
+        const r = await fetch("https://api.cloudinary.com/v1_1/" + cfg.cloudinaryCloud + "/image/upload", { method: "POST", body: fd });
+        const d = await r.json();
+        if (d && d.secure_url) return d.secure_url;
+        console.warn("Cloudinary rejected, using inline image:", d && d.error && d.error.message);
+      } catch (e) { console.warn("Cloudinary failed, using inline image:", e && e.message); }
+    }
+    // Fallback: store a resized inline data URL so the image still saves.
+    try { return await resizeToDataUrl(file, 900, 0.72); }
+    catch (e) { throw new Error("Could not process that image"); }
   }
 
   const S = {
@@ -1934,9 +1956,21 @@
     });
 
     /* --- Festival / seasonal theme --- */
-    const themeSel = el("select", { style: "max-width:220px" });
-    [["auto", "Auto (by date)"], ["none", "None"], ["independence", "Independence Day 🇮🇳"], ["diwali", "Diwali 🪔"]].forEach(([v, l]) =>
-      themeSel.appendChild(el("option", { value: v, ...((s0.festivalTheme || "auto") === v ? { selected: "" } : {}) }, l)));
+    const themeSel = el("select", { style: "max-width:260px" });
+    const curTheme = s0.festivalTheme || "auto";
+    const opt = (v, l) => themeSel.appendChild(el("option", { value: v, ...(curTheme === v ? { selected: "" } : {}) }, l));
+    opt("auto", "Auto (today's festival)");
+    opt("none", "None");
+    // Build the rest from the shared festival calendar, grouped by category.
+    const CAT_LABEL = { national: "National", telugu: "Telugu / South Indian", hindu: "Hindu", christian: "Christian", muslim: "Muslim", intl: "International days" };
+    const fests = (window.Festivals && window.Festivals.list) ? window.Festivals.list : [];
+    Object.keys(CAT_LABEL).forEach((cat) => {
+      const inCat = fests.filter((f) => f.cat === cat);
+      if (!inCat.length) return;
+      const og = el("optgroup", { label: CAT_LABEL[cat] });
+      inCat.forEach((f) => og.appendChild(el("option", { value: f.key, ...(curTheme === f.key ? { selected: "" } : {}) }, (f.emoji ? f.emoji + " " : "") + f.name)));
+      themeSel.appendChild(og);
+    });
     const themeSave = el("button", { class: "btn primary" }, "Save theme");
     themeSave.addEventListener("click", async () => {
       themeSave.disabled = true; themeSave.textContent = "Saving…";
@@ -2048,7 +2082,7 @@
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Festival theme"),
-        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Shows a themed greeting banner in the customer app. 'Auto' turns on Independence Day around 15 Aug."),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "Themes the customer app for the day. 'Auto' detects today's occasion automatically — Hindu, Telugu, Christian, Muslim, national festivals and international days (Diwali, Ugadi, Eid, Christmas, Friendship Day…). Pick a specific one to force it, or 'None' to switch off."),
         el("div", { class: "field" }, [el("label", {}, "Theme"), themeSel]),
         el("div", { style: "margin-top:8px" }, [themeSave]),
       ]),

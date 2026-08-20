@@ -261,21 +261,25 @@
     }
   }
 
-  /* ---- Unlocked vendors (QR-only) ---- */
-  // Handle a deep-linked store add: ?v=<vendorId> (from a scanned merchant QR)
+  /* ---- Store visibility (all stores shown by default; hide/restore) ----
+     New model: every active store is available to every customer. A customer can
+     "remove" a store they don't want (it's hidden), and scanning that shop's QR
+     again restores it. So the visible list = all active stores − hidden. */
+
+  // Handle a deep-linked store: ?v=<vendorId> (from a scanned merchant QR). If that
+  // store was previously removed, scanning restores it; then we jump straight to it.
   function handleAddStoreParam() {
     try {
       const params = new URLSearchParams(location.search);
       const vId = params.get("v") || params.get("add");
       if (!vId) return;
       if (BW.vendor(vId)) {
-        const unlocked = getUnlockedVendors();
-        if (!unlocked.includes(vId)) {
-          if (BW.addShop) BW.addShop(vId).catch(function () {});
-          addStoreLocal(vId);
-          toast("✓ " + BW.vendor(vId).name + " added to your stores");
+        if (getHiddenVendors().includes(vId)) {
+          if (BW.unhideShop) BW.unhideShop(vId).catch(function () {});
+          unhideStoreLocal(vId);
+          toast("✓ " + BW.vendor(vId).name + " is back in your stores");
         }
-        state.route = "stores";
+        state.route = "vendor";
         state.vendorId = vId;
       } else {
         toast("That store isn't available right now");
@@ -284,46 +288,52 @@
     } catch (e) { /* ignore malformed links */ }
   }
 
-  // Per-user local cache key — so different customers on the SAME device never
-  // see each other's stores. The server account list (BW.shops) is the real
-  // source of truth; this local list is just a per-user fallback cache.
-  function lsKey() {
+  // Per-user local cache key for the HIDDEN list — mirrors the account list (BW.hiddenShops)
+  // so removing/restoring feels instant even before the server round-trip completes.
+  function hiddenKey() {
     var u = (BW.Auth && BW.Auth.getUser) ? BW.Auth.getUser() : null;
-    return "bw_unlocked_vendors_" + ((u && u.uid) || "anon");
+    return "bw_hidden_vendors_" + ((u && u.uid) || "anon");
   }
-
-  function getUnlockedVendors() {
-    var acct = (BW.shops ? BW.shops() : []) || [];   // account-backed, scoped to this user
+  function getHiddenVendors() {
+    var acct = (BW.hiddenShops ? BW.hiddenShops() : []) || [];
     var local = [];
-    try { local = JSON.parse(localStorage.getItem(lsKey()) || "[]"); } catch (e) {}
+    try { local = JSON.parse(localStorage.getItem(hiddenKey()) || "[]"); } catch (e) {}
     if (!Array.isArray(local)) local = [];
     var seen = {}, out = [];
     acct.concat(local).forEach(function (id) { if (id && !seen[id]) { seen[id] = 1; out.push(id); } });
     return out;
   }
-
-  function addStoreLocal(id) {
-    try {
-      var k = lsKey();
-      var l = JSON.parse(localStorage.getItem(k) || "[]");
-      if (!Array.isArray(l)) l = [];
-      if (l.indexOf(id) < 0) { l.push(id); localStorage.setItem(k, JSON.stringify(l)); }
-    } catch (e) {}
+  function hideStoreLocal(id) {
+    try { var k = hiddenKey(); var l = JSON.parse(localStorage.getItem(k) || "[]"); if (!Array.isArray(l)) l = []; if (l.indexOf(id) < 0) { l.push(id); localStorage.setItem(k, JSON.stringify(l)); } } catch (e) {}
+  }
+  function unhideStoreLocal(id) {
+    try { var k = hiddenKey(); var l = JSON.parse(localStorage.getItem(k) || "[]"); if (!Array.isArray(l)) l = []; l = l.filter(function (x) { return x !== id; }); localStorage.setItem(k, JSON.stringify(l)); } catch (e) {}
   }
 
-  function migrateLocalShops() {
-    try {
-      if (!BW.addShop) return;
-      var acct = (BW.shops ? BW.shops() : []) || [];
-      // Move any legacy device-global list + the current per-user list into the account,
-      // then delete the legacy global key so it can never leak between users again.
-      var legacy = []; try { legacy = JSON.parse(localStorage.getItem("bw_unlocked_vendors") || "[]"); } catch (e) {}
-      var mine   = []; try { mine   = JSON.parse(localStorage.getItem(lsKey()) || "[]"); } catch (e) {}
-      var all = (Array.isArray(legacy) ? legacy : []).concat(Array.isArray(mine) ? mine : []);
-      all.forEach(function (id) { if (id && acct.indexOf(id) < 0) BW.addShop(id).catch(function () {}); });
-      try { localStorage.removeItem("bw_unlocked_vendors"); } catch (e) {}
-    } catch (e) {}
+  // Visible store IDs = every active store minus the ones this customer removed.
+  function getUnlockedVendors() {
+    var hidden = getHiddenVendors();
+    return (BW.vendors() || [])
+      .filter(function (v) { return v.active !== false && v.status !== "inactive" && v.status !== "pending_setup"; })
+      .map(function (v) { return v.id; })
+      .filter(function (id) { return hidden.indexOf(id) < 0; });
   }
+
+  function removeStore(id) {
+    hideStoreLocal(id);
+    if (BW.hideShop) BW.hideShop(id).catch(function () {});
+    const v = BW.vendor(id);
+    toast("Removed " + (v ? v.name : "store") + " — scan its QR to add it back");
+    render();
+  }
+  function restoreStore(id) {
+    unhideStoreLocal(id);
+    if (BW.unhideShop) BW.unhideShop(id).catch(function () {});
+    render();
+  }
+
+  // Obsolete under the all-stores model, kept as a no-op so older call sites are safe.
+  function migrateLocalShops() {}
 
   /* ====================== MY STORES ====================== */
   // Pilot / early-launch announcement banner with a scrolling note + feedback contact.
@@ -345,16 +355,15 @@
     ]);
   }
 
-  // Festival theming — admin picks a theme (Settings), or it auto-detects a festival window.
-  function activeFestival() {
+  // Festival theming — admin picks a theme (Settings) or leaves it on "Auto", which
+  // resolves today's occasion from the shared calendar (assets/js/festivals.js).
+  // Returns { major, minor }: a major festival draws the full ribbon + overlay; a
+  // minor "day" (Friendship Day, Elephant Day…) draws only a slim greeting strip.
+  function festivalState() {
     const s = (BW.settingsRaw && BW.settingsRaw()) || {};
-    let theme = s.festivalTheme || "";
-    if (!theme || theme === "auto") {
-      const d = new Date();
-      if (d.getMonth() === 7 && d.getDate() >= 13 && d.getDate() <= 16) return "independence"; // 13–16 Aug
-      if (theme === "auto") return "";
-    }
-    return theme === "auto" ? "" : theme;
+    const key = s.festivalTheme || "auto";
+    if (!window.Festivals) return { major: null, minor: null };
+    return window.Festivals.resolve(key);
   }
   // Inject festival animation keyframes once (waving flag, shimmer sweep, falling confetti, glow).
   let _festStyles = false;
@@ -383,41 +392,24 @@
 
   // Full-screen festive overlay (floating petals + flying flags). Created once; harmless
   // pointer-events:none so it never blocks taps. Removed if the theme turns off.
+  // Full-screen animated overlay for a MAJOR festival. Effect (petal / sparkle / fly)
+  // and colors come straight from the festival entry, so every festival is themed
+  // without any per-festival code here. Rebuilt only when the active festival changes.
   function festivalOverlay() {
-    const theme = activeFestival();
+    const f = festivalState().major;
     const existing = document.getElementById("bw-fest-overlay");
-    if (!theme || theme === "none") { if (existing) existing.remove(); return; }
-    if (existing) return;
+    if (!f) { if (existing) existing.remove(); return; }
+    if (existing) { if (existing.dataset.key === f.key) return; existing.remove(); }
     ensureFestivalStyles();
     const ov = el("div", { id: "bw-fest-overlay" });
-    if (theme === "independence") {
-      const colors = ["#ff9933", "#ffffff", "#138808"];
-      for (let i = 0; i < 22; i++) {
-        const p = el("div", { class: "petal" });
-        const s = 6 + Math.random() * 9;
-        p.style.left = (Math.random() * 100) + "%";
-        p.style.width = p.style.height = s + "px";
-        p.style.background = colors[i % 3];
-        p.style.boxShadow = "0 0 4px rgba(0,0,0,.15)";
-        p.style.animationDuration = (6 + Math.random() * 7) + "s";
-        p.style.animationDelay = (Math.random() * 9) + "s";
-        ov.appendChild(p);
-      }
-      for (let i = 0; i < 5; i++) {
-        const f = el("div", { class: "flyflag" }, "🇮🇳");
-        f.style.top = (8 + Math.random() * 74) + "%";
-        f.style.fontSize = (22 + Math.random() * 18) + "px";
-        f.style.animationDuration = (9 + Math.random() * 9) + "s";
-        f.style.animationDelay = (Math.random() * 11) + "s";
-        ov.appendChild(f);
-      }
-    } else if (theme === "diwali") {
-      const colors = ["#ffd54f", "#ff8f00", "#fff59d", "#ffab40"];
+    ov.dataset.key = f.key;
+    const colors = (f.conf && f.conf.length) ? f.conf : ["#ffd54f"];
+    const fx = f.fx || "petal";
+    if (fx === "sparkle") {
       for (let i = 0; i < 26; i++) {
         const sp = el("div", { class: "spark" });
         const s = 4 + Math.random() * 6;
-        sp.style.left = (Math.random() * 100) + "%";
-        sp.style.top = (Math.random() * 100) + "%";
+        sp.style.left = (Math.random() * 100) + "%"; sp.style.top = (Math.random() * 100) + "%";
         sp.style.width = sp.style.height = s + "px";
         sp.style.background = colors[i % colors.length];
         sp.style.boxShadow = "0 0 8px " + colors[i % colors.length];
@@ -425,70 +417,81 @@
         sp.style.animationDelay = (Math.random() * 2) + "s";
         ov.appendChild(sp);
       }
-      for (let i = 0; i < 4; i++) {
-        const d = el("div", { class: "flyflag" }, "🪔");
-        d.style.top = (10 + Math.random() * 70) + "%"; d.style.fontSize = (20 + Math.random() * 16) + "px";
-        d.style.animationDuration = (10 + Math.random() * 8) + "s"; d.style.animationDelay = (Math.random() * 10) + "s";
-        ov.appendChild(d);
+    } else {
+      // "petal" and "fly" both rain petals; "fly" also sends emoji gliding across.
+      for (let i = 0; i < 22; i++) {
+        const p = el("div", { class: "petal" });
+        const s = 6 + Math.random() * 9;
+        p.style.left = (Math.random() * 100) + "%";
+        p.style.width = p.style.height = s + "px";
+        p.style.background = colors[i % colors.length];
+        p.style.boxShadow = "0 0 4px rgba(0,0,0,.15)";
+        p.style.animationDuration = (6 + Math.random() * 7) + "s";
+        p.style.animationDelay = (Math.random() * 9) + "s";
+        ov.appendChild(p);
+      }
+    }
+    if ((fx === "fly" || f.overlay) && f.overlay) {
+      const n = fx === "fly" ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const fe = el("div", { class: "flyflag" }, f.overlay);
+        fe.style.top = (8 + Math.random() * 74) + "%";
+        fe.style.fontSize = (20 + Math.random() * 18) + "px";
+        fe.style.animationDuration = (9 + Math.random() * 9) + "s";
+        fe.style.animationDelay = (Math.random() * 11) + "s";
+        ov.appendChild(fe);
       }
     }
     document.body.appendChild(ov);
   }
 
+  // Themed banner(s): a MAJOR festival gets the animated ribbon; a MINOR "day" gets a
+  // slim greeting strip. Both can show at once (festival + observance on the same day).
+  function bigFestivalRibbon(f) {
+    const bg = f.bg || ("linear-gradient(90deg," + ((f.grad && f.grad.length ? f.grad : ["#f5a623", "#f5a623"]).join(",")) + ")");
+    const strip = el("div", { class: "bw-fest", style: "height:46px;background:" + bg + ";display:flex;align-items:center;justify-content:center" });
+    const colors = (f.conf && f.conf.length) ? f.conf : ["#ffffff"];
+    for (let i = 0; i < 14; i++) {
+      const c = el("span", { class: "fconf" });
+      c.style.left = (Math.random() * 100) + "%";
+      c.style.background = colors[i % colors.length];
+      c.style.animationDuration = (1.8 + Math.random() * 1.8) + "s";
+      c.style.animationDelay = (Math.random() * 2.6) + "s";
+      strip.appendChild(c);
+    }
+    strip.appendChild(el("div", { style: "position:relative;z-index:1;font-weight:800;font-size:13px;color:" + (f.text || "#fff") + ";background:rgba(0,0,0,.12);padding:4px 14px;border-radius:20px" }, [
+      el("span", { class: "fflag", style: "margin-right:6px" }, f.emoji || "🎉"),
+      f.name,
+    ]));
+    strip.appendChild(el("div", { class: "fshine" }));
+    return strip;
+  }
   function festivalRibbon(root) {
-    const theme = activeFestival();
-    if (!theme || theme === "none") return;
-    ensureFestivalStyles();
-    if (theme === "independence") {
-      const strip = el("div", { class: "bw-fest", style: "height:46px;background:linear-gradient(90deg,#ff9933 0 33%,#ffffff 33% 66%,#138808 66% 100%);display:flex;align-items:center;justify-content:center" });
-      const colors = ["#ff9933", "#ffffff", "#138808", "#0a3d0a"];
-      for (let i = 0; i < 14; i++) {
-        const c = el("span", { class: "fconf" });
-        c.style.left = (Math.random() * 100) + "%";
-        c.style.background = colors[i % colors.length];
-        c.style.animationDuration = (1.8 + Math.random() * 1.8) + "s";
-        c.style.animationDelay = (Math.random() * 2.6) + "s";
-        strip.appendChild(c);
-      }
-      strip.appendChild(el("div", { style: "position:relative;z-index:1;font-weight:800;font-size:13px;color:#0a3d0a;background:rgba(255,255,255,.6);padding:4px 14px;border-radius:20px" }, [
-        el("span", { class: "fflag", style: "margin-right:6px" }, "🇮🇳"),
-        "Happy Independence Day — Jai Hind!",
-      ]));
-      strip.appendChild(el("div", { class: "fshine" }));
-      root.appendChild(strip);
-    } else if (theme === "diwali") {
-      const strip = el("div", { class: "bw-fest", style: "height:44px;background:linear-gradient(90deg,#3a0ca3,#7209b7,#b5179e);display:flex;align-items:center;justify-content:center" });
-      ["#ffd54f", "#ff8f00", "#fff59d"].forEach((col, i) => {
-        for (let k = 0; k < 4; k++) {
-          const c = el("span", { class: "fconf" });
-          c.style.left = (Math.random() * 100) + "%"; c.style.background = col;
-          c.style.animationDuration = (1.6 + Math.random() * 1.6) + "s"; c.style.animationDelay = (Math.random() * 2.4) + "s";
-          strip.appendChild(c);
-        }
-      });
-      strip.appendChild(el("div", { style: "position:relative;z-index:1;font-weight:800;font-size:13px;color:#ffd54f;animation:bwGlow 1.6s ease-in-out infinite" }, "🪔 Happy Diwali from Saardha! ✨"));
-      strip.appendChild(el("div", { class: "fshine" }));
-      root.appendChild(strip);
-    } else {
-      root.appendChild(el("div", { style: "background:var(--brand);color:#fff;text-align:center;font-weight:700;font-size:13px;padding:7px 12px" }, "🎉 " + theme));
+    const st = festivalState();
+    if (st.major) { ensureFestivalStyles(); root.appendChild(bigFestivalRibbon(st.major)); }
+    if (st.minor) {
+      root.appendChild(el("div", { style: "background:" + (st.minor.color || "var(--brand)") + ";color:#fff;text-align:center;font-weight:700;font-size:12px;padding:6px 12px;letter-spacing:.2px" },
+        (st.minor.emoji ? st.minor.emoji + " " : "") + st.minor.name));
     }
   }
 
   function viewStores() {
-    const unlocked = getUnlockedVendors();
+    const visibleIds = getUnlockedVendors();          // all active stores minus removed
+    const hiddenIds = getHiddenVendors();
     const favs = BW.favorites();
+    const anyActive = (BW.vendors() || []).some((v) => v.active !== false && v.status !== "inactive" && v.status !== "pending_setup");
 
-    // Empty state — no QR scans yet
-    if (!unlocked.length) {
+    // Truly empty system (no stores onboarded yet).
+    if (!anyActive) {
       shell("stores", [
         pilotBanner(),
         el("h1", { class: "page-title" }, "My Stores"),
         servicesEntry(),
         el("div", { class: "empty", style: "margin-top:24px" }, [
           el("div", { class: "e" }, ""),
-          el("p", { style: "margin:12px 0 6px;font-size:15px;font-weight:600;color:#f0f0f0" }, "No stores yet"),
-          el("p", { class: "muted small", style: "max-width:240px;margin:0 auto;line-height:1.6" },
-            "Scan a merchant's QR code to add their store — or explore local Services above."),
+          el("p", { style: "margin:12px 0 6px;font-size:15px;font-weight:600;color:#f0f0f0" }, "No stores available yet"),
+          el("p", { class: "muted small", style: "max-width:260px;margin:0 auto;line-height:1.6" },
+            "Stores are being added in your area. Check back soon — or explore local Services above."),
         ]),
       ]);
       return;
@@ -496,7 +499,7 @@
 
     const searchBar = el("div", { class: "field" }, [
       el("input", {
-        placeholder: "Search your stores…",
+        placeholder: "Search stores…",
         value: state.search,
         onInput: (e) => {
           state.search = e.target.value; renderGrid();
@@ -510,40 +513,60 @@
     ]);
 
     const countHint = el("div", { style: "display:flex;align-items:center;gap:10px;background:var(--brand-lt);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px" }, [
-      el("span", { style: "font-size:18px" }, "🛒"),
+      el("span", { style: "font-size:18px" }, "🛍️"),
       el("span", { style: "flex:1;color:var(--text)" }, [
-        el("strong", {}, String(unlocked.length) + " store" + (unlocked.length !== 1 ? "s" : "") + " in your collection"),
-        el("span", { class: "muted" }, " · Scan a QR to add more"),
+        el("strong", {}, String(visibleIds.length) + " store" + (visibleIds.length !== 1 ? "s" : "") + " available"),
+        el("span", { class: "muted" }, " · tap ✕ to remove one you don't need"),
       ]),
     ]);
 
     const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
+    const removedWrap = el("div", { id: "removedWrap" });
     shell("stores", [
       pilotBanner(),
       el("h1", { class: "page-title" }, "My Stores"),
-      el("p", { class: "page-sub" }, "Stores you've added by scanning their QR code."),
+      el("p", { class: "page-sub" }, "All stores near you. Remove any you don't need — scan a shop's QR to bring it back."),
       servicesEntry(),
       countHint,
       searchBar,
       grid,
+      removedWrap,
     ]);
     renderGrid();
+    renderRemoved();
 
     function renderGrid() {
       const g = document.getElementById("vendorGrid");
       if (!g) return;
       g.innerHTML = "";
-
       const list = BW.vendors().filter((v) => {
-        if (!unlocked.includes(v.id)) return false;
+        if (!visibleIds.includes(v.id)) return false;
         return !state.search || (v.name + v.category + v.area).toLowerCase().includes(state.search.toLowerCase());
       });
-
       if (!list.length) {
-        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, ""), "No stores match your search."]));
+        g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, ""),
+          state.search ? "No stores match your search." : "You've removed all stores. Scan a shop's QR — or restore one below."]));
         return;
       }
       list.forEach((v) => g.appendChild(vendorCard(v, favs)));
+    }
+
+    // "Removed stores" restore area — convenience in addition to re-scanning the QR.
+    function renderRemoved() {
+      const w = document.getElementById("removedWrap");
+      if (!w) return;
+      w.innerHTML = "";
+      const removed = BW.vendors().filter((v) => hiddenIds.includes(v.id));
+      if (!removed.length) return;
+      w.appendChild(el("div", { style: "margin-top:22px;font-weight:700;font-size:13px;color:var(--text)" }, "Removed stores (" + removed.length + ")"));
+      w.appendChild(el("div", { class: "muted small", style: "margin:2px 0 8px" }, "Tap to add back, or scan the shop's QR."));
+      const chips = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
+      removed.forEach((v) => chips.appendChild(el("button", {
+        class: "btn ghost sm",
+        style: "display:flex;align-items:center;gap:6px",
+        onClick: () => restoreStore(v.id),
+      }, [el("span", {}, (v.img || "🏪") + " " + v.name), el("span", { style: "color:var(--brand);font-weight:800" }, "+ Add")])));
+      w.appendChild(chips);
     }
   }
 
@@ -552,7 +575,14 @@
     const img = v.photoUrl
       ? el("div", { class: "vcard-img", style: "padding:0;overflow:hidden" }, el("img", { src: v.photoUrl, alt: v.name, style: "width:100%;height:100%;object-fit:cover" }))
       : el("div", { class: "vcard-img" }, v.img || (v.name || "?")[0].toUpperCase());
-    return el("div", { class: "vcard", style: closed ? "opacity:.6" : "", onClick: () => openVendor(v.id) }, [
+    // Remove (hide) button — stops propagation so it doesn't open the store.
+    const removeBtn = el("button", {
+      title: "Remove this store",
+      style: "position:absolute;top:6px;right:6px;z-index:2;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center",
+      onClick: (e) => { e.stopPropagation(); removeStore(v.id); },
+    }, "✕");
+    return el("div", { class: "vcard", style: "position:relative;" + (closed ? "opacity:.6" : ""), onClick: () => openVendor(v.id) }, [
+      removeBtn,
       img,
       el("div", { class: "vcard-body" }, [
         el("div", { class: "vcard-name" }, [v.name, closed ? el("span", { style: "background:#fdeaea;color:#c0392b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:6px" }, "CLOSED") : document.createTextNode("")]),
@@ -836,11 +866,8 @@
         placeholder: "Promo code", autocapitalize: "characters",
         style: "flex:1;text-transform:uppercase;padding:8px 10px;border:1px solid var(--line,#ddd);border-radius:8px" });
       const applyBtn = el("button", { type: "button", class: "btn ghost sm" }, state.appliedPromoCode ? "Remove" : "Apply");
-      applyBtn.onclick = async () => {
-        if (state.appliedPromoCode) {  // acts as "Remove"
-          state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null; rebuild(); return;
-        }
-        const code = (promoInput.value || "").trim().toUpperCase();
+      async function applyPromoCode(code) {
+        code = (code || "").trim().toUpperCase();
         if (!code) return;
         applyBtn.disabled = true; applyBtn.textContent = "…";
         try {
@@ -853,7 +880,6 @@
             state.appliedPromoCode = code; state.appliedPromoPct = r.discount.pct;
             state.promoMsg = { ok: true, text: "Code " + code + " applied — you save " + money(r.discount.amount) };
           } else {
-            // Valid code, but the store-wide discount is equal or better — that one applies.
             state.appliedPromoCode = null; state.appliedPromoPct = 0;
             state.promoMsg = { ok: true, text: r.discount && r.discount.amount
               ? "Your store discount (" + money(r.discount.amount) + ") already beats that code."
@@ -863,7 +889,34 @@
           state.promoMsg = { ok: false, text: e.message || "Couldn't apply that code" };
         }
         rebuild();
+      }
+      applyBtn.onclick = () => {
+        if (state.appliedPromoCode) { state.appliedPromoCode = null; state.appliedPromoPct = 0; state.promoMsg = null; rebuild(); return; }
+        applyPromoCode(promoInput.value);
       };
+
+      // Show today's live Saardha offers as one-tap chips (fetched once, cached).
+      if (state._offers === undefined) {
+        state._offers = null;
+        if (BW.publicPromos) BW.publicPromos().then((list) => { state._offers = list || []; if (state.route === "vendor") rebuild(); }).catch(() => { state._offers = []; });
+      }
+      if (Array.isArray(state._offers) && state._offers.length && !state.appliedPromoCode) {
+        const offersBox = el("div", { style: "margin:2px 0 8px" }, [
+          el("div", { class: "small muted", style: "margin-bottom:4px" }, "🎉 Available offers — tap to apply"),
+        ]);
+        const chips = el("div", { style: "display:flex;flex-wrap:wrap;gap:6px" });
+        state._offers.forEach((o) => chips.appendChild(el("button", {
+          type: "button", class: "btn ghost sm",
+          style: "display:flex;align-items:center;gap:6px;border:1px dashed var(--brand)",
+          onClick: () => applyPromoCode(o.code),
+        }, [
+          el("span", { style: "font-weight:800;letter-spacing:.5px" }, o.code),
+          el("span", { class: "muted small" }, o.pct + "% off" + (o.minSubtotal ? " · min ₹" + o.minSubtotal : "")),
+        ])));
+        offersBox.appendChild(chips);
+        linesWrap.appendChild(offersBox);
+      }
+
       linesWrap.appendChild(el("div", { class: "line", style: "border:none;gap:8px" }, [promoInput, applyBtn]));
       if (state.promoMsg) linesWrap.appendChild(el("div", { class: "small", style: "margin:-2px 0 6px;color:" + (state.promoMsg.ok ? "var(--brand)" : "#c0392b") }, state.promoMsg.text));
 
@@ -1010,7 +1063,24 @@
         renderCartPanel();
       };
 
+      // Today's live offers as one-tap chips.
+      if (state._offers === undefined) {
+        state._offers = null;
+        if (BW.publicPromos) BW.publicPromos().then((list) => { state._offers = list || []; if (state.route === "cart") renderCartPanel(); }).catch(() => { state._offers = []; });
+      }
+      const offerChips = el("div", {});
+      if (Array.isArray(state._offers) && state._offers.length && !state.appliedPromoCode) {
+        offerChips.appendChild(el("div", { class: "small muted", style: "margin-bottom:4px" }, "🎉 Available offers — tap to apply"));
+        const row = el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px" });
+        state._offers.forEach((o) => row.appendChild(el("button", {
+          type: "button", class: "btn ghost sm", style: "display:flex;align-items:center;gap:6px;border:1px dashed var(--brand)",
+          onClick: () => { pInput.value = o.code; pBtn.onclick(); },
+        }, [el("span", { style: "font-weight:800;letter-spacing:.5px" }, o.code), el("span", { class: "muted small" }, o.pct + "% off" + (o.minSubtotal ? " · min ₹" + o.minSubtotal : ""))])));
+        offerChips.appendChild(row);
+      }
+
       const bill = el("div", { class: "card", style: "margin-bottom:12px" }, [
+        offerChips,
         el("div", { class: "line", style: "border:none;gap:8px" }, [pInput, pBtn]),
         state.promoMsg ? el("div", { class: "small", style: "margin:-2px 0 6px;color:" + (state.promoMsg.ok ? "var(--brand)" : "#c0392b") }, state.promoMsg.text) : document.createTextNode(""),
         el("div", { class: "line", style: "border:none" }, [el("span", { class: "muted" }, "Subtotal"), el("span", {}, money(sub))]),
@@ -1721,8 +1791,11 @@
 
     function addVendorById(vendorId) {
       if (!vendorId) return;
-      if (BW.addShop) BW.addShop(vendorId).catch(function () {});
-      addStoreLocal(vendorId);
+      // All stores are already available; scanning simply restores it if removed.
+      if (getHiddenVendors().includes(vendorId)) {
+        if (BW.unhideShop) BW.unhideShop(vendorId).catch(function () {});
+        unhideStoreLocal(vendorId);
+      }
     }
 
     function processUrl(urlStr) {
@@ -2179,7 +2252,7 @@
       ]),
       el("div", { class: "card", style: "margin-top:12px" }, [
         el("div", { class: "row between", style: "padding:2px 0" }, [
-          el("span", { class: "muted" }, "Stores added"),
+          el("span", { class: "muted" }, "Stores available"),
           el("span", { style: "font-weight:600" }, String(getUnlockedVendors().length)),
         ]),
       ]),

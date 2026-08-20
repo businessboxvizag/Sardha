@@ -111,7 +111,7 @@
   let _cache = {
     vendors: [], products: {}, orders: [], riders: [],
     customers: [], myCustomer: null, favorites: [], analytics: null,
-    logins: [], allUsers: [], shops: [], events: [], support: [], partners: [], rxOrders: [],
+    logins: [], allUsers: [], shops: [], hiddenShops: [], events: [], support: [], partners: [], rxOrders: [],
     serviceVendors: [], services: {}, bookings: [], myServiceVendor: null,
   };
 
@@ -205,6 +205,7 @@
         get("/api/customers/me").then((c) => { _cache.myCustomer = c; }),
         get("/api/customers/me/favorites").then((f) => { _cache.favorites = f; }),
         get("/api/customers/me/shops").then((s) => { _cache.shops = s || []; }).catch(() => {}),
+        get("/api/customers/me/hidden-shops").then((s) => { _cache.hiddenShops = s || []; }).catch(() => {}),
       );
       // Load all products for all vendors
       for (const v of _cache.vendors) {
@@ -349,6 +350,17 @@
       _cache.shops = list;
       emit();
       return list;
+    },
+    // New model: all stores show by default; a customer can hide (remove) ones they
+    // don't want, and scanning the shop QR again un-hides it.
+    hiddenShops:   ()   => [...(_cache.hiddenShops || [])],
+    hideShop:      async (vendorId) => {
+      const list = await post("/api/customers/me/hidden-shops", { vendorId });
+      _cache.hiddenShops = list; emit(); return list;
+    },
+    unhideShop:    async (vendorId) => {
+      const list = await del("/api/customers/me/hidden-shops/" + encodeURIComponent(vendorId));
+      _cache.hiddenShops = list; emit(); return list;
     },
     analytics:     ()   => _cache.analytics,
     logins:        ()   => [..._cache.logins],
@@ -683,6 +695,9 @@
 
     // PWA analytics (admin)
     getMetrics:  () => get("/api/admin/metrics"),
+
+    // Active Saardha-wide offer codes, for the customer app to show at checkout.
+    publicPromos: () => get("/api/public/promos"),
 
     // Platform-wide promo codes (Saardha daily offers, shared on Instagram etc.)
     listPromos:  () => get("/api/admin/promos"),
