@@ -1113,10 +1113,20 @@
       galleryWrap.innerHTML = "";
       _gallery.forEach((url, i) => galleryWrap.appendChild(el("div", { style: "position:relative;width:66px;height:66px;border-radius:8px;overflow:hidden" }, [
         el("img", { src: url, alt: "", style: "width:100%;height:100%;object-fit:cover" }),
-        el("button", { class: "btn danger sm", style: "position:absolute;top:2px;right:2px;padding:0 6px;line-height:1.5", onClick: () => { _gallery.splice(i, 1); renderGallery(); } }, "✕"),
+        el("button", { class: "btn danger sm", style: "position:absolute;top:2px;right:2px;padding:0 6px;line-height:1.5", onClick: () => { _gallery.splice(i, 1); renderGallery(); persistPhotos("Photo removed"); } }, "✕"),
       ])));
     }
     renderGallery();
+
+    // Persist photos to the server the INSTANT they change. Store-profile re-renders
+    // on background order/socket events, which would otherwise re-read the old vendor
+    // and wipe an unsaved cover/gallery — so we save immediately instead of waiting
+    // for the "Save store details" button (mirrors how product photos work).
+    async function persistPhotos(msg) {
+      if (!v.id) { toast("Finish store setup first"); return; }
+      try { await BW.upsertVendor({ id: v.id, photoUrl: _photoUrl, gallery: _gallery }); if (msg) toast(msg); }
+      catch (e) { toast("Couldn't save photo: " + (e.message || "")); }
+    }
 
     // Promo codes (percent-only). Each: { code, pct, active, minSubtotal }.
     // At checkout the customer gets the BIGGER of the store-wide % or a matching code.
@@ -1218,10 +1228,10 @@
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store photos"),
         el("div", { class: "muted small", style: "margin-bottom:6px" }, "A cover photo and a few shop pictures customers will see on your store page."),
         coverWrap,
-        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _photoUrl = url; renderCover(); toast("Cover photo set"); }) }, "Upload / change cover photo"),
+        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _photoUrl = url; renderCover(); persistPhotos("Cover photo saved ✓"); }) }, "Upload / change cover photo"),
         el("div", { style: "font-weight:600;margin-top:12px;font-size:13px" }, "Gallery"),
         galleryWrap,
-        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _gallery.push(url); renderGallery(); toast("Photo added"); }) }, "+ Add photo"),
+        el("button", { class: "btn ghost sm", type: "button", style: "margin-top:8px", onClick: () => pickImage((url) => { _gallery.push(url); renderGallery(); persistPhotos("Photo added ✓"); }) }, "+ Add photo"),
       ]),
       el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Store location"),
