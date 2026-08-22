@@ -38,6 +38,17 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; }
 
+/* ── Mobile safety: never let long content (e.g. a big delivery address or a
+   pasted Maps link) stretch the page wider than the screen. ─────────────── */
+html, body { max-width: 100vw; overflow-x: hidden; }
+.app, .content { max-width: 100%; min-width: 0; }
+.content { overflow-x: hidden; overflow-wrap: anywhere; }
+
+/* Address shown compactly (1–2 lines, …), tap to reveal the full text. */
+.addr-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.addr-clamp.open { -webkit-line-clamp: unset; display: block; }
+.addr-toggle { color: var(--brand); font-weight: 600; cursor: pointer; font-size: 12px; }
+
 /* ── Top bar ─────────────────────────────────────────────── */
 .topbar {
   display: flex; align-items: center; gap: 12px;

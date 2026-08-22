@@ -1313,6 +1313,19 @@
     return [state.deliverFlat, state.deliverArea, state.deliverLandmark]
       .map((s) => (s || "").trim()).filter(Boolean).join(", ");
   }
+
+  // Address shown compactly (2 lines max) so a long address never stretches the
+  // layout; a "Show full address" toggle appears only when it's actually clipped.
+  function addressBlock(label, text) {
+    const addr = el("div", { class: "muted small addr-clamp", style: "margin-top:2px" }, text || "—");
+    const toggle = el("span", { class: "addr-toggle", style: "display:none;margin-top:2px" }, "Show full address");
+    toggle.onclick = () => { const open = addr.classList.toggle("open"); toggle.textContent = open ? "Show less" : "Show full address"; };
+    setTimeout(() => { if (addr.scrollHeight > addr.clientHeight + 2) toggle.style.display = "inline-block"; }, 0);
+    return el("div", { style: "margin-top:10px" }, [
+      el("div", { class: "muted small", style: "font-weight:700" }, label + ":"),
+      addr, toggle,
+    ]);
+  }
   // Require a usable address (a pin, or enough typed detail) before ordering.
   function ensureDeliveryAddress() {
     // A saved Google Maps link is enough on its own — the Saradhi navigates straight to it.
@@ -1564,7 +1577,7 @@
             : (o.paymentStatus === "REFUND_PENDING")
               ? el("div", { class: "small", style: "margin-top:8px;color:#c0392b" }, "Refund is being processed by our team.")
               : document.createTextNode(""),
-          el("div", { class: "muted small", style: "margin-top:10px" }, "Deliver to: " + (o.deliverTo || (cust && cust.address) || "—")),
+          addressBlock("Deliver to", o.deliverTo || (cust && cust.address) || "—"),
         ]),
       ]),
     ];
