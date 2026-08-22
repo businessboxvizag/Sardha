@@ -106,9 +106,11 @@ html, body { max-width: 100vw; overflow-x: hidden; }
 
 /* ── Cards & grid ────────────────────────────────────────── */
 .grid { display: grid; gap: 14px; }
-.cols-2 { grid-template-columns: repeat(2, 1fr); }
-.cols-3 { grid-template-columns: repeat(3, 1fr); }
-.cols-4 { grid-template-columns: repeat(4, 1fr); }
+/* minmax(0, 1fr) lets tracks shrink below their content's width — without this a
+   single long word (e.g. a long address) forces the column wider than the screen. */
+.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .cols-3, .cols-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 620px) { .grid[class*="cols"] { grid-template-columns: 1fr; } }
 
@@ -310,8 +312,9 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
 .vcard:active { transform: scale(.985); }
 .vcard-img { width: 64px; height: 64px; border-radius: 12px; background: var(--brand-lt); color: var(--brand); display: flex; align-items: center; justify-content: center; font-size: 30px; font-weight: 800; flex-shrink: 0; }
 .vcard-body { min-width: 0; flex: 1; }
-.vcard-name { font-weight: 700; font-size: 15.5px; color: var(--text); }
-.vcard-meta { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; }
+.vcard-name { font-weight: 700; font-size: 15.5px; color: var(--text); overflow-wrap: anywhere; }
+/* Keep the store address to 2 lines so cards stay compact; full text on the store page. */
+.vcard-meta { font-size: 12.5px; color: var(--muted); margin: 2px 0 6px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .vcard-tags { display: flex; gap: 8px; }
 .vcard-rating { background: #eaf3de; color: #3b6d11; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 7px; }
 .vcard-time { background: var(--surface-2); color: var(--muted); font-size: 12px; padding: 2px 8px; border-radius: 7px; }
@@ -603,7 +606,7 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
   .rider-orders { padding: 0 12px 88px; }
 
   /* Customer store grid — 2 columns on mobile */
-  #vendorGrid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  #vendorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px; }
   .store-card-banner { height: 64px; font-size: 32px; }
   .store-card-body { padding: 10px 12px; }
   .store-card-name { font-size: 14px; }
