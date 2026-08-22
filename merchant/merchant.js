@@ -804,6 +804,30 @@
       el("div", { class: "muted small", style: "margin-top:4px" }, "Set higher than the price above to show customers a struck-through MRP and a % off."),
     ]));
 
+    // Section / category — powers the in-store filters customers use to find items fast.
+    const CAT_SUGGEST = general
+      ? ["Soaps", "Shampoos", "Flours & Grains", "Rice & Dals", "Snacks", "Biscuits", "Beverages", "Dairy", "Cleaning", "Personal Care", "Spices", "Oils"]
+      : pharma
+      ? ["Tablets", "Syrups", "Vitamins & Supplements", "First Aid", "Personal Care", "Baby Care", "Devices"]
+      : ["Biryani", "Starters", "Main Course", "Breads", "Rice", "Chinese", "Beverages", "Desserts", "Combos"];
+    const catListId = "catlist_" + Math.random().toString(36).slice(2, 7);
+    const catDatalist = el("datalist", { id: catListId }, CAT_SUGGEST.map((c) => el("option", { value: c })));
+    const categoryEl = el("input", { value: p && p.category ? p.category : "", placeholder: "e.g. " + CAT_SUGGEST.slice(0, 3).join(", "), list: catListId });
+    fields.push(el("div", { class: "field" }, [
+      el("label", {}, "Section / category (for filters)"),
+      categoryEl, catDatalist,
+      el("div", { class: "muted small", style: "margin-top:4px" }, "Lets customers filter your store — pick from the list or type your own."),
+    ]));
+
+    // Veg / Non-veg marker for food stores.
+    let vegEl = null;
+    if (food) {
+      vegEl = el("select", {});
+      [["", "— not specified —"], ["veg", "🟢 Veg"], ["nonveg", "🔴 Non-veg"], ["egg", "🟠 Contains egg"]].forEach(([val, label]) =>
+        vegEl.appendChild(el("option", { value: val, ...(p && p.veg === val ? { selected: "" } : {}) }, label)));
+      fields.push(el("div", { class: "field" }, [el("label", {}, "Veg / Non-veg"), vegEl]));
+    }
+
     // Up to 5 photos per item (main + angles). Each uploads immediately; first = main image.
     let _photos = (p && Array.isArray(p.photos) && p.photos.length) ? p.photos.slice(0, 5) : (p && p.photoUrl ? [p.photoUrl] : []);
     const photosWrap = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" });
@@ -852,6 +876,8 @@
         if (pharma) { payload.unit = unitEl.value; if (packQtyEl.value !== "") payload.qty = Number(packQtyEl.value); }
         else if (general) { payload.unit = unitEl.value || "piece"; if (stockEl.value !== "") payload.qty = Number(stockEl.value); }
         else { payload.unit = unitEl ? unitEl.value : (p && p.unit) || null; if (food && qtyEl && qtyEl.value !== "") payload.qty = Number(qtyEl.value); }
+        payload.category = categoryEl.value.trim();
+        if (vegEl) payload.veg = vegEl.value || null;
         // Photos already uploaded to Cloudinary — send the array (first = main image).
         payload.photos = _photos.slice(0, 5);
         payload.photoUrl = _photos[0] || null;

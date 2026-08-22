@@ -677,7 +677,14 @@
   }
 
   // Flipkart/Amazon-style product card (big image on top). Tapping the image zooms in.
-  function productCard(p, v, cols, ctrlBox) {
+  // A small India-standard veg/non-veg mark (□ with a dot).
+  function vegMark(veg) {
+    const c = veg === "veg" ? "#1a7f37" : veg === "egg" ? "#e08e0b" : "#c0392b";
+    return el("span", { title: veg === "veg" ? "Veg" : veg === "egg" ? "Contains egg" : "Non-veg", style: "display:inline-flex;width:14px;height:14px;border:2px solid " + c + ";border-radius:3px;align-items:center;justify-content:center;flex:none" },
+      el("span", { style: "width:6px;height:6px;border-radius:50%;background:" + c }));
+  }
+
+  function productCard(p, v, cols, ctrlBox, badges) {
     const nPhotos = productPhotos(p).length;
     const img = p.photoUrl
       ? el("img", { src: p.photoUrl, alt: p.name, loading: "lazy", style: "width:100%;height:160px;object-fit:cover;border-radius:12px;cursor:zoom-in" })
@@ -685,6 +692,9 @@
     if (p.photoUrl) img.addEventListener("click", () => openProductPreview(p, v));
     const imgWrap = el("div", { style: "position:relative" }, [
       img,
+      (badges && badges.length) ? el("div", { style: "position:absolute;top:6px;left:6px;display:flex;flex-direction:column;gap:4px;align-items:flex-start" },
+        badges.map((b) => el("span", { style: "font-size:10px;font-weight:800;color:#fff;padding:2px 7px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.25);background:" + b.bg }, b.text))) : document.createTextNode(""),
+      p.veg ? el("div", { style: "position:absolute;top:6px;right:6px;background:#fff;border-radius:4px;padding:1px" }, vegMark(p.veg)) : document.createTextNode(""),
       nPhotos > 1 ? el("div", { style: "position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px" }, "📷 " + nPhotos) : document.createTextNode(""),
     ]);
     return el("div", { class: "card", style: "padding:8px;display:flex;flex-direction:column" }, [
@@ -770,34 +780,104 @@
     const fee = BW.deliveryFee ? BW.deliveryFee() : 15;
     const showPhotos = v.showItemPhotos !== false;   // store toggle (default: show)
 
+    // Reset in-store search/filter when opening a different store.
+    if (state.itemStoreId !== v.id) { state.itemStoreId = v.id; state.itemSearch = ""; state.itemFilter = "all"; }
+    const isFoodStore = /food|restaurant|tiffin|meal|biry|cafe|hotel|bakery|juice|street|dhaba|pizza|snack/i.test((v.category || ""));
+
+    // Derived helpers for the smart filters/badges.
+    const NEW_MS = 14 * 24 * 3600 * 1000, now = Date.now();
+    const newIds = new Set(products.filter((p) => p.createdAt && (now - new Date(p.createdAt).getTime()) < NEW_MS).map((p) => p.id));
+    const sold = products.filter((p) => Number(p.soldCount) > 0).sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0));
+    const bestIds = new Set(sold.slice(0, Math.max(3, Math.ceil(products.length * 0.2))).map((p) => p.id));
+    const cats = Array.from(new Set(products.map((p) => (p.category || "").trim()).filter(Boolean))).sort();
+    const hasVeg = isFoodStore && products.some((p) => p.veg);
+
     const listEl = state.vendorLoading
       ? skeletonItems(6)
-      : el("div", { style: showPhotos ? "display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 4px" : "padding:0 2px" });
-    if (!state.vendorLoading) products.forEach((p, i) => {
-      const cols = TILE_COLORS[i % TILE_COLORS.length];
-      const ctrlBox = el("div", { id: "it-" + p.id, class: "item-ctrl" }, [itemCtrl(p)]);
-      if (showPhotos) {
-        // Image-forward store → big product card (Flipkart/Amazon style), tap image to zoom.
-        listEl.appendChild(productCard(p, v, cols, ctrlBox));
-      } else {
-        // Clean text list (store turned photos off).
-        listEl.appendChild(el("div", { class: "item-row" }, [
-          el("span", { class: "veg-dot" }, el("span", {})),
-          el("div", { class: "item-info" }, [
-            el("div", { class: "item-name" }, p.name),
-            (p.mrp && p.mrp > p.price)
-              ? el("div", { class: "item-price", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
-                  el("span", {}, money(p.price)),
-                  el("span", { style: "text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12px" }, money(p.mrp)),
-                  el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
-                ])
-              : el("div", { class: "item-price" }, money(p.price)),
-            p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
-          ]),
-          el("div", { class: "item-thumb-wrap", style: "min-width:auto;justify-content:flex-end" }, [ctrlBox]),
-        ]));
+      : el("div", { id: "prodList", style: showPhotos ? "display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 4px" : "padding:0 2px" });
+
+    function badgesFor(p) {
+      const b = [];
+      if (bestIds.has(p.id)) b.push({ text: "⭐ Bestseller", bg: "#c2410c" });
+      if (newIds.has(p.id)) b.push({ text: "🆕 New", bg: "#1a7f37" });
+      return b;
+    }
+    function passes(p) {
+      const f = state.itemFilter || "all";
+      if (f === "best" && !bestIds.has(p.id)) return false;
+      if (f === "new" && !newIds.has(p.id)) return false;
+      if (f === "veg" && p.veg !== "veg") return false;
+      if (f === "nonveg" && !(p.veg === "nonveg" || p.veg === "egg")) return false;
+      if (f.indexOf("cat:") === 0 && (p.category || "").trim() !== f.slice(4)) return false;
+      const q = (state.itemSearch || "").toLowerCase().trim();
+      if (q && (p.name + " " + (p.category || "")).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }
+    function renderProducts() {
+      const g = document.getElementById("prodList");
+      if (!g) return;
+      g.innerHTML = "";
+      const list = products.filter(passes);
+      if (!list.length) {
+        g.appendChild(el("div", { class: "empty", style: showPhotos ? "grid-column:1 / -1" : "" }, [el("div", { class: "e" }, ""), "No items match this filter."]));
+        return;
       }
-    });
+      list.forEach((p, i) => {
+        const cols = TILE_COLORS[i % TILE_COLORS.length];
+        const ctrlBox = el("div", { id: "it-" + p.id, class: "item-ctrl" }, [itemCtrl(p)]);
+        if (showPhotos) {
+          g.appendChild(productCard(p, v, cols, ctrlBox, badgesFor(p)));
+        } else {
+          g.appendChild(el("div", { class: "item-row" }, [
+            p.veg ? el("span", { style: "display:flex;align-items:center" }, vegMark(p.veg)) : el("span", { class: "veg-dot" }, el("span", {})),
+            el("div", { class: "item-info" }, [
+              el("div", { class: "item-name", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+                p.name,
+                bestIds.has(p.id) ? el("span", { style: "font-size:10px;font-weight:800;color:#fff;background:#c2410c;padding:1px 6px;border-radius:7px" }, "⭐ Bestseller") : document.createTextNode(""),
+                newIds.has(p.id) ? el("span", { style: "font-size:10px;font-weight:800;color:#fff;background:#1a7f37;padding:1px 6px;border-radius:7px" }, "🆕 New") : document.createTextNode(""),
+              ]),
+              (p.mrp && p.mrp > p.price)
+                ? el("div", { class: "item-price", style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap" }, [
+                    el("span", {}, money(p.price)),
+                    el("span", { style: "text-decoration:line-through;color:var(--muted);font-weight:400;font-size:12px" }, money(p.mrp)),
+                    el("span", { style: "background:#e6f4ea;color:#1a7f37;font-size:11px;font-weight:700;padding:1px 6px;border-radius:6px" }, Math.round((1 - p.price / p.mrp) * 100) + "% OFF"),
+                  ])
+                : el("div", { class: "item-price" }, money(p.price)),
+              p.unit ? el("div", { class: "item-unit" }, "per " + p.unit) : document.createTextNode(""),
+            ]),
+            el("div", { class: "item-thumb-wrap", style: "min-width:auto;justify-content:flex-end" }, [ctrlBox]),
+          ]));
+        }
+      });
+    }
+
+    // Search + filter controls for finding items fast within the store.
+    function buildItemControls() {
+      const searchInput = el("input", {
+        type: "search", placeholder: "Search items…", value: state.itemSearch || "",
+        style: "width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px",
+        onInput: (e) => { state.itemSearch = e.target.value; renderProducts(); },
+      });
+      const chipRow = el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch" });
+      const chipDefs = [["all", "All"]];
+      if (sold.length) chipDefs.push(["best", "⭐ Bestsellers"]);
+      if (newIds.size) chipDefs.push(["new", "🆕 New"]);
+      if (hasVeg) { chipDefs.push(["veg", "🟢 Veg"]); chipDefs.push(["nonveg", "🔴 Non-veg"]); }
+      cats.forEach((c) => chipDefs.push(["cat:" + c, c]));
+      function renderChips() {
+        chipRow.innerHTML = "";
+        chipDefs.forEach(([val, label]) => {
+          const on = (state.itemFilter || "all") === val;
+          chipRow.appendChild(el("button", {
+            type: "button",
+            style: "flex:0 0 auto;white-space:nowrap;padding:6px 14px;border-radius:18px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid " + (on ? "var(--brand)" : "var(--border)") + ";background:" + (on ? "var(--brand)" : "transparent") + ";color:" + (on ? "#fff" : "var(--text)"),
+            onClick: () => { state.itemFilter = val; renderChips(); renderProducts(); },
+          }, label));
+        });
+      }
+      renderChips();
+      return el("div", { style: "margin:4px 4px 6px" }, [searchInput, (chipDefs.length > 1 ? chipRow : document.createTextNode(""))]);
+    }
 
     const closed = v.active === false || v.status === "inactive";
     const gallery = Array.isArray(v.gallery) ? v.gallery : [];
@@ -830,8 +910,11 @@
         gallery.map((url) => el("img", { src: url, alt: "", loading: "lazy", style: "width:120px;height:90px;object-fit:cover;border-radius:10px;flex:none" }))));
     }
     body.push(el("div", { class: "store-time-strip" }, "🛵 " + v.prepMins + "–" + (v.prepMins + 15) + " min  ·  Delivery " + money(fee)));
+    // Search + filter controls (only once products are loaded and there's more than one).
+    if (!state.vendorLoading && products.length > 1) body.push(buildItemControls());
     body.push(listEl);
     shell("stores", body);
+    renderProducts();
   }
 
   /* ====================== CART ====================== */

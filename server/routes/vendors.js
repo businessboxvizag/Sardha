@@ -130,7 +130,7 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       }
     }
 
-    const { name, price, mrp, unit, qty, photoUrl, photos } = req.body;
+    const { name, price, mrp, unit, qty, photoUrl, photos, category, veg } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
 
     const photoList = Array.isArray(photos) ? photos.filter(Boolean).slice(0, 5) : (photoUrl ? [photoUrl] : []);
@@ -143,6 +143,11 @@ router.post("/:id/products", requireAuth, requireRole("merchant", "admin"), asyn
       // Optional MRP for a strike-through sale price. Only stored if higher than the sale price.
       mrp: (mrp !== undefined && Number(mrp) > Number(price || 0)) ? Number(mrp) : null,
       unit: unit || "item",
+      // Section/aisle for in-store filtering (e.g. "Soaps", "Biryani"), and an optional
+      // veg/nonveg/egg marker used by food stores.
+      category: (category || "").toString().trim().slice(0, 40) || null,
+      veg: ["veg", "nonveg", "egg"].includes(veg) ? veg : null,
+      soldCount: 0,
       ...(qty !== undefined ? { qty: Number(qty) } : {}),
       ...(photoList.length ? { photoUrl: photoList[0], photos: photoList } : {}),
       available: true,
@@ -174,9 +179,11 @@ router.put("/:vid/products/:pid", requireAuth, requireRole("merchant", "admin"),
       return res.status(403).json({ error: "Product does not belong to this vendor" });
     }
 
-    const allowed = ["name", "price", "mrp", "unit", "qty", "available", "photoUrl", "photos"];
+    const allowed = ["name", "price", "mrp", "unit", "qty", "available", "photoUrl", "photos", "category", "veg"];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+    if (updates.category !== undefined) updates.category = (updates.category || "").toString().trim().slice(0, 40) || null;
+    if (updates.veg !== undefined) updates.veg = ["veg", "nonveg", "egg"].includes(updates.veg) ? updates.veg : null;
     if (updates.price !== undefined) updates.price = Number(updates.price);
     if (updates.qty   !== undefined) updates.qty   = Number(updates.qty);
     // Keep photos as an array (max 5) and sync the primary photoUrl to the first one.

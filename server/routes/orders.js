@@ -294,6 +294,17 @@ router.post("/", requireAuth, requireRole("customer"), async (req, res) => {
       db.collection("customers").doc(customer.id).update({ mapsUrl: req.body.deliverMapsUrl }).catch(() => {});
     }
 
+    // Bump each product's lifetime sales counter (drives the "Bestseller" tag/filter).
+    try {
+      const admin = require("../config/firebase").admin;
+      resolvedItems.forEach((it) => {
+        if (!it.productId) return;
+        db.collection("products").doc(it.productId)
+          .update({ soldCount: admin.firestore.FieldValue.increment(Number(it.qty) || 1) })
+          .catch(() => {});
+      });
+    } catch (e) { /* non-critical */ }
+
     // Order stays PLACED in the merchant's New queue until they accept it,
     // at which point they dispatch the nearest available Saradhi.
 
