@@ -2397,7 +2397,38 @@
         policyLinks(),
       ]),
       el("button", { class: "btn danger", style: "width:100%;margin-top:18px", onClick: () => BW.logout() }, "Log out"),
+      el("button", { class: "btn ghost", style: "width:100%;margin-top:10px;color:#c0392b", onClick: () => deleteAccountFlow() }, "Delete my account"),
+      el("div", { class: "muted small", style: "text-align:center;margin-top:6px" }, "Permanently removes your account and personal data."),
     ]);
+  }
+
+  // Permanent account deletion (required for the app stores). Two-step confirm.
+  function deleteAccountFlow() {
+    let close;
+    const confirmIn = el("input", { type: "text", placeholder: "Type DELETE to confirm", autocapitalize: "characters", style: "width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-top:8px" });
+    const errEl = el("div", { class: "auth-err", style: "margin-top:6px" });
+    const goBtn = el("button", { class: "btn danger" }, "Delete forever");
+    goBtn.onclick = async () => {
+      if ((confirmIn.value || "").trim().toUpperCase() !== "DELETE") { errEl.textContent = "Please type DELETE to confirm."; return; }
+      goBtn.disabled = true; goBtn.textContent = "Deleting…";
+      try {
+        await BW.deleteAccount();
+        toast("Your account has been deleted.");
+        if (close) close();
+        setTimeout(() => { try { BW.logout(); } catch (e) { location.href = "/customer/"; } }, 600);
+      } catch (e) {
+        errEl.textContent = (e && e.message) || "Could not delete. Please try again.";
+        goBtn.disabled = false; goBtn.textContent = "Delete forever";
+      }
+    };
+    close = UI.modal({
+      title: "Delete account?",
+      body: el("div", {}, [
+        el("p", { class: "small", style: "line-height:1.6;margin:0" }, "This permanently deletes your Saardha account and personal details (name, phone, addresses, saved stores). This can't be undone, and you'll need to sign up again to order."),
+        confirmIn, errEl,
+      ]),
+      footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Keep my account"), goBtn],
+    });
   }
 
   // Shared list of policy links (opens the static policy pages in a new tab).
@@ -2408,6 +2439,7 @@
       ["Delivery policy",       "/policies/delivery.html"],
       ["Terms of Service",      "/policies/terms.html"],
       ["Delivery Partner policy", "/policies/delivery-partner.html"],
+      ["Delete my account",     "/policies/account-deletion.html"],
     ];
     return el("div", {}, items.map(([label, href]) =>
       el("a", { href, target: "_blank", rel: "noopener",

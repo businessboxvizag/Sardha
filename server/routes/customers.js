@@ -199,4 +199,49 @@ router.delete("/me/hidden-shops/:vendorId", requireAuth, requireRole("customer")
   }
 });
 
+/* ── DELETE /api/customers/me ── permanent account + data deletion ──
+ * Required by Google Play: a user who can create an account must be able to
+ * delete it (and their personal data) from inside the app. We remove the login
+ * (users doc) and the customer profile, and strip personal identifiers from past
+ * orders (order records are retained for the merchants' legitimate business/tax
+ * purposes, but no longer tied to a person). */
+router.delete("/me", requireAuth, requireRole("customer"), async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const custSnap = await db.collection("customers").where("userId", "==", uid).limit(1).get();
+    const customerId = custSnap.empty ? null : custSnap.docs[0].id;
+
+    // 1) Anonymize this customer's orders (keep the sales record, drop the person).
+    if (customerId) {
+      const ordSnap = await db.collection("orders").where("customerId", "==", customerId).get();
+      let batch = db.batch(); let n = 0;
+      for (const d of ordSnap.docs) {
+        batch.update(d.ref, {
+          dropName: "Deleted user", dropPhone: null, deliverTo: "[account deleted]",
+          deliverLat: null, deliverLng: null, deliverMapsUrl: null,
+          prescriptionUrl: null, selfieUrl: null, deletedCustomer: true,
+        });
+        if (++n >= 400) { await batch.commit(); batch = db.batch(); n = 0; }
+      }
+      if (n) await batch.commit();
+    }
+
+    // 2) Delete support tickets raised by this customer.
+    try {
+      const tSnap = await db.collection("tickets").where("customerId", "==", customerId || "__none__").get();
+      const tb = db.batch(); tSnap.docs.forEach((d) => tb.delete(d.ref)); if (tSnap.size) await tb.commit();
+    } catch (e) { /* tickets collection may not exist */ }
+
+    // 3) Delete the customer profile and the login account.
+    if (customerId) await db.collection("customers").doc(customerId).delete();
+    const userSnap = await db.collection("users").where("uid", "==", uid).get();
+    const ub = db.batch(); userSnap.docs.forEach((d) => ub.delete(d.ref)); if (userSnap.size) await ub.commit();
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /customers/me:", err);
+    res.status(500).json({ error: "Failed to delete account" });
+  }
+});
+
 module.exports = router;

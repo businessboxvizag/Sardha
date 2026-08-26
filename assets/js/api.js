@@ -699,6 +699,9 @@
     // Active Saardha-wide offer codes, for the customer app to show at checkout.
     publicPromos: () => get("/api/public/promos"),
 
+    // Permanent account + data deletion (Play Store requirement).
+    deleteAccount: () => del("/api/customers/me"),
+
     // Platform-wide promo codes (Saardha daily offers, shared on Instagram etc.)
     listPromos:  () => get("/api/admin/promos"),
     savePromo:   (data) => post("/api/admin/promos", data),
