@@ -38,7 +38,7 @@
     BW.subscribeTickets((t) => {
       if (state.route === "ticket" && state.ticketId === t.id) viewTicket();
       const last = (t.messages && t.messages[t.messages.length - 1]) || {};
-      if (last.from === "support" && window.Buzzer) window.Buzzer.notify("Saardha Support replied", last.text || "");
+      if (last.from === "support" && window.Buzzer) window.Buzzer.notify("flik Support replied", last.text || "");
     });
 
     // Notify the customer live when a fresh order is accepted or declined by the store
@@ -189,7 +189,7 @@
     const cust = BW.currentCustomer();
     const user = BW.Auth.getUser();
 
-    root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "Saardha", []));
+    root.appendChild(topbar(user ? "Hi, " + String(user.name).split(" ")[0] : "flik", []));
     festivalRibbon(root);   // themed festival strip (e.g. Independence Day) when active
     festivalOverlay();      // full-screen floating petals + flying flags
 
@@ -204,10 +204,10 @@
     root.appendChild(el("div", { class: "app" }, [nav, content]));
 
     // Bottom nav (mobile only — hidden on desktop via CSS)
-    // Orders moved into Cart; Saardha AI docked in the centre.
-    const aiImg = el("img", { src: "../assets/img/saardha-mark.png", alt: "AI" });
+    // Orders moved into Cart; flik AI docked in the centre.
+    const aiImg = el("div", { class: "bn-ai-glyph" }); aiImg.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2l1.9 5.5 5.5 1.9-5.5 1.9L12 17l-1.9-5.5L4.6 9.6l5.5-1.9z"/><path d="M18.5 13.3l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg>';
     const aiCenter = el("div", { class: "bn-ai-wrap" }, [
-      el("div", { class: "bn-ai", role: "button", "aria-label": "Saardha Assistant", onClick: showAssistant },
+      el("div", { class: "bn-ai", role: "button", "aria-label": "flik Assistant", onClick: showAssistant },
         [aiImg, el("span", { class: "bn-ai-dot" })]),
     ]);
     root.appendChild(el("div", { class: "bottom-nav" }, [
@@ -323,7 +323,7 @@
     hideStoreLocal(id);
     if (BW.hideShop) BW.hideShop(id).catch(function () {});
     const v = BW.vendor(id);
-    toast("Removed " + (v ? v.name : "store") + " — scan its QR to add it back");
+    toast("Removed " + (v ? v.name : "store") + " \u2014 restore it from \u2018Removed stores\u2019 below");
     render();
   }
   function restoreStore(id) {
@@ -338,12 +338,13 @@
   /* ====================== MY STORES ====================== */
   // Pilot / early-launch announcement banner with a scrolling note + feedback contact.
   function pilotBanner() {
+    return document.createTextNode("");
     const num = "8688669816";
     return el("div", { style: "background:linear-gradient(90deg,var(--brand),#ff6a5c);color:#fff;border-radius:12px;padding:10px 14px;margin-bottom:14px" }, [
       el("div", { style: "display:flex;align-items:center;gap:8px" }, [
         el("span", { style: "font-size:16px" }, "🚀"),
         el("div", { style: "flex:1;min-width:0" }, [
-          el("div", { style: "font-weight:800;font-size:13px" }, "Beta version — thanks for trying Saardha!"),
+          el("div", { style: "font-weight:800;font-size:13px" }, "Beta version — thanks for trying flik!"),
           el("div", { class: "marquee" }, el("span", { class: "marquee-in" },
             "A new local delivery app by BusinessBOX, Vizag. We're in testing — your feedback shapes what we build. Spotted a bug or have an idea? Tell us at " + num + ".")),
         ]),
@@ -485,7 +486,7 @@
     if (!anyActive) {
       shell("stores", [
         pilotBanner(),
-        el("h1", { class: "page-title" }, "My Stores"),
+        el("h1", { class: "page-title" }, "Stores near you"),
         servicesEntry(),
         el("div", { class: "empty", style: "margin-top:24px" }, [
           el("div", { class: "e" }, ""),
@@ -516,39 +517,54 @@
       el("span", { style: "font-size:18px" }, "🛍️"),
       el("span", { style: "flex:1;color:var(--text)" }, [
         el("strong", {}, String(visibleIds.length) + " store" + (visibleIds.length !== 1 ? "s" : "") + " available"),
-        el("span", { class: "muted" }, " · tap ✕ to remove one you don't need"),
+        el("span", { class: "muted" }, " \u00b7 tap \u2715 to hide one"),
       ]),
     ]);
 
-    // Category filter — chips built from the categories of the visible stores.
-    const cats = Array.from(new Set(
-      BW.vendors().filter((v) => visibleIds.includes(v.id)).map((v) => (v.category || "").trim()).filter(Boolean)
-    )).sort();
-    if (state.storeCat && cats.indexOf(state.storeCat) < 0) state.storeCat = "";  // reset if it disappeared
-    const catBar = el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;-webkit-overflow-scrolling:touch" });
+    // ── flik categories (fixed) + filters/sort ──
+    const FCATS = (window.UI && UI.CATS) ? UI.CATS : [];
+    const ALLICON = '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>';
+    const catRow = el("div", { class: "cat-row" });
     function renderCats() {
-      catBar.innerHTML = "";
-      [["", "All"]].concat(cats.map((c) => [c, c])).forEach(([val, label]) => {
-        const on = (state.storeCat || "") === val;
-        catBar.appendChild(el("button", {
-          type: "button",
-          style: "flex:0 0 auto;white-space:nowrap;padding:6px 14px;border-radius:18px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid " + (on ? "var(--brand)" : "var(--border)") + ";background:" + (on ? "var(--brand)" : "transparent") + ";color:" + (on ? "#fff" : "var(--text)"),
-          onClick: () => { state.storeCat = val; renderCats(); renderGrid(); },
-        }, label));
+      catRow.innerHTML = "";
+      [{ key: "", label: "All", icon: ALLICON }].concat(FCATS).forEach((c) => {
+        const on = (state.storeCat || "") === c.key;
+        const b = el("button", { class: "cat-t", type: "button" });
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        var _inner = c.emoji ? ('<span class="cat-emoji">' + c.emoji + '</span>') : ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + c.icon + '</svg>');
+        b.innerHTML = '<span class="ci">' + _inner + '</span><span class="cl">' + c.label + '</span>';
+        b.onclick = () => { state.storeCat = on ? "" : c.key; renderCats(); renderGrid(); };
+        catRow.appendChild(b);
       });
     }
     renderCats();
+    const fbar = el("div", { class: "fbar2" });
+    const SORTICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;vertical-align:-2px"><path d="M3 6h18M6 12h12M10 18h4"/></svg>';
+    function renderFbar() {
+      fbar.innerHTML = "";
+      const sortLbl = { reco: "Sort", rating: "Top rated", fast: "Fastest" }[state.sort || "reco"];
+      const sortBtn = el("button", { class: "fchip", type: "button" });
+      sortBtn.setAttribute("aria-pressed", (state.sort && state.sort !== "reco") ? "true" : "false");
+      sortBtn.innerHTML = SORTICON + sortLbl;
+      sortBtn.onclick = () => { const o = ["reco", "rating", "fast"]; state.sort = o[(o.indexOf(state.sort || "reco") + 1) % o.length]; renderFbar(); renderGrid(); };
+      const mk = (label, key) => { const b = el("button", { class: "fchip", type: "button" }, label); b.setAttribute("aria-pressed", state[key] ? "true" : "false"); b.onclick = () => { state[key] = !state[key]; renderFbar(); renderGrid(); }; return b; };
+      fbar.appendChild(sortBtn);
+      fbar.appendChild(mk("Offers", "fOffers"));
+      fbar.appendChild(mk("Open now", "fOpen"));
+    }
+    renderFbar();
 
-    const grid = el("div", { class: "grid cols-3", id: "vendorGrid" });
+    const grid = el("div", { class: "store-list", id: "vendorGrid" });
     const removedWrap = el("div", { id: "removedWrap" });
     shell("stores", [
       pilotBanner(),
-      el("h1", { class: "page-title" }, "My Stores"),
-      el("p", { class: "page-sub" }, "All stores near you. Remove any you don't need — scan a shop's QR to bring it back."),
+      el("h1", { class: "page-title" }, "Stores near you"),
+      el("p", { class: "page-sub" }, "Order from any local shop on flik. Hide any you don't want to see \u2014 you can bring it back anytime."),
       servicesEntry(),
       countHint,
       searchBar,
-      cats.length > 1 ? catBar : document.createTextNode(""),
+      catRow,
+      fbar,
       grid,
       removedWrap,
     ]);
@@ -562,9 +578,13 @@
       const q = (state.search || "").toLowerCase();
       const list = BW.vendors().filter((v) => {
         if (!visibleIds.includes(v.id)) return false;
-        if (state.storeCat && (v.category || "").trim() !== state.storeCat) return false;
+        if (state.storeCat && UI.catKeyForText(v.category) !== state.storeCat) return false;
+        if (state.fOffers && !(Number(v.storeDiscountPct) > 0 || (Array.isArray(v.promos) && v.promos.length))) return false;
+        if (state.fOpen && (v.active === false || v.status === "inactive")) return false;
         return !q || (v.name + v.category + v.area).toLowerCase().includes(q);
       });
+      if (state.sort === "rating") list.sort((a,b)=>(Number(b.rating)||0)-(Number(a.rating)||0));
+      else if (state.sort === "fast") list.sort((a,b)=>(Number(a.prepMins)||999)-(Number(b.prepMins)||999));
       if (!list.length) {
         g.appendChild(el("div", { class: "empty" }, [el("div", { class: "e" }, ""),
           (state.search || state.storeCat) ? "No stores match this filter." : "You've removed all stores. Scan a shop's QR — or restore one below."]));
@@ -581,7 +601,7 @@
       const removed = BW.vendors().filter((v) => hiddenIds.includes(v.id));
       if (!removed.length) return;
       w.appendChild(el("div", { style: "margin-top:22px;font-weight:700;font-size:13px;color:var(--text)" }, "Removed stores (" + removed.length + ")"));
-      w.appendChild(el("div", { class: "muted small", style: "margin:2px 0 8px" }, "Tap to add back, or scan the shop's QR."));
+      w.appendChild(el("div", { class: "muted small", style: "margin:2px 0 8px" }, "Tap to add any back to your list."));
       const chips = el("div", { style: "display:flex;flex-wrap:wrap;gap:8px" });
       removed.forEach((v) => chips.appendChild(el("button", {
         class: "btn ghost sm",
@@ -594,26 +614,20 @@
 
   function vendorCard(v) {
     const closed = v.active === false || v.status === "inactive";
+    const disc = Number(v.storeDiscountPct) || 0;
     const img = v.photoUrl
       ? el("div", { class: "vcard-img", style: "padding:0;overflow:hidden" }, el("img", { src: v.photoUrl, alt: v.name, style: "width:100%;height:100%;object-fit:cover" }))
       : el("div", { class: "vcard-img" }, v.img || (v.name || "?")[0].toUpperCase());
-    // Remove (hide) button — stops propagation so it doesn't open the store.
-    const removeBtn = el("button", {
-      title: "Remove this store",
-      style: "position:absolute;top:6px;right:6px;z-index:2;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center",
-      onClick: (e) => { e.stopPropagation(); removeStore(v.id); },
-    }, "✕");
-    return el("div", { class: "vcard", style: "position:relative;" + (closed ? "opacity:.6" : ""), onClick: () => openVendor(v.id) }, [
-      removeBtn,
-      img,
+    const removeBtn = el("button", { class: "vcard-x", title: "Remove this store", onClick: (e) => { e.stopPropagation(); removeStore(v.id); } }, "\u00d7");
+    const catLbl = (window.UI && UI.catLabel) ? (UI.catLabel(UI.catKeyForText(v.category)) || v.category) : v.category;
+    return el("div", { class: "vcard" + (closed ? " is-closed" : ""), onClick: () => openVendor(v.id) }, [
+      el("div", { class: "vcard-img-wrap" }, [ img, disc > 0 ? el("span", { class: "vcard-badge" }, disc + "% OFF") : document.createTextNode("") ]),
       el("div", { class: "vcard-body" }, [
-        el("div", { class: "vcard-name" }, [v.name, closed ? el("span", { style: "background:#fdeaea;color:#c0392b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;margin-left:6px" }, "CLOSED") : document.createTextNode("")]),
-        el("div", { class: "vcard-meta" }, v.category + " · " + v.area),
-        el("div", { class: "vcard-tags" }, [
-          el("span", { class: "vcard-rating" }, "★ " + v.rating),
-          el("span", { class: "vcard-time" }, "~" + v.prepMins + " min"),
-        ]),
+        el("div", { class: "vcard-name" }, [v.name, closed ? el("span", { class: "vcard-closed" }, "Closed") : document.createTextNode("")]),
+        el("div", { class: "vcard-tags" }, [ el("span", { class: "vcard-rating" }, "\u2605 " + (v.rating || "New")), el("span", { class: "vcard-dur" }, "~" + (v.prepMins || 15) + " min") ]),
+        el("div", { class: "vcard-meta" }, catLbl + " \u00b7 " + v.area),
       ]),
+      removeBtn,
     ]);
   }
 
@@ -790,7 +804,7 @@
     const sold = products.filter((p) => Number(p.soldCount) > 0).sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0));
     const bestIds = new Set(sold.slice(0, Math.max(3, Math.ceil(products.length * 0.2))).map((p) => p.id));
     const cats = Array.from(new Set(products.map((p) => (p.category || "").trim()).filter(Boolean))).sort();
-    const hasVeg = isFoodStore && products.some((p) => p.veg);
+    const hasVeg = products.some((p) => p.veg);
 
     const listEl = state.vendorLoading
       ? skeletonItems(6)
@@ -859,11 +873,13 @@
         onInput: (e) => { state.itemSearch = e.target.value; renderProducts(); },
       });
       const chipRow = el("div", { style: "display:flex;gap:8px;overflow-x:auto;padding:8px 0 2px;-webkit-overflow-scrolling:touch" });
+      const sf = Array.isArray(v.storeFilters) ? v.storeFilters : null;
+      const wantF = (k) => (sf ? sf.indexOf(k) >= 0 : true);
       const chipDefs = [["all", "All"]];
-      if (sold.length) chipDefs.push(["best", "⭐ Bestsellers"]);
-      if (newIds.size) chipDefs.push(["new", "🆕 New"]);
-      if (hasVeg) { chipDefs.push(["veg", "🟢 Veg"]); chipDefs.push(["nonveg", "🔴 Non-veg"]); }
-      cats.forEach((c) => chipDefs.push(["cat:" + c, c]));
+      if (sold.length && wantF("best")) chipDefs.push(["best", "⭐ Bestsellers"]);
+      if (newIds.size && wantF("new")) chipDefs.push(["new", "🆕 New"]);
+      if (hasVeg && wantF("veg")) { chipDefs.push(["veg", "🟢 Veg"]); chipDefs.push(["nonveg", "🔴 Non-veg"]); }
+      if (wantF("sections")) cats.forEach((c) => chipDefs.push(["cat:" + c, c]));
       function renderChips() {
         chipRow.innerHTML = "";
         chipDefs.forEach(([val, label]) => {
@@ -1000,7 +1016,7 @@
         applyPromoCode(promoInput.value);
       };
 
-      // Show today's live Saardha offers as one-tap chips (fetched once, cached).
+      // Show today's live flik offers as one-tap chips (fetched once, cached).
       if (state._offers === undefined) {
         state._offers = null;
         if (BW.publicPromos) BW.publicPromos().then((list) => { state._offers = list || []; if (state.route === "vendor") rebuild(); }).catch(() => { state._offers = []; });
@@ -1298,7 +1314,7 @@
           mkUpload("Upload a selfie (identity check)", "rxSelfieUrl", "image/*", "user"),
           el("label", { style: "display:flex;gap:8px;align-items:flex-start;font-size:11.5px;color:var(--muted);margin-top:6px;cursor:pointer" }, [
             consentCb,
-            el("span", {}, "I confirm this prescription is genuine and issued to me, I take full responsibility for this medicine order and any legal consequences, and I authorise Saardha to securely store my prescription and selfie for verification and legal compliance."),
+            el("span", {}, "I confirm this prescription is genuine and issued to me, I take full responsibility for this medicine order and any legal consequences, and I authorise flik to securely store my prescription and selfie for verification and legal compliance."),
           ]),
         ]));
       }
@@ -1411,7 +1427,7 @@
   }
   // Require a usable address (a pin, or enough typed detail) before ordering.
   function ensureDeliveryAddress() {
-    // A saved Google Maps link is enough on its own — the Saradhi navigates straight to it.
+    // A saved Google Maps link is enough on its own — the Pilot navigates straight to it.
     if (state.deliverMapsUrl) return true;
     const addr = composedDeliverTo();
     if (!state.deliverLoc && addr.length < 6) {
@@ -1503,7 +1519,7 @@
       amount: pay.amount,
       currency: pay.currency,
       order_id: pay.razorpayOrderId,
-      name: "Saardha",
+      name: "flik",
       description: "Order payment",
       prefill: cust ? { name: cust.name || "", contact: cust.phone || "", email: cust.email || "" } : {},
       theme: { color: "#e62a1f" },
@@ -1548,7 +1564,7 @@
         ]),
       ]),
       el("div", { class: "order-confirm-title" }, "Order Placed!"),
-      el("div", { class: "order-confirm-sub" }, "We're finding your Saradhi…"),
+      el("div", { class: "order-confirm-sub" }, "We're finding your Pilot…"),
     ]);
     document.body.appendChild(overlay);
     setTimeout(() => {
@@ -1620,7 +1636,7 @@
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Live tracking"),
           mapFallbackCard(o, rider),
-          // Always-works fallback: open the Saradhi's live position in Google Maps
+          // Always-works fallback: open the Pilot's live position in Google Maps
           // (no API key needed — handy when the embedded map can't load).
           (rider && rider.lat && !["DELIVERED", "CANCELLED"].includes(o.status))
             ? el("a", {
@@ -1628,7 +1644,7 @@
                 target: "_blank", rel: "noopener",
                 href: "https://www.google.com/maps/dir/?api=1&origin=" + rider.lat + "," + rider.lng +
                       "&destination=" + (cust && cust.lat ? cust.lat + "," + cust.lng : encodeURIComponent(o.deliverTo || "")) + "&travelmode=driving",
-              }, "🧭 See where your Saradhi is")
+              }, "🧭 See where your Pilot is")
             : document.createTextNode(""),
           rider
             ? el("div", {}, [
@@ -1640,7 +1656,7 @@
                 etaBadge(o, rider, cust),
               ])
             : el("div", { class: "muted small", style: "margin-top:12px" },
-                o.status === "CANCELLED" ? "This order was declined — no delivery." : "Waiting for a Saradhi to be assigned…"),
+                o.status === "CANCELLED" ? "This order was declined — no delivery." : "Waiting for a Pilot to be assigned…"),
         ]),
         el("div", { class: "card" }, [
           el("h3", { style: "margin-top:0" }, "Order summary"),
@@ -1771,7 +1787,7 @@
     const body = el("div", {}, [
       el("div", { style: "font-weight:600;margin-bottom:8px;text-align:center" }, "How was " + (v ? v.name : "the store") + "?"),
       starRow((n) => storeRating = n),
-      rider ? el("div", { style: "font-weight:600;margin:18px 0 8px;text-align:center" }, "How was your Saradhi, " + rider.name + "?") : document.createTextNode(""),
+      rider ? el("div", { style: "font-weight:600;margin:18px 0 8px;text-align:center" }, "How was your Pilot, " + rider.name + "?") : document.createTextNode(""),
       rider ? starRow((n) => riderRating = n) : document.createTextNode(""),
       commentEl,
     ]);
@@ -1804,12 +1820,12 @@
     return "https://wa.me/" + d;
   }
 
-  // Customer's own 4-digit delivery OTP — read out to the Saradhi at the door.
+  // Customer's own 4-digit delivery OTP — read out to the Pilot at the door.
   function deliveryOtpCard(o) {
     const box = el("div", { class: "card", style: "text-align:center;border:1px solid var(--brand);background:var(--brand-lt)" }, [
       el("div", { class: "small", style: "font-weight:700;color:var(--brand)" }, "Delivery OTP"),
       el("div", { style: "font-size:30px;font-weight:800;letter-spacing:8px;color:var(--brand);margin:4px 0" }, "····"),
-      el("div", { class: "muted small" }, "Share this with your Saradhi to receive your order"),
+      el("div", { class: "muted small" }, "Share this with your Pilot to receive your order"),
     ]);
     const codeEl = box.children[1];
     if (BW.deliveryOtp) BW.deliveryOtp(o.id).then((r) => { if (r && r.otp) codeEl.textContent = r.otp; }).catch(() => {});
@@ -1822,7 +1838,7 @@
       const markers = [];
       if (vendor && vendor.lat)   markers.push({ lat: vendor.lat, lng: vendor.lng, label: "Store" });
       if (customer && customer.lat) markers.push({ lat: customer.lat, lng: customer.lng, label: "You" });
-      if (rider && rider.lat)     markers.push({ lat: rider.lat, lng: rider.lng, label: "Saradhi", icon: "chariot" });
+      if (rider && rider.lat)     markers.push({ lat: rider.lat, lng: rider.lng, label: "Pilot", icon: "chariot" });
       const gm = UI.gmap({ markers: markers, height: 240 });
       if (gm) return gm;
     }
@@ -1923,7 +1939,7 @@
         if (v) return v;
         const m = url.pathname.match(/\/scan\/([^/?#]+)/);
         if (m) return m[1];
-        // Universal Saardha QR (a /scan URL with no store id) → open the store picker.
+        // Universal flik QR (a /scan URL with no store id) → open the store picker.
         if (/\/scan\/?$/.test(url.pathname)) return "__UNIVERSAL__";
         return null;
       } catch {
@@ -2009,7 +2025,7 @@
                 const vendorId = processUrl(raw);
                 if (vendorId === "__UNIVERSAL__") { stopCamera(); openStorePicker(); }
                 else if (vendorId) { stopCamera(); addVendorById(vendorId); onSuccess(vendorId); }
-                else { resultEl.textContent = "QR found but not a Saardha store. Try again."; }
+                else { resultEl.textContent = "QR found but not a flik store. Try again."; }
               });
             }
             _scanLoop = requestAnimationFrame(tick);
@@ -2074,7 +2090,7 @@
         const vendorId = processUrl(raw);
         if (vendorId === "__UNIVERSAL__") { openStorePicker(); }
         else if (vendorId) { addVendorById(vendorId); onSuccess(vendorId); }
-        else { resultEl.textContent = "QR found but it's not a Saardha store code."; }
+        else { resultEl.textContent = "QR found but it's not a flik store code."; }
       });
     }
 
@@ -2135,10 +2151,10 @@
   function hidePlacing() { const o = document.getElementById("placingOverlay"); if (o) o.remove(); }
 
   const OB_STEPS = [
-    { e: "🔍", t: "Scan a shop", s: "Point your camera at a shop's Saardha QR code to add it to your app." },
+    { e: "🔍", t: "Scan a shop", s: "Point your camera at a shop's flik QR code to add it to your app." },
     { e: "🛒", t: "Build your cart", s: "Open a shop and tap ADD on the items you want." },
     { e: "💳", t: "Place your order", s: "Pay by cash on delivery or online — whatever you prefer." },
-    { e: "🛵", t: "Track it live", s: "Watch your Saradhi bring your order to your door in real time." },
+    { e: "🛵", t: "Track it live", s: "Watch your Pilot bring your order to your door in real time." },
   ];
   function showOnboarding() {
     let i = 0;
@@ -2208,7 +2224,7 @@
     sheet.appendChild(el("div", { class: "ai-header" }, [
       el("div", { class: "row", style: "gap:10px;align-items:center" }, [
         el("img", { src: "../assets/img/icon.png", alt: "", style: "width:26px;height:26px;object-fit:contain" }),
-        el("div", { style: "font-weight:800" }, "Saardha Help"),
+        el("div", { style: "font-weight:800" }, "flik Help"),
       ]),
       el("button", { class: "ai-close", "aria-label": "Close", onClick: close }, "×"),
     ]));
@@ -2222,7 +2238,7 @@
     sheet.appendChild(el("div", { class: "ai-input" }, [input, el("button", { class: "ai-send", "aria-label": "Send", onClick: sendIt }, "→")]));
 
     document.body.appendChild(overlay);
-    addMsg("Hi! I'm your Saardha helper. Ask me anything, or tap a suggestion below.", "bot");
+    addMsg("Hi! I'm your flik helper. Ask me anything, or tap a suggestion below.", "bot");
   }
 
   /* ====================== PROFILE ====================== */
@@ -2424,7 +2440,7 @@
     close = UI.modal({
       title: "Delete account?",
       body: el("div", {}, [
-        el("p", { class: "small", style: "line-height:1.6;margin:0" }, "This permanently deletes your Saardha account and personal details (name, phone, addresses, saved stores). This can't be undone, and you'll need to sign up again to order."),
+        el("p", { class: "small", style: "line-height:1.6;margin:0" }, "This permanently deletes your flik account and personal details (name, phone, addresses, saved stores). This can't be undone, and you'll need to sign up again to order."),
         confirmIn, errEl,
       ]),
       footer: [el("button", { class: "btn ghost", onClick: () => close() }, "Keep my account"), goBtn],
@@ -2654,7 +2670,7 @@
         el("button", { class: "btn ghost sm", onClick: () => go("stores") }, "← Back"),
         el("h1", { class: "page-title", style: "margin:0" }, "Local Services"),
       ]),
-      el("p", { class: "page-sub" }, "Pickup & Drop — a Saradhi collects your item, the shop does the work, we return it to your door."),
+      el("p", { class: "page-sub" }, "Pickup & Drop — a Pilot collects your item, the shop does the work, we return it to your door."),
       chips,
       list,
     ]);
@@ -2718,7 +2734,7 @@
       ]),
       el("p", { class: "page-sub" }, catLabel(v.categoryKey) + (v.area ? " · " + v.area : "") + " · ★ " + (v.rating || 5)),
       el("div", { class: "card", style: "background:var(--brand-lt);border:1px solid var(--border);margin-bottom:12px" },
-        el("div", { class: "small" }, "🛵 A Saardha Saradhi collects your item and returns it after the work is done. Final price may be confirmed after inspection (e.g. by weight/count).")),
+        el("div", { class: "small" }, "🛵 A flik Pilot collects your item and returns it after the work is done. Final price may be confirmed after inspection (e.g. by weight/count).")),
       el("div", {}, rows),
     ];
 
@@ -2870,7 +2886,7 @@
       BW.bookingOtp(b.id).then((r) => {
         if (!r || !r.otp) { otpBox.innerHTML = ""; otpBox.appendChild(el("div", { class: "muted small" }, "Return code appears once assigned.")); return; }
         otpBox.innerHTML = "";
-        otpBox.appendChild(el("div", { class: "muted small", style: "margin-bottom:4px" }, "Show this code to the Saradhi on return"));
+        otpBox.appendChild(el("div", { class: "muted small", style: "margin-bottom:4px" }, "Show this code to the Pilot on return"));
         otpBox.appendChild(el("div", { style: "font-size:30px;font-weight:800;letter-spacing:6px;color:var(--brand)" }, r.otp));
       }).catch(() => { otpBox.remove(); });
     } else { otpBox.remove(); }
@@ -2881,12 +2897,12 @@
       const r = BW.rider(b.riderId);
       if (r) {
         contact.push(el("div", { class: "card", style: "margin-bottom:12px" }, [
-          el("div", { style: "font-weight:700;margin-bottom:6px" }, "Your Saradhi: " + r.name),
+          el("div", { style: "font-weight:700;margin-bottom:6px" }, "Your Pilot: " + r.name),
           el("div", { style: "display:flex;gap:8px" }, [
             r.phone ? el("a", { class: "btn ghost sm", style: "flex:1;text-align:center", href: "tel:" + r.phone }, "📞 Call") : document.createTextNode(""),
             r.phone ? el("a", { class: "btn ghost sm", style: "flex:1;text-align:center", href: waLink(r.phone), target: "_blank", rel: "noopener" }, "💬 WhatsApp") : document.createTextNode(""),
           ].filter((x) => x.nodeType !== 3 || x.textContent)),
-          (r.lat && r.lng) ? el("a", { class: "btn ghost sm", style: "width:100%;text-align:center;margin-top:8px", href: "https://www.google.com/maps/search/?api=1&query=" + r.lat + "," + r.lng, target: "_blank", rel: "noopener" }, "🗺️ See Saradhi on Google Maps") : document.createTextNode(""),
+          (r.lat && r.lng) ? el("a", { class: "btn ghost sm", style: "width:100%;text-align:center;margin-top:8px", href: "https://www.google.com/maps/search/?api=1&query=" + r.lat + "," + r.lng, target: "_blank", rel: "noopener" }, "🗺️ See Pilot on Google Maps") : document.createTextNode(""),
         ]));
       }
     }
@@ -3184,8 +3200,8 @@
   function mapFallbackCard(o, rider) {
     const active = rider && rider.lat && !["DELIVERED", "CANCELLED"].includes(o.status);
     return el("div", { style: "height:120px;border-radius:12px;background:#faf3ef;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;color:var(--muted)" },
-      active ? "📍 Your Saradhi is on the way — tap below for live location."
-             : (o.status === "DELIVERED" ? "✓ Delivered" : "Live location appears here once a Saradhi is assigned."));
+      active ? "📍 Your Pilot is on the way — tap below for live location."
+             : (o.status === "DELIVERED" ? "✓ Delivered" : "Live location appears here once a Pilot is assigned."));
   }
 
   function render() {

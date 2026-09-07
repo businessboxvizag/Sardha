@@ -80,20 +80,70 @@
     { value: "combo",      label: "Per combo / meal"    },
   ];
 
-  const CATEGORY_OPTIONS = [
-    { value: "Restaurant",   label: "Restaurant" },
-    { value: "Street Food",  label: "Street Food / Chaat" },
-    { value: "Bakery",       label: "Bakery / Cafe" },
-    { value: "Sweets",       label: "Sweets & Snacks" },
-    { value: "Groceries",    label: "Groceries" },
-    { value: "Pharmacy",     label: "Pharmacy" },
-    { value: "Florist",      label: "Florist" },
-    { value: "Electronics",  label: "Electronics" },
-    { value: "Clothing",     label: "Clothing / Textiles" },
-    { value: "General",      label: "General Store" },
-  ];
+  // flik categories — single source of truth is UI.CATS (assets/js/util.js)
+  const CATEGORY_OPTIONS = (window.UI && UI.CATS && UI.CATS.length)
+    ? UI.CATS.map((c) => ({ value: c.label, label: c.label }))
+    : [
+        { value: "Food", label: "Food" },
+        { value: "Grocery", label: "Grocery" },
+        { value: "Fruits & Veg", label: "Fruits & Veg" },
+        { value: "Meat & Fish", label: "Meat & Fish" },
+        { value: "Bakery", label: "Bakery" },
+        { value: "Sweets", label: "Sweets" },
+        { value: "Pharmacy", label: "Pharmacy" },
+        { value: "Gifts", label: "Gifts" },
+      ];
 
   const EMOJI_OPTIONS = [];
+
+  function fAgreementSigned(v) { var A = window.FLIK_AGREEMENT; return !!(A && v && v.agreementVersion === A.version); }
+  function openAgreementModal(v, opts) {
+    opts = opts || {};
+    var A = window.FLIK_AGREEMENT; if (!A) { toast("Agreement not available"); return; }
+    var signed = fAgreementSigned(v);
+    var overlay = el("div", { style: "position:fixed;inset:0;z-index:10000;background:rgba(15,12,40,.5);display:flex;align-items:center;justify-content:center;padding:16px" });
+    var card = el("div", { style: "background:var(--surface);color:var(--text);width:100%;max-width:560px;max-height:90vh;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-md)" });
+    card.appendChild(el("div", { style: "padding:15px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px" }, [
+      el("div", { style: "font-weight:800;font-size:16px;flex:1" }, A.title),
+      el("button", { class: "btn ghost sm", onClick: function () { overlay.remove(); } }, "Close"),
+    ]));
+    var scroll = el("div", { style: "padding:14px 18px;overflow-y:auto" });
+    scroll.appendChild(el("div", { class: "muted small", style: "margin-bottom:10px" }, "Version " + A.version + " · Effective " + A.effective));
+    scroll.appendChild(el("p", { style: "font-size:13.5px;line-height:1.6;margin:0 0 8px" }, A.intro));
+    A.sections.forEach(function (sec) {
+      scroll.appendChild(el("div", { style: "font-weight:700;font-size:14px;margin:14px 0 4px" }, sec.h));
+      sec.p.forEach(function (para) { scroll.appendChild(el("p", { style: "font-size:13px;line-height:1.6;margin:0 0 6px" }, para)); });
+    });
+    scroll.appendChild(el("div", { class: "muted small", style: "margin-top:14px;font-style:italic" }, A.note));
+    card.appendChild(scroll);
+    if (signed) {
+      card.appendChild(el("div", { style: "padding:13px 18px;border-top:1px solid var(--border);background:var(--surface-2)" }, [
+        el("div", { style: "font-weight:700;color:var(--green)" }, "✓ Signed"),
+        el("div", { class: "muted small" }, "By " + (v.agreementSignerName || "—") + " on " + (v.agreementAcceptedAt ? new Date(v.agreementAcceptedAt).toLocaleString() : "—")),
+      ]));
+    } else {
+      var nameEl = el("input", { placeholder: "Type your full name to sign", style: "width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px" });
+      var agreeCb = el("input", { type: "checkbox" });
+      var signBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:10px" }, "Sign agreement");
+      signBtn.onclick = function () {
+        if (!agreeCb.checked) { toast("Please tick the box to agree"); return; }
+        if (!nameEl.value.trim()) { toast("Type your full name to sign"); return; }
+        signBtn.disabled = true; signBtn.textContent = "Signing…";
+        BW.upsertVendor({ id: v.id, agreementVersion: A.version, agreementAcceptedAt: new Date().toISOString(), agreementSignerName: nameEl.value.trim() })
+          .then(function () { toast("Agreement signed ✓"); overlay.remove(); if (opts.onSigned) opts.onSigned(); render(); })
+          .catch(function (e) { toast("Error: " + (e.message || "")); signBtn.disabled = false; signBtn.textContent = "Sign agreement"; });
+      };
+      card.appendChild(el("div", { style: "padding:13px 18px;border-top:1px solid var(--border)" }, [
+        nameEl,
+        el("label", { style: "display:flex;gap:8px;align-items:flex-start;cursor:pointer;font-size:12.5px;margin-top:8px" }, [agreeCb, el("span", {}, "I have read and agree to the flik Merchant Partner Agreement on behalf of my store.")]),
+        signBtn,
+      ]));
+    }
+    overlay.appendChild(card);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
 
   const state = { route: "orders", vendorId: null, detailOrderId: null };
   const root = document.getElementById("root");
@@ -124,7 +174,7 @@
       BW.orders({ vendorId: state.vendorId, status: S.PLACED }).map((o) => o.id)
     );
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
-    if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
+    if (window.flikPush) window.flikPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { checkNewOrders(); render(); });
 
     // CRITICAL for not missing orders: poll every 12s + re-check when the app returns to
@@ -135,7 +185,7 @@
     });
     requestWakeLock();       // keep the screen awake while the store app is open
     showAlertsPrompt();      // one-tap enable for alarm sound + notifications
-    mountFloatingHome();     // movable circle → tap to jump back to orders
+    // (removed) floating back-to-orders bubble → tap to jump back to orders
 
     render();
   }
@@ -160,17 +210,17 @@
     try { already = localStorage.getItem("bw_m_alerts") === "1"; } catch (e) {}
     if (already) {
       // Already enabled once — keep the push subscription fresh silently, no prompt.
-      if (window.SaardhaPush) window.SaardhaPush.enable();
+      if (window.flikPush) window.flikPush.enable();
       return;
     }
-    const bar = el("div", { style: "position:fixed;left:12px;right:12px;bottom:16px;z-index:9000;background:linear-gradient(90deg,#e62a1f,#ff6a3c);color:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 8px 22px rgba(230,42,31,.4);display:flex;align-items:center;gap:12px" }, [
+    const bar = el("div", { style: "position:fixed;left:12px;right:12px;bottom:16px;z-index:9000;background:linear-gradient(90deg,var(--brand),var(--brand-2));color:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 10px 24px rgba(91,75,245,.4);display:flex;align-items:center;gap:12px" }, [
       el("div", { style: "flex:1" }, [
         el("div", { style: "font-weight:800" }, "🔔 Turn on order alerts (one time)"),
         el("div", { style: "font-size:12px;opacity:.95" }, "Tap once to get a loud alarm + notification on every new order — even when the phone is locked."),
       ]),
-      el("button", { class: "btn", style: "background:#fff;color:#c0392b;font-weight:800", onClick: () => {
+      el("button", { class: "btn", style: "background:#fff;color:var(--brand);font-weight:800", onClick: () => {
         try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
-        if (window.SaardhaPush) window.SaardhaPush.enable();
+        if (window.flikPush) window.flikPush.enable();
         try { localStorage.setItem("bw_m_alerts", "1"); } catch (e) {}
         bar.remove(); toast("🔔 Order alerts on — for good");
       } }, "Enable"),
@@ -270,7 +320,7 @@
           el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [gpsBtn, gpsStatus]),
           setupAccWarn,
           el("div", {}, [setupPreview]),
-          el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Saradhi navigates here)"),
+          el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Pilot navigates here)"),
           UI.mapsLinkField({ onResolved: (la, ln, url) => { _mapsUrl = url; if (la != null) { _lat = la; _lng = ln; gpsStatus.textContent = "📍 " + la.toFixed(5) + ", " + ln.toFixed(5) + " (from link)"; setupAccWarn.style.display = "none"; setupRefreshPreview(); } } }),
         ]),
         errEl,
@@ -373,12 +423,18 @@
     }
 
     function bnItem(route, ico, label, badge) {
+      const NAVICON = {
+        orders: '<path d="M7 4h10a1 1 0 0 1 1 1v15l-3-2-3 2-3-2-3 2V5a1 1 0 0 1 1-1z"/><path d="M9 9h6M9 13h6"/>',
+        inventory: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+        analytics: '<path d="M4 20V11M10 20V4M16 20v-6M22 20H2"/>',
+        profile: '<path d="M4 21V9l8-5 8 5v12"/><path d="M9 21v-6h6v6"/>',
+      };
       const wrap = el("div", { class: "bottom-nav-item-wrap" }, [
         el("button", {
           class: "bottom-nav-item" + (active === route ? " active" : ""),
           onClick: () => go(route),
         }, [
-          el("span", { class: "bn-ico" }, ico),
+          (function () { var s = el("span", { class: "bn-ico" }); s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + (NAVICON[route] || "") + '</svg>'; return s; })(),
           document.createTextNode(label),
         ]),
       ]);
@@ -417,7 +473,7 @@
     ]);
   }
 
-  // The merchant's amount is the ITEM COST only (GST + delivery fee are Saardha's).
+  // The merchant's amount is the ITEM COST only (GST + delivery fee are flik's).
   function itemCost(o) {
     if (o && o.subtotal != null) return o.subtotal;
     return (o && o.items || []).reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
@@ -468,7 +524,7 @@
           el("span", {}, l.qty + "× " + l.name), el("span", { class: "muted" }, money(l.price * l.qty)),
         ])),
         el("div", { class: "line", style: "border:none" }, [el("strong", {}, "Your payout (item cost)"), el("strong", {}, money(itemCost(o)))]),
-        el("div", { class: "muted small", style: "margin-top:4px" }, "GST & delivery fee are collected by Saardha and aren't part of your payout."),
+        el("div", { class: "muted small", style: "margin-top:4px" }, "GST & delivery fee are collected by flik and aren't part of your payout."),
       ]),
       cust ? el("div", { class: "muted small", style: "margin-top:10px" }, "Customer: " + cust.name + " · " + (cust.phone || "")) : document.createTextNode(""),
       cust ? el("div", { class: "muted small" }, "Deliver to: " + cust.address) : document.createTextNode(""),
@@ -482,7 +538,7 @@
     ]);
     // The merchant's actions end at dispatch. Accept from the PLACED card; dispatch a
     // rider once ACCEPTED. After a rider is assigned, pickup & delivery belong to the
-    // Saradhi — the merchant only monitors here.
+    // Pilot — the merchant only monitors here.
     const footer = [];
     if (o.status === S.PLACED) {
       footer.push(el("button", { class: "btn primary", onClick: async () => {
@@ -506,7 +562,7 @@
     try {
       const { rider } = await BW.autoAssignRider(order.id);
       const distTxt = (rider && typeof rider.dist === "number" && isFinite(rider.dist)) ? " · " + rider.dist.toFixed(1) + " km away" : "";
-      toast("Saradhi assigned: " + ((rider && rider.name) || "a Saradhi") + distTxt);
+      toast("Pilot assigned: " + ((rider && rider.name) || "a Pilot") + distTxt);
     } catch (err) {
       toast(err.message || "No available riders right now");
     }
@@ -552,7 +608,7 @@
           catch (err) { toast(err.message || "No available riders"); }
         } }, "Auto-assign"));
       } else if (r && ![S.DELIVERED, S.CANCELLED].includes(o.status)) {
-        // Rider assigned — pickup & delivery are the Saradhi's to advance, not the merchant's.
+        // Rider assigned — pickup & delivery are the Pilot's to advance, not the merchant's.
         act.push(el("span", { class: "muted small" }, "Rider en route"));
       }
       return el("tr", {}, [
@@ -1023,7 +1079,7 @@
     const delivered = inRange.filter((o) => o.status === "DELIVERED");
     const cod = nonCancelled.filter((o) => o.paymentMethod !== "ONLINE");
     const online = nonCancelled.filter((o) => o.paymentMethod === "ONLINE");
-    // Merchant earnings = item cost only (GST + delivery fee belong to Saardha).
+    // Merchant earnings = item cost only (GST + delivery fee belong to flik).
     const revenue = nonCancelled.reduce((s, o) => s + itemCost(o), 0);
     const codRev = cod.reduce((s, o) => s + itemCost(o), 0);
     const onlineRev = online.reduce((s, o) => s + itemCost(o), 0);
@@ -1050,7 +1106,7 @@
 
     shell("analytics", [
       el("h1", { class: "page-title" }, "Analytics"),
-      el("p", { class: "page-sub" }, "Your earnings are the item cost only — GST & delivery fee are collected by Saardha."),
+      el("p", { class: "page-sub" }, "Your earnings are the item cost only — GST & delivery fee are collected by flik."),
       el("div", { style: "display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap" }, [
         periodBtn("today", "Today"), periodBtn("7d", "This week"), periodBtn("30d", "This month"),
       ]),
@@ -1209,6 +1265,16 @@
       renderPromos();
     };
 
+    // Which quick filters customers see on THIS store's page.
+    const FILTER_DEFS = [["best", "Bestsellers"], ["new", "New arrivals"], ["veg", "Veg / Non-veg"], ["sections", "Sections (by product category)"]];
+    const _sf = Array.isArray(v.storeFilters) ? v.storeFilters : ["best", "new", "veg", "sections"];
+    const filterCbs = {};
+    const filterRows = FILTER_DEFS.map(([key, label]) => {
+      const cb = el("input", { type: "checkbox" }); cb.checked = _sf.indexOf(key) >= 0; filterCbs[key] = cb;
+      return el("label", { style: "display:flex;gap:8px;align-items:center;margin:5px 0;cursor:pointer" }, [cb, el("span", { class: "small" }, label)]);
+    });
+    const collectFilters = () => FILTER_DEFS.map(([k]) => k).filter((k) => filterCbs[k].checked);
+
     const saveBtn = el("button", { class: "btn primary", style: "width:100%;margin-top:8px" }, "Save store details");
     saveBtn.addEventListener("click", async () => {
       if (!nameEl.value.trim()) { toast("Store name is required"); return; }
@@ -1225,6 +1291,7 @@
           prepMins: Number(prepEl.value) || 15,
           storeDiscountPct: Math.max(0, Math.min(90, Number(discEl.value) || 0)),
           showItemPhotos: photosCb.checked,
+          storeFilters: collectFilters(),
           promos: _promos,
           requiresPrescription: rxCb.checked,
           lat: _lat, lng: _lng, mapsUrl: _mapsUrl,
@@ -1240,6 +1307,20 @@
     shell("profile", [
       el("h1", { class: "page-title" }, "Store profile"),
       el("p", { class: "page-sub" }, "Update your store details any time. Changes show to customers immediately."),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:6px" }, "Partner agreement"),
+        fAgreementSigned(v)
+          ? el("div", {}, [
+              el("div", { style: "color:var(--green);font-weight:700" }, "✓ Signed"),
+              el("div", { class: "muted small", style: "margin:2px 0 10px" }, "By " + (v.agreementSignerName || "") + " on " + (v.agreementAcceptedAt ? new Date(v.agreementAcceptedAt).toLocaleString() : "")),
+              el("button", { class: "btn ghost sm", onClick: function () { openAgreementModal(v); } }, "View agreement"),
+            ])
+          : el("div", {}, [
+              el("div", { class: "muted small", style: "margin-bottom:10px" }, "Please review and digitally sign your flik partner agreement — daily 9-to-9 settlement, payment terms and store responsibilities."),
+              el("button", { class: "btn primary sm", onClick: function () { openAgreementModal(v, { onSigned: function () { go("profile"); } }); } }, "Review & sign agreement"),
+            ]),
+      ]),
+
       el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:8px" }, "Availability"),
         openBtn,
@@ -1260,6 +1341,11 @@
         ]),
         el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [rxCb, el("span", { class: "small" }, "This is a pharmacy — require prescription + selfie at checkout")]),
         el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0 8px;cursor:pointer" }, [photosCb, el("span", { class: "small" }, "Show item photos to customers (image-forward, like Flipkart/Amazon). Turn off for a clean text list.")]),
+      ]),
+      el("div", { class: "card", style: "margin-bottom:14px" }, [
+        el("div", { style: "font-weight:800;margin-bottom:4px" }, "Store filters"),
+        el("div", { class: "muted small", style: "margin-bottom:8px" }, "Choose which quick filters customers see on your store page. Tick only the ones that fit your shop \u2014 e.g. a pharmacy may want none, a restaurant wants Veg / Non-veg."),
+        ...filterRows,
       ]),
       el("div", { class: "card", style: "margin-bottom:14px" }, [
         el("div", { style: "font-weight:800;margin-bottom:4px" }, "Promo codes"),
@@ -1283,7 +1369,7 @@
         el("div", { style: "display:flex;align-items:center;gap:10px;margin-bottom:4px" }, [gpsBtn, locStatus]),
         accWarn,
         el("div", {}, [previewLink]),
-        el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Saradhi navigates here)"),
+        el("div", { class: "muted small", style: "margin:8px 0 4px" }, "…or paste your shop's Google Maps link (the most exact — the Pilot navigates here)"),
         linkField,
       ]),
       saveBtn,

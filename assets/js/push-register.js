@@ -1,9 +1,9 @@
 /* =====================================================================
- * Saardha — Web Push registration
+ * flik — Web Push registration
  * Subscribes the current device to push notifications so new orders/tasks
  * alert the merchant/rider even when the app is closed. No-op if the server
  * hasn't configured VAPID keys, or the browser/user declines.
- * Call SaardhaPush.enable() after login (config must be loaded first).
+ * Call flikPush.enable() after login (config must be loaded first).
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -52,5 +52,5 @@
     } catch (e) { /* best-effort; ignore */ }
   }
 
-  global.SaardhaPush = { enable: enable };
+  global.flikPush = { enable: enable };
 })(window);

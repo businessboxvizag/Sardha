@@ -1,5 +1,5 @@
 /* =====================================================================
- * Saardha — Auth UI
+ * flik — Auth UI
  * Two-step email flow: enter email → check → sign in or sign up.
  * Google Sign-In available for all non-admin roles.
  * Requires Firebase compat SDK loaded before this script.
@@ -66,7 +66,7 @@
   }
 
   function renderLoginScreen(role, resolve) {
-    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Saradhi", service: "Service Partner" }[role] || role;
+    const roleLabel = { customer: "Customer", merchant: "Merchant", admin: "Admin", rider: "Pilot", service: "Service Partner" }[role] || role;
     const canSelfRegister = role === "customer";   // only customers self-register
     const showGoogle = role === "customer";
     const root = document.getElementById("root");
@@ -83,8 +83,8 @@
 
     root.innerHTML = `
       <div class="auth-wrap"><div class="auth-card">
-        <img src="../assets/img/logo.png" alt="Saardha" class="auth-logo-img" />
-        <p class="auth-sub" id="authSub">${canSelfRegister ? "Order from local shops, in minutes" : esc(roleLabel) + " portal"}</p>
+        <img src="../assets/img/flik-logo.png" alt="flik" class="auth-logo-img" />
+        <p class="auth-sub" id="authSub">${canSelfRegister ? "Your local market. One swipe away." : esc(roleLabel) + " portal"}</p>
 
         ${canSelfRegister ? `
         <div class="auth-tabs">
@@ -142,7 +142,7 @@
           <div id="recaptcha-container"></div>
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted);margin:4px 0 12px;cursor:pointer">
             <input type="checkbox" id="suConsent" style="margin-top:2px;flex:0 0 18px;width:18px;height:18px" />
-            <span style="flex:1;min-width:0;line-height:1.5">I agree to Saardha's <a href="/privacy/" target="_blank" style="color:var(--brand)">Privacy Policy</a> and consent to my data being used to provide and improve the service.</span>
+            <span style="flex:1;min-width:0;line-height:1.5">I agree to flik's <a href="/privacy/" target="_blank" style="color:var(--brand)">Privacy Policy</a> and consent to my data being used to provide and improve the service.</span>
           </label>
           <div class="auth-err" id="suErr"></div>
           <button class="btn primary" id="signupBtn" style="width:100%">Create account</button>
@@ -305,7 +305,7 @@
     root.innerHTML = `
       <div class="auth-wrap">
         <div class="auth-card">
-          <div class="auth-brand-mark">S</div>
+          <div class="auth-brand-mark">f</div>
           <h2 class="auth-title">Reset password</h2>
           <p class="auth-sub">We'll send a reset link to your email</p>
           <div class="field">
@@ -361,7 +361,7 @@
     root.innerHTML = `
       <div class="auth-wrap">
         <div class="auth-card">
-          <div class="auth-brand-mark">S</div>
+          <div class="auth-brand-mark">f</div>
           <h2 class="auth-title">New password</h2>
           <p class="auth-sub">Choose a strong password (min. 8 characters)</p>
           <div class="field">

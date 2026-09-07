@@ -1,5 +1,5 @@
 /* =====================================================================
- * Saardha — Smart install prompt
+ * flik — Smart install prompt
  * Auto-detects the device and shows the right install action:
  *   • Android/Chrome → one-tap native install (beforeinstallprompt)
  *   • iPhone/Safari  → guided "Add to Home Screen" sheet (Apple blocks
@@ -65,8 +65,8 @@
 
     var header =
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
-        '<img src="/assets/img/icon.png" alt="Saardha" style="width:48px;height:48px;object-fit:contain;flex-shrink:0"/>' +
-        '<div><div style="font-weight:800;font-size:17px;color:#1a1a1a">Install Saardha</div>' +
+        '<img src="/assets/img/icon.png" alt="flik" style="width:48px;height:48px;object-fit:contain;flex-shrink:0"/>' +
+        '<div><div style="font-weight:800;font-size:17px;color:#1a1a1a">Install flik</div>' +
         '<div style="font-size:13px;color:#666">Add it to your home screen for the best experience</div></div>' +
       "</div>";
 

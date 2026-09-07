@@ -12,9 +12,9 @@
  */
 (function (global) {
   var BRAND = {
-    name: "Saardha",                 // ← display name (change to "StreetOn" when confirmed)
-    nameLower: "saardha",
-    tagline: "On-demand local delivery",
+    name: "flik",                 // ← display name (change to "StreetOn" when confirmed)
+    nameLower: "flik",
+    tagline: "Your local market. One swipe away.",
     company: "BusinessBOX, Visakhapatnam",
     // Contact / support
     supportPhone: "+918688669816",
@@ -23,8 +23,8 @@
     // Web / hosting (keep in sync if the domain ever changes)
     domain: "",                      // e.g. "https://streeton.app"
     // Rider brand word ("Saradhi" = a Saardha rider). Rename alongside the app if desired.
-    riderWord: "Saradhi",
-    riderWordPlural: "Saradhis",
+    riderWord: "Pilot",
+    riderWordPlural: "Pilots",
   };
   global.BRAND = BRAND;
 })(typeof window !== "undefined" ? window : this);

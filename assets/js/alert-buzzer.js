@@ -1,5 +1,5 @@
 /* =====================================================================
- * Saardha — New-order alarm
+ * flik — New-order alarm
  * Generates an attention-grabbing alarm using the Web Audio API, so it
  * needs no external sound file. Exposes window.Buzzer.{play,stop,beep}.
  * Also vibrates on supported phones. Audio is unlocked on first user

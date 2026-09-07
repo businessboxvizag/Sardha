@@ -1,5 +1,5 @@
 /* =====================================================================
- * Saardha â API Client
+ * flik â API Client
  * ---------------------------------------------------------------------
  * Drop-in replacement for store.js.  Exposes window.BW with the same
  * synchronous read interface (vendors(), orders(), â¦) backed by a
@@ -29,7 +29,7 @@
     STATUS.PICKED_UP, STATUS.OUT_FOR_DELIVERY, STATUS.DELIVERED,
   ];
   const STATUS_LABEL = {
-    PLACED: "Placed", ACCEPTED: "Accepted", ASSIGNED: "Saradhi assigned",
+    PLACED: "Placed", ACCEPTED: "Accepted", ASSIGNED: "Pilot assigned",
     PICKED_UP: "Picked up", OUT_FOR_DELIVERY: "Out for delivery",
     DELIVERED: "Delivered", CANCELLED: "Cancelled",
   };
@@ -41,7 +41,7 @@
     OUT_FOR_RETURN: "OUT_FOR_RETURN", RETURNED: "RETURNED", CANCELLED: "CANCELLED",
   };
   const BOOKING_LABEL = {
-    REQUESTED: "Requested", ACCEPTED: "Accepted", RIDER_ASSIGNED: "Saradhi collecting",
+    REQUESTED: "Requested", ACCEPTED: "Accepted", RIDER_ASSIGNED: "Pilot collecting",
     PICKED_FROM_CUSTOMER: "Picked up from you", AT_SHOP: "At the shop", READY: "Ready",
     OUT_FOR_RETURN: "On the way back", RETURNED: "Returned", CANCELLED: "Cancelled",
   };
@@ -453,7 +453,7 @@
       emit();
       return rider;
     },
-    // Admin edits a Saradhi's core details (name, phone, vehicle, area, active).
+    // Admin edits a Pilot's core details (name, phone, vehicle, area, active).
     updateRiderDetails: async (riderId, fields) => {
       const rider = await patch("/api/riders/" + riderId, fields);
       const i = _cache.riders.findIndex((r) => r.id === riderId);
@@ -461,7 +461,7 @@
       emit();
       return rider;
     },
-    // Admin deletes a Saradhi (login + record). force=true writes off any pending cash.
+    // Admin deletes a Pilot (login + record). force=true writes off any pending cash.
     deleteRider: async (riderId, force) => {
       await api("DELETE", "/api/riders/" + riderId, force ? { force: true } : undefined);
       _cache.riders = _cache.riders.filter((r) => r.id !== riderId);
@@ -696,13 +696,13 @@
     // PWA analytics (admin)
     getMetrics:  () => get("/api/admin/metrics"),
 
-    // Active Saardha-wide offer codes, for the customer app to show at checkout.
+    // Active flik-wide offer codes, for the customer app to show at checkout.
     publicPromos: () => get("/api/public/promos"),
 
     // Permanent account + data deletion (Play Store requirement).
     deleteAccount: () => del("/api/customers/me"),
 
-    // Platform-wide promo codes (Saardha daily offers, shared on Instagram etc.)
+    // Platform-wide promo codes (flik daily offers, shared on Instagram etc.)
     listPromos:  () => get("/api/admin/promos"),
     savePromo:   (data) => post("/api/admin/promos", data),
     deletePromo: (code) => del(`/api/admin/promos/${encodeURIComponent(code)}`),

@@ -1,5 +1,5 @@
 /* =========================================================
- * Saardha — Rider App
+ * flik — Rider App
  * /rider/rider.js
  * ========================================================= */
 (function () {
@@ -23,7 +23,7 @@
     await BW.init("rider");
 
     syncRider();
-    // Always-on duty: make the Saradhi available for assignment while the app is open.
+    // Always-on duty: make the Pilot available for assignment while the app is open.
     if (myRider && myRider.status === "offline") {
       try { await BW.setMyRiderStatus(me.uid, "available"); syncRider(); } catch (e) {}
     }
@@ -37,7 +37,7 @@
       (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && b.status === (BW.BOOKING_STATUS || {}).RIDER_ASSIGNED).map((b) => b.id)
     );
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
-    if (window.SaardhaPush) window.SaardhaPush.enable();   // push alerts even when the app is closed
+    if (window.flikPush) window.flikPush.enable();   // push alerts even when the app is closed
     BW.subscribe(() => { syncRider(); checkNewOrders(); render(); });
 
     // Fallback: poll for new assignments every 20s in case a socket event was missed
@@ -71,7 +71,7 @@
   try { _alertsOn = localStorage.getItem("bw_r_alerts") === "1"; } catch (e) {}
   function enableAlerts() {
     try { if (window.Buzzer) { window.Buzzer.beep(); window.Buzzer.requestNotify(); } } catch (e) {}
-    if (window.SaardhaPush) window.SaardhaPush.enable();
+    if (window.flikPush) window.flikPush.enable();
     _alertsOn = true;
     try { localStorage.setItem("bw_r_alerts", "1"); } catch (e) {}
     toast("🔔 Alerts on — you'll be buzzed on new tasks");
@@ -86,14 +86,14 @@
       fresh.forEach((o) => _seenOrderIds.add(o.id));
       const o = fresh[0];
       const label = "#" + (o.orderNo || o.id.slice(-6).toUpperCase());
-      if (window.Buzzer) window.Buzzer.alert("New delivery assigned", "Order " + label + " — tap to open Saardha");
+      if (window.Buzzer) window.Buzzer.alert("New delivery assigned", "Order " + label + " — tap to open flik");
       toast("🔔 New delivery assigned to you");
     }
     // Also alert on new service pickups (Pickup & Drop collect leg)
     const freshB = (BW.bookings ? BW.bookings() : []).filter((b) => b.riderId === me.uid && b.status === BS.RIDER_ASSIGNED && !_seenBookingIds.has(b.id));
     if (freshB.length) {
       freshB.forEach((b) => _seenBookingIds.add(b.id));
-      if (window.Buzzer) window.Buzzer.alert("New service pickup", "#" + (b.orderNo || b.id.slice(-6).toUpperCase()) + " — tap to open Saardha");
+      if (window.Buzzer) window.Buzzer.alert("New service pickup", "#" + (b.orderNo || b.id.slice(-6).toUpperCase()) + " — tap to open flik");
       toast("🔔 New service pickup assigned");
     }
   }
@@ -152,7 +152,7 @@
   }
 
   function render() {
-    // Don't wipe a form the Saradhi is actively filling (KYC docs, delivery details).
+    // Don't wipe a form the Pilot is actively filling (KYC docs, delivery details).
     // If an input/textarea/select in the app is focused, skip this re-render; the next
     // one (after they move on) will reflect any changes.
     const ae = document.activeElement;
@@ -208,7 +208,7 @@
     if (status === "verified") {
       return el("div", { class: "rider-status-card", style: "margin-top:12px" }, [
         el("div", { style: "font-weight:800;color:var(--success,#1a9d54)" }, "✓ Documents verified"),
-        el("div", { class: "muted small", style: "margin-top:4px" }, "You're a verified Saardha delivery partner."),
+        el("div", { class: "muted small", style: "margin-top:4px" }, "You're a verified flik delivery partner."),
         policyLink(),
       ]);
     }
@@ -273,7 +273,7 @@
           cashPolicyAck: ackCb.checked,
           agreementFullName: agreeCb.checked ? agreeName.value.trim() : undefined,
         });
-        await syncRider(); toast("Submitted — Saardha will verify your documents."); render();
+        await syncRider(); toast("Submitted — flik will verify your documents."); render();
       } catch (e) { toast(e.message || "Couldn't submit"); submit.disabled = false; submit.textContent = "Submit for verification"; }
     };
 
@@ -294,7 +294,7 @@
 
     return el("div", { class: "rider-status-card", style: "margin-top:12px;border:1px solid var(--brand,#e62a1f)" }, [
       el("div", { style: "font-weight:800" }, status === "submitted" ? "Documents submitted — under review" : status === "rejected" ? "Some documents were rejected — please re-submit" : "Complete your onboarding"),
-      el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Saardha verifies every partner (online + physical check) before you can take deliveries. Upload clear photos."),
+      el("div", { class: "muted small", style: "margin:4px 0 10px" }, "flik verifies every partner (online + physical check) before you can take deliveries. Upload clear photos."),
       el("div", { style: "font-weight:700;margin-top:6px" }, "Your details"),
       uploadRow("Driving licence", "dlUrl"),
       dlNum, riderDob,
@@ -309,7 +309,7 @@
       uploadRow("Nominee's Aadhaar / ID", "familyIdUrl"),
       nomAadhaar,
       el("label", { style: "display:flex;gap:8px;align-items:flex-start;margin-top:12px;cursor:pointer" }, [
-        ackCb, el("span", { class: "small" }, "I understand that COD cash I collect belongs to Saardha and must be settled in full within the cash limit. Failure to settle can suspend my account."),
+        ackCb, el("span", { class: "small" }, "I understand that COD cash I collect belongs to flik and must be settled in full within the cash limit. Failure to settle can suspend my account."),
       ]),
       el("div", { style: "font-weight:700;margin-top:12px" }, "Delivery Partner Agreement"),
       el("div", { class: "muted small" }, ["Read the full ", el("a", { href: "/policies/delivery-partner-agreement.html", target: "_blank", rel: "noopener" }, "Delivery Partner Agreement"), ", then sign below."]),
@@ -368,7 +368,7 @@
       const start = await BW.settleCashStart(me.uid, amount);
       const rzp = new Razorpay({
         key: start.keyId, amount: start.amount, currency: start.currency, order_id: start.razorpayOrderId,
-        name: "Saardha", description: "Cash settlement",
+        name: "flik", description: "Cash settlement",
         handler: async function (resp) {
           try {
             await BW.settleCashVerify(me.uid, {
@@ -407,7 +407,7 @@
   }
 
   /* ── Delivery: collect OTP (+ cash for COD) ────────────── */
-  // Build a UPI payment QR (Saardha VPA + amount) from admin settings, via the same
+  // Build a UPI payment QR (flik VPA + amount) from admin settings, via the same
   // QR image service the rest of the app uses. Returns null if no UPI ID is set.
   function upiQrUrl(amount, orderNo) {
     const s = (BW.settingsRaw && BW.settingsRaw()) || {};
@@ -415,9 +415,9 @@
     if (vpa) {
       // Dynamic QR with the amount pre-filled (works in PhonePe/GPay/Paytm/any UPI app).
       const intent = "upi://pay?pa=" + encodeURIComponent(vpa) +
-        "&pn=" + encodeURIComponent(s.upiName || "Saardha") +
+        "&pn=" + encodeURIComponent(s.upiName || "flik") +
         "&am=" + encodeURIComponent(amount) + "&cu=INR" +
-        "&tn=" + encodeURIComponent("Saardha order " + (orderNo || ""));
+        "&tn=" + encodeURIComponent("flik order " + (orderNo || ""));
       return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(intent);
     }
     // Fallback: an uploaded static QR image (customer types the amount themselves).
@@ -432,7 +432,7 @@
     const cashIn = el("input", { inputmode: "numeric", placeholder: "Cash collected (₹)", value: String(amount), style: "width:100%;margin-bottom:10px" });
     const err = el("div", { class: "auth-err", style: "text-align:left" });
     const qrUrl = upiQrUrl(amount, order.orderNo);
-    let payMode = qrUrl ? "UPI" : "CASH"; // prefer UPI when a Saardha UPI ID is configured
+    let payMode = qrUrl ? "UPI" : "CASH"; // prefer UPI when a flik UPI ID is configured
     const modeWrap = el("div", {});
 
     function renderMode() {
@@ -444,11 +444,11 @@
         if (qrUrl) {
           modeWrap.appendChild(el("div", { style: "text-align:center" }, [
             el("div", { class: "small", style: "margin-bottom:6px" }, "Show this to the customer — they scan & pay " + money(amount)),
-            el("img", { src: qrUrl, alt: "Saardha UPI QR", style: "width:220px;height:220px;border-radius:8px" }),
+            el("img", { src: qrUrl, alt: "flik UPI QR", style: "width:220px;height:220px;border-radius:8px" }),
             el("div", { class: "muted small", style: "margin-top:6px" }, "Confirm the payment shows success before marking delivered."),
           ]));
         } else {
-          modeWrap.appendChild(el("div", { class: "auth-err" }, "Saardha UPI ID isn't set. Ask admin to add it in Settings, or collect cash."));
+          modeWrap.appendChild(el("div", { class: "auth-err" }, "flik UPI ID isn't set. Ask admin to add it in Settings, or collect cash."));
         }
       } else {
         modeWrap.appendChild(cashIn);
@@ -519,7 +519,7 @@
 
   /* ── Top bar ──────────────────────────────────────────── */
   function renderTopBar() {
-    return topbar("Saradhi", [
+    return topbar("Pilot", [
       el("span", { class: "topbar-name" }, me ? (me.name || me.email) : ""),
       el("button", { class: "btn ghost sm", onClick: () => BW.logout() }, "Logout"),
     ]);
@@ -534,7 +534,7 @@
   }
 
   /* ── Status card ─────────────────────────────────────── */
-  // Always-on-duty model: salaried Saradhis don't toggle — they're on duty
+  // Always-on-duty model: salaried Pilots don't toggle — they're on duty
   // whenever the app is open and receive assigned tasks directly.
   function renderStatusCard() {
     const deliveriesText = myRider && myRider.deliveriesToday

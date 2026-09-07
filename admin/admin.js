@@ -61,7 +61,7 @@
     // Alerts: buzz + notify when a customer raises a ticket or replies, and live-refresh
     // the open ticket thread. Also register for push so it works with the app closed.
     if (window.Buzzer && window.Buzzer.requestNotify) window.Buzzer.requestNotify();
-    if (window.SaardhaPush) window.SaardhaPush.enable();
+    if (window.flikPush) window.flikPush.enable();
     BW.subscribeTickets((t) => {
       const last = (t.messages && t.messages[t.messages.length - 1]) || {};
       if (last.from === "customer" && window.Buzzer) {
@@ -135,7 +135,7 @@
       navItem("vendors",   "Ve", "Stores"),
       navItem("partners",  "Pa", "Partners"),
       navItem("services",  "Sv", "Services"),
-      navItem("fleet",     "Sa", "Saradhis"),
+      navItem("fleet",     "Sa", "Pilots"),
       navItem("offers",    "%",  "Offers"),
       navItem("settings",  "Se", "Settings"),
       navItem("monitor",   "Mo", "Monitor"),
@@ -145,7 +145,7 @@
     // Bottom nav (mobile only)
     root.appendChild(el("div", { class: "bottom-nav" }, [
       bnItem("overview",  "Ov", "Overview"),
-      bnItem("fleet",     "Sa", "Saradhis"),
+      bnItem("fleet",     "Sa", "Pilots"),
       bnItem("vendors",   "Ve", "Vendors"),
       bnItem("monitor",   "Mo", "Monitor"),
     ]));
@@ -219,7 +219,7 @@
     const O = computeAnalytics();
     shell("overview", [
       el("h1", { class: "page-title" }, "Platform Overview"),
-      el("p", { class: "page-sub" }, "Live snapshot across all stores and Saradhis."),
+      el("p", { class: "page-sub" }, "Live snapshot across all stores and Pilots."),
       el("div", { class: "grid cols-4" }, [
         stat("Total orders",  String(O.totalOrders), "+" + O.active + " active"),
         stat("Revenue",       money(Math.round(O.revenue)), "avg " + money(Math.round(O.aov))),
@@ -230,7 +230,7 @@
         stat("GMV",           money(Math.round(O.gmv)), "merchandise value"),
         stat("Cancelled",     String(O.cancelled), Math.round(O.cancelRate * 100) + "% rate"),
         stat("Repeat rate",   Math.round(O.repeatRate * 100) + "%", "returning buyers"),
-        stat("Saradhis online", O.ridersOnline + " / " + riders.length, ""),
+        stat("Pilots online", O.ridersOnline + " / " + riders.length, ""),
       ]),
       el("h3", { style: "margin:24px 0 10px" }, "App analytics"),
       el("div", { class: "grid cols-4" }, [
@@ -242,7 +242,7 @@
       el("h3", { style: "margin:24px 0 10px" }, "Recent orders"),
       el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
         el("table", {}, [
-          el("thead", {}, el("tr", {}, ["Order", "Vendor", "Customer", "Total", "Status", "Saradhi", "When"].map((h) => el("th", {}, h)))),
+          el("thead", {}, el("tr", {}, ["Order", "Vendor", "Customer", "Total", "Status", "Pilot", "When"].map((h) => el("th", {}, h)))),
           el("tbody", {}, recent.length ? recent : [el("tr", {}, el("td", { colspan: "7", class: "muted", style: "text-align:center;padding:20px" }, "No orders yet."))]),
         ]),
       ]),
@@ -304,10 +304,10 @@
     shell("fleet", [
       el("div", { class: "row between", style: "margin-bottom:4px" }, [
         el("div", {}, [
-          el("h1", { class: "page-title", style: "margin:0" }, "Saradhis"),
-          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "On-demand Saradhis. Monitor live location, manage and assign."),
+          el("h1", { class: "page-title", style: "margin:0" }, "Pilots"),
+          el("p", { class: "page-sub", style: "margin:4px 0 0" }, "On-demand Pilots. Monitor live location, manage and assign."),
         ]),
-        el("button", { class: "btn primary", onClick: createRider }, "+ Add Saradhi"),
+        el("button", { class: "btn primary", onClick: createRider }, "+ Add Pilot"),
       ]),
       el("div", { class: "card" }, [
         el("div", { class: "row between" }, [
@@ -324,7 +324,7 @@
       // and Status controls stay reachable on any screen width.
       el("div", { class: "card", style: "padding:0;margin-top:16px;overflow-x:auto" }, [
         el("table", { style: "min-width:820px" }, [
-          el("thead", {}, el("tr", {}, ["Saradhi", "Vehicle", "Rating", "Deliveries", "Cash", "KYC", "Active", "Status"].map((h) => el("th", {}, h)))),
+          el("thead", {}, el("tr", {}, ["Pilot", "Vehicle", "Rating", "Deliveries", "Cash", "KYC", "Active", "Status"].map((h) => el("th", {}, h)))),
           el("tbody", {}, rows),
         ]),
       ]),
@@ -410,13 +410,13 @@
   function printMasterQr() {
     const w = window.open("", "_blank");
     if (!w) { toast("Allow pop-ups to print the QR"); return; }
-    const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saardha QR</title>" +
+    const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>flik QR</title>" +
       "<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:40px}h1{color:#e62a1f;margin:0 0 4px}p{color:#555;margin:2px 0 20px}img{width:340px;height:340px}.tag{font-size:18px;font-weight:700;margin-top:14px}.sub{color:#777;font-size:13px;margin-top:6px}" +
       "@media print{button{display:none}}button{margin-top:20px;background:#e62a1f;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer}</style></head><body>" +
-      "<h1>Saardha</h1><p>Scan to order — local home delivery</p>" +
-      "<img src='" + masterQrUrl() + "' alt='Saardha QR'/>" +
+      "<h1>flik</h1><p>Scan to order — local home delivery</p>" +
+      "<img src='" + masterQrUrl() + "' alt='flik QR'/>" +
       "<div class='tag'>📷 Scan &amp; choose your store</div>" +
-      "<div class='sub'>One QR for every Saardha store</div>" +
+      "<div class='sub'>One QR for every flik store</div>" +
       "<button onclick='window.print()'>🖨 Print</button></body></html>";
     w.document.open(); w.document.write(html); w.document.close();
   }
@@ -462,9 +462,9 @@
       ]),
       // Single universal QR — print once, works for every store.
       el("div", { class: "card", style: "margin-bottom:16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap" }, [
-        el("img", { src: masterQrUrl(), alt: "Saardha universal QR", style: "width:120px;height:120px;border-radius:8px;background:#fff" }),
+        el("img", { src: masterQrUrl(), alt: "flik universal QR", style: "width:120px;height:120px;border-radius:8px;background:#fff" }),
         el("div", { style: "flex:1;min-width:200px" }, [
-          el("div", { style: "font-weight:800;font-size:16px" }, "🎯 One Saardha QR for all stores"),
+          el("div", { style: "font-weight:800;font-size:16px" }, "🎯 One flik QR for all stores"),
           el("div", { class: "muted small", style: "margin:4px 0 10px" }, "Print this once and place it anywhere. Customers scan it and pick their store from the list — no separate QR per shop needed."),
           el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [
             el("button", { class: "btn primary sm", onClick: printMasterQr }, "🖨 Print / download"),
@@ -583,9 +583,32 @@
     });
   }
 
+  function fAgreementSigned(v) { var A = window.FLIK_AGREEMENT; return !!(A && v && v.agreementVersion === A.version); }
+  function viewAgreement(v) {
+    var A = window.FLIK_AGREEMENT; if (!A) { toast("Agreement not available"); return; }
+    var body = el("div", { style: "max-height:62vh;overflow-y:auto" });
+    body.appendChild(el("div", { class: "muted", style: "font-size:12px;margin-bottom:8px" }, "Version " + A.version + " · Effective " + A.effective));
+    if (fAgreementSigned(v)) {
+      body.appendChild(el("div", { style: "background:var(--surface-2);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:13px" }, [
+        el("span", { style: "color:var(--green);font-weight:700" }, "✓ Signed "),
+        el("span", { class: "muted" }, "by " + (v.agreementSignerName || "—") + " on " + (v.agreementAcceptedAt ? new Date(v.agreementAcceptedAt).toLocaleString() : "—")),
+      ]));
+    } else {
+      body.appendChild(el("div", { style: "color:var(--red);font-weight:700;margin-bottom:10px;font-size:13px" }, "Not signed yet"));
+    }
+    body.appendChild(el("p", { style: "font-size:13px;line-height:1.6;margin:0 0 8px" }, A.intro));
+    A.sections.forEach(function (sec) {
+      body.appendChild(el("div", { style: "font-weight:700;font-size:13.5px;margin:12px 0 3px" }, sec.h));
+      sec.p.forEach(function (para) { body.appendChild(el("p", { style: "font-size:12.5px;line-height:1.55;margin:0 0 5px" }, para)); });
+    });
+    body.appendChild(el("div", { class: "muted", style: "font-size:11.5px;font-style:italic;margin-top:12px" }, A.note));
+    var close = UI.modal({ title: A.title, body: body, footer: [el("button", { class: "btn primary", onClick: function () { close(); } }, "Close")] });
+  }
+
   function editVendorDetails(v) {
     const nameEl = el("input", { value: v.name });
-    const catEl  = el("input", { value: v.category });
+    const catEl  = el("select", {});
+    ((window.UI && UI.CATS && UI.CATS.length) ? UI.CATS.map((c) => c.label) : ["Food","Grocery","Fruits & Veg","Meat & Fish","Bakery","Sweets","Pharmacy","Gifts"]).forEach((lbl) => catEl.appendChild(el("option", { value: lbl, ...(v.category === lbl ? { selected: "" } : {}) }, lbl)));
     const areaEl = el("input", { value: v.area });
     const rxEl   = el("input", { type: "checkbox" });
     rxEl.checked = !!v.requiresPrescription;
@@ -598,6 +621,14 @@
         el("label", { style: "display:flex;gap:8px;align-items:center;font-size:13px;margin-top:6px;cursor:pointer" }, [
           rxEl, el("span", {}, "💊 Pharmacy — require prescription + selfie for orders"),
         ]),
+        el("div", { class: "field", style: "margin-top:8px" }, [
+          el("label", {}, "Partner agreement"),
+          el("div", { style: "display:flex;align-items:center;gap:10px" }, [
+            fAgreementSigned(v) ? el("span", { style: "color:var(--green);font-weight:700;font-size:13px" }, "✓ Signed") : el("span", { style: "color:var(--red);font-weight:700;font-size:13px" }, "Not signed"),
+            el("button", { class: "btn ghost sm", type: "button", onClick: function () { viewAgreement(v); } }, "View agreement"),
+          ]),
+        ]),
+
       ]),
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
@@ -629,10 +660,10 @@
   // accidental data loss. Show an explanatory modal instead.
   function deleteRider(r) {
     UI.modal({
-      title: "Delete Saradhi",
+      title: "Delete Pilot",
       body: el("div", {}, [
-        el("p", { class: "muted" }, "Deleting Saradhi accounts is disabled from the admin panel to prevent accidental data loss."),
-        el("p", { class: "muted small" }, "To deactivate a Saradhi, change their status to 'offline' or contact support for an account removal.")
+        el("p", { class: "muted" }, "Deleting Pilot accounts is disabled from the admin panel to prevent accidental data loss."),
+        el("p", { class: "muted small" }, "To deactivate a Pilot, change their status to 'offline' or contact support for an account removal.")
       ]),
       footer: [ el("button", { class: "btn primary", onClick: () => {} }, "OK") ],
     });
@@ -648,7 +679,7 @@
     const errEl     = el("div", { class: "auth-err" });
 
     const body = el("div", {}, [
-      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a Saradhi (rider) account. They can log in to the rider app immediately."),
+      el("p", { class: "muted small", style: "margin:0 0 16px" }, "Creates a Pilot (rider) account. They can log in to the rider app immediately."),
       el("div", { class: "field" }, [el("label", {}, "Full name"), nameEl]),
       el("div", { class: "field" }, [el("label", {}, "Login email"), emailEl]),
       el("div", { class: "field" }, [
@@ -663,7 +694,7 @@
     ]);
 
     const close = UI.modal({
-      title: "Add Saradhi",
+      title: "Add Pilot",
       body,
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
@@ -684,7 +715,7 @@
             await BW.init("admin");
             go("fleet");
           } catch (err) { errEl.textContent = err.message || "Failed to create rider."; }
-        }}, "Create Saradhi"),
+        }}, "Create Pilot"),
       ],
     });
   }
@@ -706,7 +737,7 @@
       errEl,
     ]);
     const close = UI.modal({
-      title: "Edit Saradhi · " + (r.name || ""),
+      title: "Edit Pilot · " + (r.name || ""),
       body,
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Cancel"),
@@ -715,7 +746,7 @@
           if (!nameEl.value.trim()) { errEl.textContent = "Name required."; return; }
           try {
             await BW.updateRiderDetails(r.id, { name: nameEl.value.trim(), phone: phoneEl.value.trim(), vehicle: vehicleEl.value, area: areaEl.value.trim(), active: activeCb.checked });
-            close(); toast("Saradhi updated"); render();
+            close(); toast("Pilot updated"); render();
           } catch (e) { errEl.textContent = e.message || "Failed to update."; }
         } }, "Save"),
       ],
@@ -726,19 +757,19 @@
     const cash = r.cashInHand || 0;
     let close;
     async function doDelete(force) {
-      try { await BW.deleteRider(r.id, force); close(); toast("Saradhi removed"); render(); }
+      try { await BW.deleteRider(r.id, force); close(); toast("Pilot removed"); render(); }
       catch (e) {
         if (e.message === "cash_pending") {
-          if (confirm("This Saradhi holds " + money(cash) + " cash-in-hand. Write it off and delete anyway?")) return doDelete(true);
+          if (confirm("This Pilot holds " + money(cash) + " cash-in-hand. Write it off and delete anyway?")) return doDelete(true);
         } else if ((e.message || "").indexOf("active delivery") >= 0) {
           toast("Reassign their active delivery first, then delete.");
         } else { toast(e.message || "Couldn't delete"); }
       }
     }
     close = UI.modal({
-      title: "Delete Saradhi?",
+      title: "Delete Pilot?",
       body: el("div", {}, [
-        el("p", { class: "muted small" }, "This permanently removes " + (r.name || "this Saradhi") + " and their login. This can't be undone."),
+        el("p", { class: "muted small" }, "This permanently removes " + (r.name || "this Pilot") + " and their login. This can't be undone."),
         cash > 0 ? el("p", { class: "small", style: "color:var(--red)" }, "Holds " + money(cash) + " cash-in-hand — you'll be asked to write it off.") : document.createTextNode(""),
       ]),
       footer: [
@@ -766,7 +797,7 @@
     const nomRel = ip(d.familyRelation, "Relation");
     const nomPhone = ip(d.familyPhone, "Nominee phone", "tel");
     const nomAddr = ta(d.familyAddress, "Nominee address");
-    const desig = ip(r.designation || "Delivery Partner (Saradhi)", "Designation");
+    const desig = ip(r.designation || "Delivery Partner (Pilot)", "Designation");
     const salaryEl = ip(r.salary != null ? r.salary : "", "e.g. 15000", "number");
     const allowEl = ip(r.allowance != null ? r.allowance : "", "e.g. 2000", "number");
     const incentiveEl = ta(r.incentive || "₹30 per delivery + performance bonus for 100+ deliveries/month", "Incentive terms");
@@ -841,13 +872,13 @@
       el("div", { style: "display:flex;gap:8px" }, [el("div", { style: "flex:1" }, [field("Monthly salary (₹)", salaryEl)]), el("div", { style: "flex:1" }, [field("Allowance (₹)", allowEl)])]),
       field("Incentive terms", incentiveEl),
       el("div", { style: "font-weight:800;margin:10px 0 4px" }, "Payment & settlement"),
-      el("div", { class: "row between", style: "align-items:center;margin-bottom:8px" }, [el("span", { class: "muted" }, "Cash-in-hand (owed to Saardha)"), cashNow]),
+      el("div", { class: "row between", style: "align-items:center;margin-bottom:8px" }, [el("span", { class: "muted" }, "Cash-in-hand (owed to flik)"), cashNow]),
       el("div", { style: "display:flex;gap:8px;flex-wrap:wrap" }, [clearCashBtn, resetDelBtn]),
       errEl,
     ]);
 
     const close = UI.modal({
-      title: "Onboard / Manage · " + (r.name || "Saradhi"),
+      title: "Onboard / Manage · " + (r.name || "Pilot"),
       body,
       footer: [
         el("button", { class: "btn ghost", onClick: () => close() }, "Close"),
@@ -865,7 +896,7 @@
             await BW.verifyRiderItem(r.id, "dl", "verified"); await BW.verifyRiderItem(r.id, "rc", "verified");
             await BW.verifyRiderItem(r.id, "aadhaar", "verified"); await BW.verifyRiderItem(r.id, "nominee", "verified");
             await BW.updateRiderDetails(r.id, { active: true, onboardedAt: new Date().toISOString().slice(0, 10) });
-            toast("Saradhi verified & activated ✓"); close(); render();
+            toast("Pilot verified & activated ✓"); close(); render();
           } catch (er) { errEl.textContent = er.message || "Activation failed"; btn.disabled = false; btn.textContent = "✓ Verify & Activate"; }
         } }, "✓ Verify & Activate"),
       ],
@@ -880,12 +911,12 @@
     const isOffer = type === "offer";
     const title = isOffer ? "Offer Letter" : "Onboarding Letter";
     const intro = isOffer
-      ? "We are pleased to offer you the position of <b>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</b> with Saardha. The terms of this offer are set out below."
-      : "Welcome to the Saardha team! This letter confirms your onboarding as a <b>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</b>. Your engagement details are set out below.";
+      ? "We are pleased to offer you the position of <b>" + esc(x.designation || "Delivery Partner (Pilot)") + "</b> with flik. The terms of this offer are set out below."
+      : "Welcome to the flik team! This letter confirms your onboarding as a <b>" + esc(x.designation || "Delivery Partner (Pilot)") + "</b>. Your engagement details are set out below.";
     const esc2 = (s) => String(s == null ? "" : s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
     function esc(s) { return esc2(s); }
     const html =
-      "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Saardha — " + title + "</title>" +
+      "<!DOCTYPE html><html><head><meta charset='utf-8'><title>flik — " + title + "</title>" +
       "<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1d24;line-height:1.65;max-width:720px;margin:0 auto;padding:36px 28px}" +
       ".hd{display:flex;align-items:center;gap:12px;border-bottom:2px solid #e62a1f;padding-bottom:12px;margin-bottom:20px}" +
       ".hd h1{font-size:22px;margin:0;color:#e62a1f}.muted{color:#666;font-size:13px}h2{font-size:16px;margin:22px 0 6px}" +
@@ -893,13 +924,13 @@
       ".sign{margin-top:40px;display:flex;justify-content:space-between}.note{font-size:12px;color:#777;margin-top:26px}" +
       "@media print{.noprint{display:none}}button{background:#e62a1f;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer}</style></head><body>" +
       "<div class='noprint' style='text-align:right;margin-bottom:8px'><button onclick='window.print()'>🖨 Print / Save as PDF</button></div>" +
-      "<div class='hd'><div><h1>Saardha</h1><div class='muted'>Local logistics &amp; premium home delivery</div></div></div>" +
+      "<div class='hd'><div><h1>flik</h1><div class='muted'>Local logistics &amp; premium home delivery</div></div></div>" +
       "<div class='muted'>Date: " + today + "</div>" +
       "<h2>" + title + "</h2>" +
-      "<p>Dear " + esc(x.name || "Saradhi") + ",</p><p>" + intro + "</p>" +
+      "<p>Dear " + esc(x.name || "Pilot") + ",</p><p>" + intro + "</p>" +
       "<table>" +
       "<tr><td>Name</td><td>" + esc(x.name || "—") + "</td></tr>" +
-      "<tr><td>Designation</td><td>" + esc(x.designation || "Delivery Partner (Saradhi)") + "</td></tr>" +
+      "<tr><td>Designation</td><td>" + esc(x.designation || "Delivery Partner (Pilot)") + "</td></tr>" +
       "<tr><td>Phone</td><td>" + esc(x.phone || "—") + "</td></tr>" +
       "<tr><td>Address</td><td>" + esc(x.address || "—") + "</td></tr>" +
       "<tr><td>Vehicle</td><td>" + esc([x.vehicleType, x.vehicleNumber].filter(Boolean).join(" · ") || "—") + "</td></tr>" +
@@ -909,10 +940,10 @@
       "<tr><td>Nominee</td><td>" + esc([x.nomName, x.nomRel, x.nomPhone].filter(Boolean).join(" · ") || "—") + "</td></tr>" +
       "</table>" +
       (isOffer
-        ? "<p>This offer is subject to verification of your submitted documents (driving licence, Aadhaar, vehicle and nominee details) and acceptance of the Saardha Delivery Partner Agreement, including the cash-settlement terms.</p>"
-        : "<p>Your documents have been verified and your account is active. You are bound by the Saardha Delivery Partner Agreement, including the cash-settlement obligations. All COD cash you collect belongs to Saardha and must be settled in full and on time.</p>") +
-      "<div class='sign'><div>____________________<br><span class='muted'>Saradhi signature</span></div><div>____________________<br><span class='muted'>For Saardha</span></div></div>" +
-      "<div class='note'>This is a computer-generated letter from the Saardha admin console. Please review with a qualified professional before issuing officially.</div>" +
+        ? "<p>This offer is subject to verification of your submitted documents (driving licence, Aadhaar, vehicle and nominee details) and acceptance of the flik Delivery Partner Agreement, including the cash-settlement terms.</p>"
+        : "<p>Your documents have been verified and your account is active. You are bound by the flik Delivery Partner Agreement, including the cash-settlement obligations. All COD cash you collect belongs to flik and must be settled in full and on time.</p>") +
+      "<div class='sign'><div>____________________<br><span class='muted'>Pilot signature</span></div><div>____________________<br><span class='muted'>For flik</span></div></div>" +
+      "<div class='note'>This is a computer-generated letter from the flik admin console. Please review with a qualified professional before issuing officially.</div>" +
       "</body></html>";
     const w = window.open("", "_blank");
     if (!w) { toast("Allow pop-ups to open the letter"); return; }
@@ -923,9 +954,9 @@
     const { name, email, password } = result;
     const credText = `Email: ${email}\nPassword: ${password}`;
     const close = UI.modal({
-      title: "Saradhi Account Created",
+      title: "Pilot Account Created",
       body: el("div", {}, [
-        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these credentials with " + name + " to log in to the Saradhi app."),
+        el("p", { class: "muted small", style: "margin:0 0 16px" }, "Share these credentials with " + name + " to log in to the Pilot app."),
         el("div", { style: "background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.8;margin-bottom:12px" }, [
           el("div", {}, [el("span", { class: "muted" }, "Name: "), el("strong", {}, name)]),
           el("div", {}, [el("span", { class: "muted" }, "Email: "), el("strong", {}, email)]),
@@ -1028,7 +1059,7 @@
     // Totals
     let grossSales = 0, deliveryFees = 0, gstSum = 0;
     delivered.forEach((o) => { grossSales += (o.subtotal || 0); deliveryFees += (o.deliveryFee || 0); gstSum += (o.gst || 0); });
-    const platformRevenue = gstSum + deliveryFees;   // Saardha keeps GST + delivery fee
+    const platformRevenue = gstSum + deliveryFees;   // flik keeps GST + delivery fee
     const merchantPayable = grossSales;              // merchants are paid the full item cost
     const riderPayouts = delivered.length * payPerDelivery;
 
@@ -1095,20 +1126,20 @@
 
     return shell("earnings", [
       el("div", { class: "row between", style: "align-items:center" }, [
-        el("div", {}, [el("h1", { class: "page-title" }, "Earnings & Settlements"), el("p", { class: "page-sub" }, "Merchants get item cost only · Saardha keeps GST + delivery · Saradhis are salaried (no commission)")]),
+        el("div", {}, [el("h1", { class: "page-title" }, "Earnings & Settlements"), el("p", { class: "page-sub" }, "Merchants get item cost only · flik keeps GST + delivery · Pilots are salaried (no commission)")]),
         el("button", { class: "btn ghost sm", onClick: () => go("settings") }, "Change rates"),
       ]),
       chips,
       el("div", { style: "display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px" }, [
         card("Delivered orders", String(delivered.length)),
         card("Item sales (merchant payable)", money(merchantPayable), "item cost — paid to stores"),
-        card("Saardha revenue", money(platformRevenue), "GST " + money(gstSum) + " + delivery " + money(deliveryFees)),
+        card("flik revenue", money(platformRevenue), "GST " + money(gstSum) + " + delivery " + money(deliveryFees)),
         card("Rider payouts", money(riderPayouts), delivered.length + " × ₹" + payPerDelivery + " (incentive)"),
       ]),
       el("h3", { style: "margin:0 0 8px" }, "Riders — earnings & cash to settle"),
       el("div", { class: "card", style: "padding:0;overflow:hidden;margin-bottom:20px" }, [
         el("table", {}, [
-          el("thead", {}, el("tr", {}, ["Saradhi", "Deliveries", "Earnings", "Cash collected", "UPI collected", "Cash-in-hand (to settle)"].map((h) => el("th", {}, h)))),
+          el("thead", {}, el("tr", {}, ["Pilot", "Deliveries", "Earnings", "Cash collected", "UPI collected", "Cash-in-hand (to settle)"].map((h) => el("th", {}, h)))),
           el("tbody", {}, riderRows.length ? riderRows : [el("tr", {}, el("td", { colspan: "6", class: "muted", style: "text-align:center;padding:20px" }, "No deliveries in this period."))]),
         ]),
       ]),
@@ -1149,7 +1180,7 @@
       el("div", { class: "grid cols-4", style: "margin-top:14px" }, [
         stat("Delivery fees", m0(A.deliveryFees), "collected"),
         stat("Avg delivery", A.avgDelivery ? Math.round(A.avgDelivery) + " min" : "—", "placed → delivered"),
-        stat("Saradhis online", A.ridersOnline + " / " + A.ridersTotal, ""),
+        stat("Pilots online", A.ridersOnline + " / " + A.ridersTotal, ""),
         stat("Verified", A.verifiedEmail + " ✉ · " + A.verifiedPhone + " 📱", "email · phone"),
       ]),
       el("div", { class: "grid cols-2", style: "margin-top:16px" }, [chartCard("Revenue — last 14 days", cRev), chartCard("Orders — last 14 days", cOrd)]),
@@ -1549,7 +1580,7 @@
       chips,
       el("div", { class: "card", style: "padding:0;overflow:hidden" }, [
         el("table", {}, [
-          el("thead", {}, el("tr", {}, ["Order", "Placed at", "Vendor", "Customer", "Total", "Payment", "Status", "Saradhi", "Duration"].map((h) => el("th", {}, h)))),
+          el("thead", {}, el("tr", {}, ["Order", "Placed at", "Vendor", "Customer", "Total", "Payment", "Status", "Pilot", "Duration"].map((h) => el("th", {}, h)))),
           el("tbody", {}, rows),
         ]),
       ]),
@@ -1697,13 +1728,13 @@
         saveBtn,
         edit ? el("button", { class: "btn ghost", onClick: () => { viewOffers._edit = null; render(); } }, "Cancel") : null,
       ].filter(Boolean)),
-      el("p", { class: "muted small", style: "margin-bottom:0" }, "Codes work across every store. Saardha absorbs the discount — merchants still receive full item cost."),
+      el("p", { class: "muted small", style: "margin-bottom:0" }, "Codes work across every store. flik absorbs the discount — merchants still receive full item cost."),
     ]);
 
     function captionFor(p) {
       const exp = p.expiresAt ? (" Valid till " + new Date(p.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) + ".") : " Today only.";
       const minTxt = p.minSubtotal ? (" Min order ₹" + p.minSubtotal + ".") : "";
-      return "🎉 Today's Saardha offer!\nUse code " + p.code + " for " + p.pct + "% OFF your order." + minTxt + exp + "\nOrder now on the Saardha app 🚚\n#Saardha #LocalDelivery #Offer";
+      return "🎉 Today's flik offer!\nUse code " + p.code + " for " + p.pct + "% OFF your order." + minTxt + exp + "\nOrder now on the flik app 🚚\n#flik #LocalDelivery #Offer";
     }
 
     const rows = promos.map((p) => {
@@ -1782,7 +1813,7 @@
 
     shell("partners", [
       el("h1", { class: "page-title" }, "Delivery Partners"),
-      el("p", { class: "page-sub" }, "Businesses that use Saardha for last-mile delivery. Approve one to issue an API key."),
+      el("p", { class: "page-sub" }, "Businesses that use flik for last-mile delivery. Approve one to issue an API key."),
       el("div", { class: "card", style: "max-width:640px;margin-bottom:16px" }, [
         el("h3", { style: "margin-top:0" }, "Add a partner"),
         el("div", { class: "field" }, [el("label", {}, "Business name"), nameEl]),
@@ -1979,9 +2010,9 @@
       themeSave.disabled = false; themeSave.textContent = "Save theme";
     });
 
-    /* --- Pay-on-delivery UPI (Saardha QR the Saradhi shows at the door) --- */
+    /* --- Pay-on-delivery UPI (flik QR the Pilot shows at the door) --- */
     const upiVpaEl  = el("input", { type: "text", value: s0.upiVpa || "", placeholder: "yourname@ybl (your UPI ID)", style: "width:100%;margin-bottom:6px" });
-    const upiNameEl = el("input", { type: "text", value: s0.upiName || "Saardha", placeholder: "Payee name shown to customer", style: "width:100%;margin-bottom:6px" });
+    const upiNameEl = el("input", { type: "text", value: s0.upiName || "flik", placeholder: "Payee name shown to customer", style: "width:100%;margin-bottom:6px" });
     let _upiQrUrl = s0.upiQrImageUrl || "";
     const qrPreview = el("div", { style: "margin:6px 0" });
     function renderQrPreview() { qrPreview.innerHTML = ""; if (_upiQrUrl) qrPreview.appendChild(el("img", { src: _upiQrUrl, alt: "UPI QR", style: "width:120px;height:120px;object-fit:contain;border:1px solid var(--border);border-radius:8px" })); }
@@ -2001,7 +2032,7 @@
     const upiSave   = el("button", { class: "btn primary" }, "Save UPI");
     upiSave.addEventListener("click", async () => {
       upiSave.disabled = true; upiSave.textContent = "Saving…";
-      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "Saardha", upiQrImageUrl: _upiQrUrl }); toast("UPI details saved"); }
+      try { await BW.updateSettings({ upiVpa: upiVpaEl.value.trim(), upiName: upiNameEl.value.trim() || "flik", upiQrImageUrl: _upiQrUrl }); toast("UPI details saved"); }
       catch (err) { toast("Error: " + err.message); }
       upiSave.disabled = false; upiSave.textContent = "Save UPI";
     });
@@ -2088,7 +2119,7 @@
       ]),
       el("div", { class: "card", style: "max-width:480px;margin-top:16px" }, [
         el("h3", { style: "margin-top:0" }, "Pay-on-delivery UPI"),
-        el("p", { class: "muted small", style: "margin:0 0 12px" }, "The Saradhi shows this at the door so customers pay by UPI (or cash). Best: enter your UPI ID — the app then makes a QR with the order amount pre-filled. Or upload your existing QR image (e.g. PhonePe); customers type the amount."),
+        el("p", { class: "muted small", style: "margin:0 0 12px" }, "The Pilot shows this at the door so customers pay by UPI (or cash). Best: enter your UPI ID — the app then makes a QR with the order amount pre-filled. Or upload your existing QR image (e.g. PhonePe); customers type the amount."),
         el("div", { class: "field" }, [el("label", {}, "UPI ID (VPA) — recommended"), upiVpaEl]),
         el("div", { class: "field" }, [el("label", {}, "Payee name"), upiNameEl]),
         el("div", { class: "field" }, [el("label", {}, "…or upload a UPI QR image"), qrPreview, qrUpBtn]),

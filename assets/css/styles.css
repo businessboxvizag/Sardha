@@ -2,30 +2,30 @@
  * Sardha — shared stylesheet  (Root Grains style, mobile-first)
  * ========================================================= */
 :root {
-  --bg:        #fdf8f4;
+  --bg:        #ffffff;
   --surface:   #ffffff;
-  --surface-2: #fff5ee;
-  --border:    #f0ddd0;
-  --text:      #2c1a0e;
-  --muted:     #a8856e;
-  --brand:     #e62a1f;
-  --brand-2:   #ff6a5c;
-  --brand-lt:  #ffe9e7;
-  --accent:    #5b8ef0;
+  --surface-2: #f4f4fb;
+  --border:    #eceaf4;
+  --text:      #191826;
+  --muted:     #7c7a93;
+  --brand:     #5b4bf5;
+  --brand-2:   #8b5cf6;
+  --brand-lt:  #ece9ff;
+  --accent:    #4f46e5;
   --green:     #3daa72;
   --red:       #e05555;
   --yellow:    #e8a820;
   --purple:    #8b6ecf;
-  --radius:    14px;
-  --shadow:    0 2px 12px rgba(200,120,60,0.08);
-  --shadow-md: 0 4px 24px rgba(200,120,60,0.13);
+  --radius:    16px;
+  --shadow:    0 2px 14px rgba(40,30,90,0.07);
+  --shadow-md: 0 10px 30px rgba(40,30,90,0.12);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: linear-gradient(180deg,#f6f6fd 0%,#f3f4fb 55%,#edf7f1 100%) fixed;
   color: var(--text);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -66,7 +66,7 @@ html, body { max-width: 100vw; overflow-x: hidden; }
   background: var(--brand);
 }
 .brand-logo-img {
-  width: 32px; height: 32px; flex-shrink: 0;
+  width: auto; height: 26px; flex-shrink: 0;
   object-fit: contain; display: block;
 }
 .brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
@@ -280,7 +280,7 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
 /* ── Auth screen ─────────────────────────────────────────── */
 .auth-wrap {
   min-height: 100vh; display: grid; place-items: center;
-  background: linear-gradient(135deg, #fff9f5 0%, #fdeee3 100%); padding: 20px;
+  background: linear-gradient(180deg,#ffffff 0%,#ffffff 58%,#eef9f1 100%); padding: 20px;
 }
 .auth-card {
   width: 100%; max-width: 360px;
@@ -643,7 +643,7 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
     pointer-events: none;
   }
 
-  /* Center Saardha AI button docked in the footer */
+  /* Center flik AI button docked in the footer */
   .bn-ai-wrap { flex: 0 0 64px; display: flex; justify-content: center; }
   .bn-ai {
     position: relative;
@@ -651,13 +651,13 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
     margin-top: -24px;               /* lift above the bar */
     background: var(--surface);
     border: 3px solid var(--surface);
-    box-shadow: 0 8px 20px rgba(230,42,31,.38);
+    box-shadow: 0 10px 22px rgba(91,75,245,.42);
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   .bn-ai::before {
     content: ""; position: absolute; inset: 3px; border-radius: 50%;
-    background: linear-gradient(135deg, #fff2f1, #ffe1df);
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
   }
   .bn-ai img { width: 38px; height: 38px; object-fit: contain; position: relative; z-index: 1; }
   .bn-ai .bn-ai-dot {
@@ -672,3 +672,43 @@ label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; 
   .content { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
   .cart-bar { bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
 }
+
+
+/* ── flik categories + filters (customer home) ── */
+.cat-row{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 10px;margin-bottom:4px;-webkit-overflow-scrolling:touch}
+.cat-row::-webkit-scrollbar{display:none}
+.cat-t{flex:0 0 auto;width:64px;background:none;border:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font:inherit}
+.cat-t .ci{width:56px;height:56px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--brand);transition:.15s}
+.cat-t .ci svg{width:25px;height:25px}
+.cat-t .cl{font-size:11px;color:var(--text);font-weight:500;text-align:center;line-height:1.15}
+.cat-t[aria-pressed="true"] .ci{background:linear-gradient(120deg,var(--brand),var(--brand-2));color:#fff;border-color:transparent;box-shadow:0 8px 16px -8px var(--brand);transform:translateY(-2px)}
+.cat-t[aria-pressed="true"] .cl{color:var(--brand);font-weight:700}
+.fbar2{display:flex;gap:8px;overflow-x:auto;padding:0 2px 14px;-webkit-overflow-scrolling:touch}
+.fbar2::-webkit-scrollbar{display:none}
+.fchip{flex:0 0 auto;display:inline-flex;align-items:center;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:99px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.fchip[aria-pressed="true"]{background:var(--brand-lt);border-color:var(--brand);color:var(--brand)}
+.vcard-badge{position:absolute;left:6px;bottom:6px;background:#eafaf0;color:#0f9d58;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;z-index:2}
+
+
+/* ── flik: fresh store list ── */
+.bn-ai-glyph{position:relative;z-index:1;color:#fff;display:flex;align-items:center;justify-content:center}
+.bn-ai-glyph svg{width:27px;height:27px}
+.store-list{display:flex;flex-direction:column;gap:12px}
+.vcard{display:flex;gap:13px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:11px 12px;cursor:pointer;transition:transform .15s ease,box-shadow .2s ease;box-shadow:var(--shadow);position:relative;margin:0}
+.vcard:active{transform:scale(.99)}
+.vcard:hover{box-shadow:var(--shadow-md)}
+.vcard.is-closed{opacity:.55}
+.vcard-img-wrap{position:relative;flex-shrink:0}
+.vcard-img{width:78px;height:78px;border-radius:15px;background:linear-gradient(135deg,var(--brand-lt),#f3eeff);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;overflow:hidden}
+.vcard-body{min-width:0;flex:1;padding-right:20px}
+.vcard-name{font-weight:700;font-size:16px;color:var(--text);display:flex;align-items:center;gap:7px;overflow-wrap:anywhere;line-clamp:2;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden}
+.vcard-closed{background:#fdeaea;color:#c0392b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;flex:none}
+.vcard-tags{display:flex;align-items:center;gap:8px;margin:5px 0 4px;font-size:12.5px;color:var(--muted);font-weight:600}
+.vcard-rating{background:#eaf6ee;color:#0f9d58;font-size:12px;font-weight:800;padding:2px 8px;border-radius:8px}
+.vcard-dur{color:var(--muted)}
+.vcard-meta{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.vcard-x{position:absolute;top:9px;right:9px;width:24px;height:24px;border-radius:50%;border:none;background:var(--surface-2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.65;z-index:2}
+.vcard-x:hover{opacity:1;background:#efeaff;color:var(--brand)}
+.vcard-badge{position:absolute;left:5px;bottom:5px;background:var(--brand);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:7px}
+
+.cat-emoji{font-size:27px;line-height:1;display:block}

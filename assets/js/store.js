@@ -1,5 +1,5 @@
 /* =====================================================================
- * Saardha — Shared Data Layer ("simulated backend")
+ * flik — Shared Data Layer ("simulated backend")
  * ---------------------------------------------------------------------
  * A single localStorage-backed datastore shared by the Customer,
  * Merchant and Admin apps. Provides:

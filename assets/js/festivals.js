@@ -39,7 +39,7 @@
     { key: "ganesh_chaturthi", tier: "major", cat: "telugu", pri: 8, name: "Ganpati Bappa Morya — Vinayaka Chavithi 🐘", emoji: "🐘", ymd: ["2026-09-14"], grad: ["#dc2626", "#f59e0b", "#fbbf24"], conf: ["#fde047", "#fca5a5", "#fb923c"], fx: "fly", overlay: "🐘", text: "#fff" },
     { key: "bathukamma",      tier: "major", cat: "telugu", pri: 6, name: "Happy Bathukamma 🌼", emoji: "🌼", md: "10-10", mdEnd: "10-18", grad: ["#f59e0b", "#84cc16", "#ec4899"], conf: ["#fde047", "#a3e635", "#f9a8d4"], fx: "petal", overlay: "🌼", text: "#fff" },
     { key: "dussehra",        tier: "major", cat: "hindu", pri: 8, name: "Happy Dussehra — Vijaya Dashami 🏹", emoji: "🏹", ymd: ["2026-10-20", "2027-10-09"], grad: ["#b91c1c", "#ea580c", "#f59e0b"], conf: ["#fde047", "#fca5a5", "#ffffff"], fx: "fly", overlay: "🏹", text: "#fff" },
-    { key: "diwali",          tier: "major", cat: "hindu", pri: 10, name: "Happy Diwali from Saardha! ✨", emoji: "🪔", ymd: ["2026-11-08", "2027-10-29"], grad: ["#3a0ca3", "#7209b7", "#b5179e"], conf: ["#ffd54f", "#ff8f00", "#fff59d", "#ffab40"], fx: "sparkle", overlay: "🪔", text: "#ffd54f" },
+    { key: "diwali",          tier: "major", cat: "hindu", pri: 10, name: "Happy Diwali from flik! ✨", emoji: "🪔", ymd: ["2026-11-08", "2027-10-29"], grad: ["#3a0ca3", "#7209b7", "#b5179e"], conf: ["#ffd54f", "#ff8f00", "#fff59d", "#ffab40"], fx: "sparkle", overlay: "🪔", text: "#ffd54f" },
     { key: "karthika_purnima", tier: "major", cat: "telugu", pri: 5, name: "Happy Karthika Purnima 🪔", emoji: "🪔", ymd: ["2026-11-24"], grad: ["#7c3aed", "#4f46e5", "#f59e0b"], conf: ["#ffd54f", "#fff59d", "#c4b5fd"], fx: "sparkle", overlay: "✨", text: "#fff" },
 
     /* ── Christian ────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 /* =========================================================
- * Saardha — shared UI helpers (no framework)
+ * flik — shared UI helpers (no framework)
  * ========================================================= */
 (function (global) {
   "use strict";
@@ -86,16 +86,12 @@
   function topbar(roleLabel, right) {
     const logoImg = el("img", {
       class: "brand-logo-img",
-      src: "../assets/img/saardha-mark.png",
-      alt: "Saardha",
+      src: "../assets/img/flik-logo.png",
+      alt: "flik",
     });
     return el("div", { class: "topbar" }, [
       el("a", { class: "brand", href: "./" }, [
         logoImg,
-        el("span", {}, [
-          document.createTextNode("Saardha"),
-          el("small", {}, "On-demand local delivery"),
-        ]),
       ]),
       el("span", { class: "spacer" }),
       ...(right || []),
@@ -160,7 +156,7 @@
   }
   function pinIcon(L, kind, label) {
     var html = kind === "chariot"
-      ? '<img src="/assets/img/saradhi-chariot.png" alt="Saradhi" style="width:56px;height:auto;transform:translate(-28px,-30px);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{textContent:\'🛺\',style:\'font-size:26px;transform:translate(-13px,-24px)\'}))">'
+      ? '<img src="/assets/img/saradhi-chariot.png" alt="Pilot" style="width:56px;height:auto;transform:translate(-28px,-30px);filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{textContent:\'🛺\',style:\'font-size:26px;transform:translate(-13px,-24px)\'}))">'
       : '<div style="width:26px;height:26px;border-radius:50%;background:#e62a1f;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);transform:translate(-13px,-13px)">' + (label ? String(label).charAt(0) : "") + "</div>";
     return L.divIcon({ html: html, className: "", iconSize: [0, 0] });
   }
@@ -185,7 +181,7 @@
     return container;
   }
 
-  // Order progress rendered along an S-curve (echoes the Saardha logo).
+  // Order progress rendered along an S-curve (echoes the flik logo).
   // The brand stroke fills from "Placed" to "Delivered"; a red S means cancelled.
   function tracker(status) {
     const flow = BW.STATUS_FLOW;
@@ -326,5 +322,17 @@
     ]);
   }
 
-  global.UI = { el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap, mapPicker, parseMapsLink, mapsLinkField };
+  var CATS = [
+    {key:'food',label:'Food',emoji:'🍛',kw:['food','restaurant','tiffin','meal','biry','cafe','hotel','juice','dhaba','pizza','snack','street','curry','fast'],icon:'<path d="M4 3v7a3 3 0 0 0 3 3v8M7 3v6M18 3c-2 0-3 2-3 5s1 4 3 4v9"/>'},
+    {key:'grocery',label:'Grocery',emoji:'🛒',kw:['grocery','mart','kirana','supermarket','provision','daily','general','store'],icon:'<path d="M6 8h12l-1 12H7zM9 8V6a3 3 0 0 1 6 0v2"/>'},
+    {key:'fruit',label:'Fruits & Veg',emoji:'🍎',kw:['fruit','veg','vegetable','fresh','farm'],icon:'<path d="M12 8c-3-3-8-1-8 4 0 4 4 8 8 8s8-4 8-8c0-5-5-7-8-4zM12 8c0-2 1-4 4-5"/>'},
+    {key:'meat',label:'Meat & Fish',emoji:'🍗',kw:['meat','fish','chicken','mutton','seafood','egg','poultry','prawn'],icon:'<path d="M3 12c4-6 12-6 15 0-3 6-11 6-15 0z"/><circle cx="8" cy="12" r="1.2"/>'},
+    {key:'bakery',label:'Bakery',emoji:'🥐',kw:['bakery','bake','bread','cake','pastr','bun'],icon:'<path d="M4 14c0-5 3-8 8-8s8 3 8 8v1H4zM8 10v4M12 8v6M16 10v4"/>'},
+    {key:'sweets',label:'Sweets',emoji:'🍬',kw:['sweet','mithai','dessert','ice cream','icecream','candy'],icon:'<path d="M12 3a5 5 0 0 1 5 5c0 4-5 12-5 12S7 12 7 8a5 5 0 0 1 5-5z"/>'},
+    {key:'pharma',label:'Pharmacy',emoji:'💊',kw:['pharma','medical','chemist','clinic','drug','medicine','health'],icon:'<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'},
+    {key:'gift',label:'Gifts',emoji:'🎁',kw:['gift','flower','florist','stationery','toy','card'],icon:'<path d="M4 10h16v10H4zM4 10l1-4h14l1 4M12 6v14M9 6a2 2 0 1 1 3-2 2 2 0 1 1 3 2"/>'}
+  ];
+  function catKeyForText(t){ t=(t||'').toString().toLowerCase(); for(var i=0;i<CATS.length;i++){ for(var j=0;j<CATS[i].kw.length;j++){ if(t.indexOf(CATS[i].kw[j])>=0) return CATS[i].key; } } return ''; }
+  function catLabel(k){ for(var i=0;i<CATS.length;i++){ if(CATS[i].key===k) return CATS[i].label; } return ''; }
+  global.UI = { CATS: CATS, catKeyForText: catKeyForText, catLabel: catLabel, el, esc, $, $$, money, timeAgo, clockTime, toast, modal, topbar, project, statusBadge, tracker, gmap, mapPicker, parseMapsLink, mapsLinkField };
 })(window);

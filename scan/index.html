@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Saardha</title>
+  <title>flik</title>
   <meta name="description" content="On-demand local delivery" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#f5a623" />
+  <meta name="theme-color" content="#5b4bf5" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Saardha" />
+  <meta name="apple-mobile-web-app-title" content="flik" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -135,7 +135,7 @@
       e.preventDefault();
       deferredPrompt = e;
       const btn = document.getElementById("installBtn");
-      if (btn) btn.textContent = "📲 Install Saardha";
+      if (btn) btn.textContent = "📲 Install flik";
     });
     // Lightweight install/open analytics (no auth) — mirrors assets/js/api.js.
     function sendMetric(type) {
@@ -192,7 +192,7 @@
       const card = document.getElementById("card");
       card.innerHTML = `
         <div class="app-logo">🚚</div>
-        <div class="app-name">Saardha</div>
+        <div class="app-name">flik</div>
         <div class="app-tagline" id="pickerTag">Choose your store</div>
         <input id="storeSearch" placeholder="🔍 Search store name / area…" autocomplete="off"
           style="width:100%;padding:12px 14px;border-radius:10px;border:1px solid #2a2a3a;background:#0f0f13;color:#f0f0f0;margin:16px 0 10px;font-size:15px" />
@@ -287,18 +287,18 @@
       const card = document.getElementById("card");
       card.innerHTML = `
         <div class="app-logo">🚚</div>
-        <div class="app-name">Saardha</div>
+        <div class="app-name">flik</div>
         <div class="app-tagline">On-demand local delivery</div>
         <hr class="divider" />
         <div class="vendor-emoji">${vendor ? vendor.img : "🏪"}</div>
-        <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
+        <div class="vendor-name">${vendor ? vendor.name : "flik"}</div>
         <div class="vendor-meta">${vendor ? vendor.category + " · " + vendor.area : "Local delivery"}</div>
         <div class="ready-badge">⚡ Ready to deliver</div>
-        <button class="btn btn-primary" id="installBtn">📲 Install Saardha</button>
+        <button class="btn btn-primary" id="installBtn">📲 Install flik</button>
         <a class="btn" href="${customerUrl(vendor)}" id="openBtn"
            style="display:block;margin-top:10px;background:transparent;border:1px solid #444;color:#ddd">Open in browser →</a>
         <div class="ios-hint" id="installHint" style="display:block;margin-top:14px">
-          <strong>To install:</strong> tap <strong>Install Saardha</strong>. If nothing pops up,
+          <strong>To install:</strong> tap <strong>Install flik</strong>. If nothing pops up,
           open the browser menu <strong>⋮</strong> (top-right) and choose <strong>Install app</strong> /
           <strong>Add to Home screen</strong>. Or tap <strong>Open in browser</strong> to start ordering now.
         </div>
@@ -319,11 +319,11 @@
       const card = document.getElementById("card");
       card.innerHTML = `
         <div class="app-logo">🚚</div>
-        <div class="app-name">Saardha</div>
+        <div class="app-name">flik</div>
         <div class="app-tagline">On-demand local delivery</div>
         <hr class="divider" />
         <div class="vendor-emoji">${vendor ? vendor.img : "🏪"}</div>
-        <div class="vendor-name">${vendor ? vendor.name : "Saardha"}</div>
+        <div class="vendor-name">${vendor ? vendor.name : "flik"}</div>
         <div class="ready-badge">⚡ Ready to deliver</div>
         <a class="btn btn-primary" href="${customerUrl(vendor)}">Open App →</a>
         <div class="ios-hint" style="display:block;margin-top:14px">
@@ -339,7 +339,7 @@
       const params = new URLSearchParams(location.search);
       const vendorId = params.get("v");
 
-      /* ── No vendor param (universal Saardha QR) — show the store picker ── */
+      /* ── No vendor param (universal flik QR) — show the store picker ── */
       if (!vendorId) {
         await showStorePicker();
         return;
@@ -352,7 +352,7 @@
       if (!vendor) {
         card.innerHTML = `
           <div class="app-logo">🚚</div>
-          <div class="app-name">Saardha</div>
+          <div class="app-name">flik</div>
           <div class="error">Store not found. Please try scanning again.</div>
           <a class="btn btn-primary" href="/customer/">Open App</a>
         `;
@@ -368,7 +368,7 @@
           : `<div class="already-banner"><strong>👍 Already in your app</strong>${vendor.name} is already available</div>`;
         card.innerHTML = `
           <div class="app-logo">🚚</div>
-          <div class="app-name">Saardha</div>
+          <div class="app-name">flik</div>
           <hr class="divider" />
           <div class="vendor-emoji">${vendor.img}</div>
           <div class="vendor-name">${vendor.name}</div>
@@ -393,7 +393,7 @@
         /* Desktop — show get-started page */
         card.innerHTML = `
           <div class="app-logo">🚚</div>
-          <div class="app-name">Saardha</div>
+          <div class="app-name">flik</div>
           <div class="app-tagline">On-demand local delivery</div>
           <hr class="divider" />
           <div class="vendor-emoji">${vendor.img}</div>
